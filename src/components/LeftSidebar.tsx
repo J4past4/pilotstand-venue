@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
+  Box,
   Check,
   Copy,
   Eye,
@@ -16,6 +17,7 @@ import {
   SlidersHorizontal,
   Trash2,
   Unlock,
+  Upload,
   X,
 } from 'lucide-react';
 import { CATEGORY_META, EQUIPMENT_CATALOG } from '../data/catalog';
@@ -24,6 +26,7 @@ import { STAND_TEMPLATES } from '../data/templates';
 import type {
   BrandAsset,
   CurrencyCode,
+  CustomModelAsset,
   EquipmentCategory,
   FloorMaterial,
   OpenSides,
@@ -51,6 +54,10 @@ interface LeftSidebarProps {
   assets: BrandAsset[];
   onUploadAssets: (files: FileList) => void;
   onDeleteAsset: (assetId: string) => void;
+  customModels: CustomModelAsset[];
+  onUpload3DModels: (files: FileList) => void;
+  onPlaceCustomModel: (modelAssetId: string) => void;
+  onLoadSampleMachine: () => void;
   paintAssetId: string | null;
   onSetPaintAssetId: (assetId: string | null) => void;
   onApplyTemplate: (template: StandTemplate) => void;
@@ -91,6 +98,10 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   assets,
   onUploadAssets,
   onDeleteAsset,
+  customModels,
+  onUpload3DModels,
+  onPlaceCustomModel,
+  onLoadSampleMachine,
   paintAssetId,
   onSetPaintAssetId,
   onApplyTemplate,
@@ -101,6 +112,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   const [selectedCat, setSelectedCat] = useState<EquipmentCategory | 'all'>('all');
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const modelFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const filteredCatalog = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -179,8 +191,72 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
         {activeTab === 'catalog' && (
           <div className="panel-section-stack">
             <div className="panel-header">
-              <h2>Equipment Library</h2>
-              <p>Click any structure, wall, counter, or display to add to your stand.</p>
+              <h2>Equipment &amp; 3D Models</h2>
+              <p>Click or drag any item — or drop your own 3D machine directly onto the floor.</p>
+            </div>
+
+            {/* Custom 3D Models (.GLB, .GLTF, .STL, .OBJ) */}
+            <div className="custom-3d-box">
+              <div className="custom-3d-head">
+                <span className="custom-3d-title">
+                  <Box size={13} /> Import 3D Machine / Product
+                </span>
+                <span className="mono-num custom-3d-formats">GLB · STL · OBJ</span>
+              </div>
+              <div className="custom-3d-actions">
+                <button
+                  id="btn-upload-3d-model"
+                  className="primary-btn custom-3d-upload-btn"
+                  onClick={() => modelFileInputRef.current?.click()}
+                >
+                  <Upload size={13} />
+                  <span>Upload 3D File</span>
+                </button>
+                <button
+                  id="btn-sample-machine"
+                  className="secondary-btn custom-3d-sample-btn"
+                  onClick={onLoadSampleMachine}
+                  title="Place a sample industrial CNC showcase machine onto the stand"
+                >
+                  + Sample Machine
+                </button>
+                <input
+                  ref={modelFileInputRef}
+                  id="model-3d-file-input"
+                  type="file"
+                  accept=".glb,.gltf,.stl,.obj"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      onUpload3DModels(e.target.files);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+              </div>
+              {customModels.length > 0 && (
+                <div className="uploaded-models-list">
+                  {customModels.map((m) => (
+                    <button
+                      key={m.id}
+                      className="uploaded-model-chip"
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('application/x-standcraft-model', m.id);
+                        e.dataTransfer.effectAllowed = 'copy';
+                      }}
+                      onClick={() => onPlaceCustomModel(m.id)}
+                      title="Click or drag onto stand floor"
+                    >
+                      <span className="uploaded-model-name">{m.name}</span>
+                      <span className="mono-num uploaded-model-meta">
+                        {m.originalDims.w}×{m.originalDims.d}m · {m.format.toUpperCase()}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="search-input-wrap">
@@ -225,14 +301,19 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     key={item.id}
                     id={`add-equip-${item.id}`}
                     className="catalog-card"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/x-standcraft-catalog', item.id);
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
                     onClick={() => onAddCatalogItem(item.id)}
-                    title={item.description}
+                    title={`${item.description} (Click or drag onto stand floor)`}
                   >
                     <div className="catalog-thumb-box">
                       <EquipmentThumb catalogId={item.id} />
                       {item.badge && <span className="equip-badge">{item.badge}</span>}
                       <span className="add-hover-badge">
-                        <Plus size={12} /> Add
+                        <Plus size={12} /> Drag / Add
                       </span>
                     </div>
                     <div className="catalog-card-meta">

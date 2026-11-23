@@ -567,6 +567,189 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             </div>
           </div>
 
+          {/* CUSTOM 3D SHOWCASE MODEL CONTROLS */}
+          {selectedItem.catalogId === 'custom-3d-model' && (
+            <div className="control-block branding-zones-block">
+              <div className="control-label-row">
+                <label className="block-label" style={{ marginBottom: 0 }}>
+                  3D Showcase Model Scale &amp; CAD Fix
+                </label>
+              </div>
+
+              <div className="toggle-row compact" style={{ marginTop: 0, marginBottom: 8 }}>
+                <span>Lock Proportions</span>
+                <input
+                  type="checkbox"
+                  className="studio-switch"
+                  checked={selectedItem.lockAspect !== false}
+                  onChange={(e) =>
+                    onUpdateItem(selectedItem.id, { lockAspect: e.target.checked }, true)
+                  }
+                />
+              </div>
+
+              <div className="slider-row">
+                <div className="slider-header">
+                  <span>Width</span>
+                  <span className="mono-num">{formatLength(selectedItem.dims.w, config.unit)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.2}
+                  max={6}
+                  step={0.05}
+                  value={selectedItem.dims.w}
+                  onChange={(e) => {
+                    const nw = parseFloat(e.target.value);
+                    if (selectedItem.lockAspect !== false) {
+                      const ratio = nw / Math.max(0.05, selectedItem.dims.w);
+                      onUpdateItem(
+                        selectedItem.id,
+                        {
+                          dims: {
+                            w: nw,
+                            h: Number((selectedItem.dims.h * ratio).toFixed(2)),
+                            d: Number((selectedItem.dims.d * ratio).toFixed(2)),
+                          },
+                        },
+                        false
+                      );
+                    } else {
+                      onUpdateItem(
+                        selectedItem.id,
+                        { dims: { ...selectedItem.dims, w: nw } },
+                        false
+                      );
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="slider-row">
+                <div className="slider-header">
+                  <span>Height</span>
+                  <span className="mono-num">{formatLength(selectedItem.dims.h, config.unit)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.2}
+                  max={4.8}
+                  step={0.05}
+                  value={selectedItem.dims.h}
+                  onChange={(e) => {
+                    const nh = parseFloat(e.target.value);
+                    if (selectedItem.lockAspect !== false) {
+                      const ratio = nh / Math.max(0.05, selectedItem.dims.h);
+                      onUpdateItem(
+                        selectedItem.id,
+                        {
+                          dims: {
+                            w: Number((selectedItem.dims.w * ratio).toFixed(2)),
+                            h: nh,
+                            d: Number((selectedItem.dims.d * ratio).toFixed(2)),
+                          },
+                        },
+                        false
+                      );
+                    } else {
+                      onUpdateItem(
+                        selectedItem.id,
+                        { dims: { ...selectedItem.dims, h: nh } },
+                        false
+                      );
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="slider-row">
+                <div className="slider-header">
+                  <span>Depth</span>
+                  <span className="mono-num">{formatLength(selectedItem.dims.d, config.unit)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.2}
+                  max={6}
+                  step={0.05}
+                  value={selectedItem.dims.d}
+                  onChange={(e) => {
+                    const nd = parseFloat(e.target.value);
+                    if (selectedItem.lockAspect !== false) {
+                      const ratio = nd / Math.max(0.05, selectedItem.dims.d);
+                      onUpdateItem(
+                        selectedItem.id,
+                        {
+                          dims: {
+                            w: Number((selectedItem.dims.w * ratio).toFixed(2)),
+                            h: Number((selectedItem.dims.h * ratio).toFixed(2)),
+                            d: nd,
+                          },
+                        },
+                        false
+                      );
+                    } else {
+                      onUpdateItem(
+                        selectedItem.id,
+                        { dims: { ...selectedItem.dims, d: nd } },
+                        false
+                      );
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="toggle-row compact" style={{ marginTop: 10 }}>
+                <span>CAD Z-Up → Y-Up Fix</span>
+                <input
+                  id="toggle-cad-zup"
+                  type="checkbox"
+                  className="studio-switch"
+                  checked={Boolean(selectedItem.zUpFix)}
+                  onChange={(e) => {
+                    const nextZ = e.target.checked;
+                    onUpdateItem(
+                      selectedItem.id,
+                      {
+                        zUpFix: nextZ,
+                        dims: {
+                          w: selectedItem.dims.w,
+                          h: selectedItem.dims.d,
+                          d: selectedItem.dims.h,
+                        },
+                      },
+                      true
+                    );
+                  }}
+                />
+              </div>
+
+              <div className="color-inline-row" style={{ marginTop: 8 }}>
+                <span>CAD Mesh Tint</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {selectedItem.modelTintColor && (
+                    <button
+                      className="fit-btn"
+                      style={{ padding: '2px 6px' }}
+                      onClick={() =>
+                        onUpdateItem(selectedItem.id, { modelTintColor: undefined }, true)
+                      }
+                    >
+                      Reset
+                    </button>
+                  )}
+                  <input
+                    type="color"
+                    value={selectedItem.modelTintColor || '#D4DBE3'}
+                    onChange={(e) =>
+                      onUpdateItem(selectedItem.id, { modelTintColor: e.target.value }, true)
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* DIMENSIONS */}
           {def?.resizable && (
             <div className="control-block">

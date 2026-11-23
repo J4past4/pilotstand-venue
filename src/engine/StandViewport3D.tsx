@@ -19,6 +19,7 @@ import type {
   ViewMode,
 } from '../types/stand';
 import { buildBoothShell, buildScaleFigures, buildStandItemMesh } from './meshFactory';
+import { buildCustomModelMesh } from './modelLoader';
 import { formatLength } from '../utils/pricing';
 
 export interface StandViewportHandle {
@@ -43,6 +44,9 @@ interface StandViewportProps {
       | { kind: 'item'; itemId: string; surfaceId: string }
       | { kind: 'shell'; side: ShellWallSide }
   ) => void;
+  onDropCatalogItem: (catalogId: string, x: number, z: number) => void;
+  onDropCustomModelAsset: (modelAssetId: string, x: number, z: number) => void;
+  onDrop3DFiles: (files: FileList, x: number, z: number) => void;
 }
 
 interface OverlayLabel {
@@ -56,7 +60,7 @@ interface OverlayLabel {
 function disposeObject3D(obj: THREE.Object3D) {
   obj.traverse((child) => {
     const mesh = child as THREE.Mesh;
-    if (mesh.geometry) {
+    if (mesh.geometry && !mesh.userData.sharedGeometry) {
       mesh.geometry.dispose();
     }
     if (mesh.material) {
@@ -83,6 +87,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       onSelectShellWall,
       onMoveItem,
       onPaintSurface,
+      onDropCatalogItem,
+      onDropCustomModelAsset,
+      onDrop3DFiles,
     },
     ref
   ) {
@@ -103,6 +110,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
     const [textureTick, setTextureTick] = useState(0);
     const [hoverPaintLabel, setHoverPaintLabel] = useState<string | null>(null);
     const [overlayLabels, setOverlayLabels] = useState<OverlayLabel[]>([]);
+    const [dropHint, setDropHint] = useState<string | null>(null);
 
     // Keep latest props accessible inside pointer/animation closures
     const propsRef = useRef({
@@ -858,7 +866,10 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       };
 
       for (const item of items) {
-        const meshGroup = buildStandItemMesh(item, ctx);
+        const meshGroup =
+          item.catalogId === 'custom-3d-model'
+            ? buildCustomModelMesh(item)
+            : buildStandItemMesh(item, ctx);
         itemsGroup.add(meshGroup);
       }
     }, [items, config, assetsMap, textureTick]);
@@ -1008,8 +1019,81 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       }
     }, [config, items, selectedItemId, compliance]);
 
+    const projectClientToFloor = (clientX: number, clientY: number): { x: number; z: number } => {
+      const renderer = rendererRef.current;
+      const cam = activeCamRef.current;
+      if (!renderer || !cam) return { x: 0, z: 0 };
+      const rect = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(ndc, cam);
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const hit = new THREE.Vector3();
+      if (raycaster.ray.intersectPlane(plane, hit)) {
+        let x = hit.x;
+        let z = hit.z;
+        if (config.snapToGrid) {
+          const step = config.gridStep || 0.1;
+          x = Math.round(x / step) * step;
+          z = Math.round(z / step) * step;
+        }
+        x = Math.max(-config.width * 0.75, Math.min(config.width * 0.75, Number(x.toFixed(2))));
+        z = Math.max(-config.depth * 0.75, Math.min(config.depth * 0.75, Number(z.toFixed(2))));
+        return { x, z };
+      }
+      return { x: 0, z: 0 };
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      const types = Array.from(e.dataTransfer.types || []);
+      if (types.includes('application/x-standcraft-catalog')) {
+        setDropHint('Release to place equipment onto stand floor');
+      } else if (types.includes('application/x-standcraft-model')) {
+        setDropHint('Release to place 3D model onto stand floor');
+      } else {
+        setDropHint('Drop 3D model (.GLB, .GLTF, .STL, .OBJ) to place on stand');
+      }
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+      if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+      setDropHint(null);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+      e.preventDefault();
+      setDropHint(null);
+      const pos = projectClientToFloor(e.clientX, e.clientY);
+
+      const catalogId = e.dataTransfer.getData('application/x-standcraft-catalog');
+      if (catalogId) {
+        onDropCatalogItem(catalogId, pos.x, pos.z);
+        return;
+      }
+
+      const modelAssetId = e.dataTransfer.getData('application/x-standcraft-model');
+      if (modelAssetId) {
+        onDropCustomModelAsset(modelAssetId, pos.x, pos.z);
+        return;
+      }
+
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        onDrop3DFiles(e.dataTransfer.files, pos.x, pos.z);
+      }
+    };
+
     return (
-      <div className="viewport-canvas-wrap">
+      <div
+        className={`viewport-canvas-wrap ${dropHint ? 'drag-active' : ''}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <div ref={containerRef} className="viewport-canvas-host" />
 
         {/* Projected 3D->2D Dimension & Aisle Labels */}
@@ -1037,6 +1121,13 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
               <strong>Click-to-Brand Mode:</strong>{' '}
               {hoverPaintLabel || 'Click any wall, counter, banner, or screen to apply artwork'}
             </span>
+          </div>
+        )}
+
+        {/* Drag-and-Drop 3D Model / Equipment Overlay */}
+        {dropHint && (
+          <div className="viewport-drop-overlay" aria-hidden="true">
+            <div className="viewport-drop-badge">{dropHint}</div>
           </div>
         )}
       </div>

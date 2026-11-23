@@ -18,6 +18,11 @@ import {
   STAND_TEMPLATES,
 } from './data/templates';
 import { StandViewport3D, type StandViewportHandle } from './engine/StandViewport3D';
+import {
+  isSupportedModelFile,
+  parseAndRegister3DModel,
+  registerSampleShowcaseMachine,
+} from './engine/modelLoader';
 import { LeftSidebar, type SidebarTab } from './components/LeftSidebar';
 import {
   EstimateModal,
@@ -31,6 +36,7 @@ import type {
   BrandAsset,
   CameraPreset,
   CurrencyCode,
+  CustomModelAsset,
   SavedProject,
   ShellWallSide,
   StandConfig,
@@ -242,18 +248,28 @@ export function App() {
     [items, pushHistory]
   );
 
+  const [customModels, setCustomModels] = useState<CustomModelAsset[]>([]);
+
   const addCatalogItem = useCallback(
-    (catalogId: string) => {
+    (catalogId: string, dropX?: number, dropZ?: number) => {
       const def = CATALOG_MAP[catalogId];
       if (!def) return;
       const offsetJitter = ((items.length % 5) - 2) * 0.22;
+      const px =
+        dropX !== undefined
+          ? dropX
+          : Math.max(-config.width / 2 + 0.5, Math.min(config.width / 2 - 0.5, offsetJitter));
+      const pz =
+        dropZ !== undefined
+          ? dropZ
+          : Math.max(-config.depth / 2 + 0.5, Math.min(config.depth / 2 - 0.5, offsetJitter * 0.7));
       const newItem: StandItem = {
         id: createItemId(catalogId),
         catalogId,
         name: def.name,
-        x: Math.max(-config.width / 2 + 0.5, Math.min(config.width / 2 - 0.5, offsetJitter)),
+        x: px,
         y: def.elevatedY ?? 0,
-        z: Math.max(-config.depth / 2 + 0.5, Math.min(config.depth / 2 - 0.5, offsetJitter * 0.7)),
+        z: pz,
         rotationY: 0,
         dims: { ...def.defaultDims },
         backlit: def.supportsBacklit ? true : false,
@@ -271,6 +287,70 @@ export function App() {
     },
     [items, config, pushHistory, notify]
   );
+
+  const placeCustomModelAsset = useCallback(
+    (asset: CustomModelAsset, dropX?: number, dropZ?: number) => {
+      const px = dropX !== undefined ? dropX : 0;
+      const pz = dropZ !== undefined ? dropZ : 0.15;
+      const newItem: StandItem = {
+        id: createItemId('model3d'),
+        catalogId: 'custom-3d-model',
+        name: asset.name,
+        customModelId: asset.id,
+        x: px,
+        y: 0,
+        z: pz,
+        rotationY: 0,
+        dims: { ...asset.originalDims },
+        lockAspect: true,
+        zUpFix: false,
+        locked: false,
+        visible: true,
+        artwork: {},
+      };
+      const nextItems = [...items, newItem];
+      setItems(nextItems);
+      setSelectedItemId(newItem.id);
+      setSelectedSurfaceId(null);
+      setSelectedShellWall(null);
+      pushHistory(config, nextItems);
+      notify(`Placed 3D model "${asset.name}" (${asset.originalDims.w}×${asset.originalDims.d}m)`);
+    },
+    [items, config, pushHistory, notify]
+  );
+
+  const handleUpload3DModels = useCallback(
+    async (files: FileList, dropX?: number, dropZ?: number) => {
+      const modelFiles = Array.from(files).filter(isSupportedModelFile);
+      if (modelFiles.length === 0) {
+        notify('Drop a .GLB, .GLTF, .STL, or .OBJ 3D model file (or upload images in Brand tab)');
+        return;
+      }
+      let placedCount = 0;
+      for (const file of modelFiles) {
+        try {
+          const asset = await parseAndRegister3DModel(file);
+          setCustomModels((prev) => [asset, ...prev]);
+          placeCustomModelAsset(
+            asset,
+            dropX !== undefined ? Number((dropX + placedCount * 0.4).toFixed(2)) : undefined,
+            dropZ
+          );
+          placedCount += 1;
+        } catch (err) {
+          console.error(err);
+          notify(`Could not parse 3D file "${file.name}"`);
+        }
+      }
+    },
+    [placeCustomModelAsset, notify]
+  );
+
+  const handleLoadSampleMachine = useCallback(() => {
+    const sample = registerSampleShowcaseMachine();
+    setCustomModels((prev) => (prev.some((m) => m.id === sample.id) ? prev : [sample, ...prev]));
+    placeCustomModelAsset(sample, 0.4, 0.2);
+  }, [placeCustomModelAsset]);
 
   const updateItem = useCallback(
     (id: string, patch: Partial<StandItem>, commit = true) => {
@@ -670,6 +750,13 @@ export function App() {
             setCustomAssets((prev) => prev.filter((a) => a.id !== id));
             if (paintAssetId === id) setPaintAssetId(null);
           }}
+          customModels={customModels}
+          onUpload3DModels={(files) => handleUpload3DModels(files)}
+          onPlaceCustomModel={(modelId) => {
+            const m = customModels.find((x) => x.id === modelId);
+            if (m) placeCustomModelAsset(m);
+          }}
+          onLoadSampleMachine={handleLoadSampleMachine}
           paintAssetId={paintAssetId}
           onSetPaintAssetId={setPaintAssetId}
           onApplyTemplate={applyTemplate}
@@ -695,6 +782,12 @@ export function App() {
             onSelectShellWall={setSelectedShellWall}
             onMoveItem={moveItem}
             onPaintSurface={handlePaintSurface}
+            onDropCatalogItem={(catalogId, x, z) => addCatalogItem(catalogId, x, z)}
+            onDropCustomModelAsset={(modelId, x, z) => {
+              const m = customModels.find((cm) => cm.id === modelId);
+              if (m) placeCustomModelAsset(m, x, z);
+            }}
+            onDrop3DFiles={(files, x, z) => handleUpload3DModels(files, x, z)}
           />
 
           {/* Top-Left Floating Space & Compliance HUD */}

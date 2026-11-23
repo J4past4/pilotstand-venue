@@ -194,6 +194,21 @@ export function calculateEstimate(
   const grouped = new Map<string, { name: string; category: string; qty: number; unit: number }>();
   for (const item of items) {
     if (item.visible === false) continue;
+    if (item.catalogId === 'custom-3d-model') {
+      const key = `custom:${item.name}`;
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.qty += 1;
+      } else {
+        grouped.set(key, {
+          name: `${item.name} (Client 3D Exhibit — ${item.dims.w}×${item.dims.d}m)`,
+          category: 'Client Exhibit',
+          qty: 1,
+          unit: 0,
+        });
+      }
+      continue;
+    }
     const def = CATALOG_MAP[item.catalogId];
     if (!def) continue;
     const unit = mode === 'hire' ? def.priceHire : def.priceBuy;

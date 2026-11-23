@@ -8,6 +8,9 @@ A browser-based SaaS studio for exhibitors and event teams to design, customize,
   - Interactive PBR 3D studio with soft shadows, studio environment reflections, and 3 venue lighting atmospheres (*Expo Hall*, *Daylight*, *Keynote Spot*).
   - Top-down orthographic **2D Floor Plan** view and **1.65m Visitor Eye-Level** walkthrough view.
   - Direct floor-plane drag-and-drop placement with toggleable grid snapping, keyboard shortcuts (`Ctrl+Z` / `Ctrl+Y`, `Ctrl+D`, `R`, `Del`), and optional 1.75m human scale figures.
+- **Drag-and-Drop Custom 3D Models (`.GLB`, `.GLTF`, `.STL`, `.OBJ`)**:
+  - Drag and drop your own CAD showcase machines, industrial equipment, or product prototypes directly onto the 3D/2D stand floor (or upload from the Kit panel).
+  - Automatic CAD millimetre-to-metre unit normalization, floor grounding, proportional real-world dimension sliders, 1-click **CAD Z-Up → Y-Up** axis fix, CAD mesh tinting, and a 1-click sample CNC showcase machine.
 - **26 Exhibition Equipment & Structure Models**:
   - **Quick-Fold & Modular Walls**: Straight & curved quick-fold pop-up walls (with rear aluminum scissor lattice & arm lights), SEG backlit LED lightboxes, modular partition walls, architectural brand arches, and lockable storage cabins.
   - **Signage & AV**: Retractable roll-up banners, 360° suspended overhead cubes & circular halos, backlit brand totems, 55" 4K display stands, seamless LED video walls, and feather flags.

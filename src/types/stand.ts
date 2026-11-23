@@ -70,6 +70,18 @@ export interface CatalogItemDef {
   defaultFinish?: 'matte' | 'gloss' | 'oak' | 'metal';
 }
 
+export type CustomModelFormat = 'glb' | 'gltf' | 'stl' | 'obj';
+
+export interface CustomModelAsset {
+  id: string;
+  name: string;
+  format: CustomModelFormat;
+  fileSizeBytes: number;
+  originalDims: Dimensions3D; // normalized dimensions in meters
+  /** Object URL or data URL for fast in-session loading */
+  blobUrl: string;
+}
+
 export interface StandItem {
   id: string;
   catalogId: string;
@@ -86,6 +98,11 @@ export interface StandItem {
   locked?: boolean;
   visible?: boolean;
   artwork: Record<string, SurfaceArtwork>;
+  /** For imported custom 3D models (.glb, .gltf, .stl, .obj) */
+  customModelId?: string;
+  zUpFix?: boolean;
+  lockAspect?: boolean;
+  modelTintColor?: string;
 }
 
 export interface StandConfig {
