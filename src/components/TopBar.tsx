@@ -11,6 +11,7 @@ import {
   Moon,
   Redo2,
   Ruler,
+  Sparkles,
   Sun,
   SunMedium,
   Undo2,
@@ -32,6 +33,8 @@ interface TopBarProps {
   onRedo: () => void;
   estimatedTotalGbp: number;
   currency: CurrencyCode;
+  agentOpen: boolean;
+  onToggleAgent: () => void;
   onOpenProjects: () => void;
   onOpenTemplates: () => void;
   onOpenEstimate: () => void;
@@ -53,6 +56,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onRedo,
   estimatedTotalGbp,
   currency,
+  agentOpen,
+  onToggleAgent,
   onOpenProjects,
   onOpenTemplates,
   onOpenEstimate,
@@ -226,6 +231,15 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       <div className="topbar-right">
+        <button
+          id="btn-ai-designer"
+          className={`agent-toggle-btn ${agentOpen ? 'active' : ''}`}
+          onClick={onToggleAgent}
+          title="Open AI Stand Designer (Chat & Voice)"
+        >
+          <Sparkles size={14} />
+          <span>AI Designer</span>
+        </button>
         <button id="btn-projects" className="ghost-btn" onClick={onOpenProjects}>
           <FolderOpen size={14} />
           <span>Projects</span>

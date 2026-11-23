@@ -32,6 +32,10 @@ import {
 } from './components/Modals';
 import { RightInspector } from './components/RightInspector';
 import { TopBar } from './components/TopBar';
+import { AgentDrawer } from './components/AgentDrawer';
+import { applyAgentActions } from './agent/actionExecutor';
+import { sendStandAgentPrompt } from './agent/agentClient';
+import type { AgentAudioPayload, AgentChatMessage, AgentHistoryTurn } from './agent/types';
 import type {
   BrandAsset,
   CameraPreset,
@@ -147,11 +151,14 @@ export function App() {
   const [currency, setCurrency] = useState<CurrencyCode>('GBP');
   const [pricingMode, setPricingMode] = useState<'hire' | 'buy'>('hire');
 
-  // Modals
+  // Modals & AI Designer drawer
   const [showTemplatesModal, setShowTemplatesModal] = useState(false);
   const [showEstimateModal, setShowEstimateModal] = useState(false);
   const [showProjectsModal, setShowProjectsModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showAgentDrawer, setShowAgentDrawer] = useState(false);
+  const [agentMessages, setAgentMessages] = useState<AgentChatMessage[]>([]);
+  const [agentLoading, setAgentLoading] = useState(false);
 
   // Toast feedback
   const [toast, setToast] = useState<string | null>(null);
@@ -687,16 +694,111 @@ export function App() {
     [items, selectedItemId]
   );
 
-  const triggerCamera = (preset: CameraPreset) => {
-    if (preset === 'top') {
-      setViewMode('2d');
-    } else if (preset === 'eye-level') {
-      setViewMode('eye-level');
-    } else {
-      if (viewMode !== '3d') setViewMode('3d');
-      setTimeout(() => viewportRef.current?.setCameraPreset(preset), 10);
-    }
-  };
+  const triggerCamera = useCallback(
+    (preset: CameraPreset) => {
+      if (preset === 'top') {
+        setViewMode('2d');
+      } else if (preset === 'eye-level') {
+        setViewMode('eye-level');
+      } else {
+        if (viewMode !== '3d') setViewMode('3d');
+        setTimeout(() => viewportRef.current?.setCameraPreset(preset), 10);
+      }
+    },
+    [viewMode]
+  );
+
+  const runAgentTurn = useCallback(
+    async (opts: { text?: string; audio?: AgentAudioPayload; viaVoice?: boolean }) => {
+      if (agentLoading) return;
+      const userMsgId = `msg-${Date.now().toString(36)}-u`;
+      const initialUserContent =
+        opts.text?.trim() || (opts.audio ? `Voice request (${opts.audio.durationSec}s audio)` : '');
+
+      if (!initialUserContent && !opts.audio) return;
+
+      const historyTurns: AgentHistoryTurn[] = agentMessages
+        .filter((m): m is AgentChatMessage & { role: 'user' | 'assistant' } => m.role !== 'system')
+        .slice(-6)
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      setAgentMessages((prev) => [
+        ...prev,
+        {
+          id: userMsgId,
+          role: 'user',
+          content: initialUserContent,
+          timestamp: Date.now(),
+          viaVoice: opts.viaVoice || Boolean(opts.audio),
+        },
+      ]);
+      setAgentLoading(true);
+
+      try {
+        const resp = await sendStandAgentPrompt({
+          message: opts.text,
+          audio: opts.audio,
+          history: historyTurns,
+          config,
+          items,
+        });
+
+        // If the server transcribed an audio clip, replace the placeholder user bubble
+        if (resp.transcript && opts.audio) {
+          setAgentMessages((prev) =>
+            prev.map((m) => (m.id === userMsgId ? { ...m, content: resp.transcript! } : m))
+          );
+        }
+
+        const exec = applyAgentActions(config, items, resp.actions || []);
+        if (exec.mutated) {
+          setConfig(exec.nextConfig);
+          setItems(exec.nextItems);
+          setSelectedItemId(null);
+          setSelectedSurfaceId(null);
+          setSelectedShellWall(null);
+          pushHistory(exec.nextConfig, exec.nextItems);
+          notify(
+            exec.appliedSummaries.length === 1
+              ? exec.appliedSummaries[0]
+              : `AI applied ${exec.appliedSummaries.length} stand updates`
+          );
+        }
+        if (exec.cameraPreset) {
+          triggerCamera(exec.cameraPreset);
+        }
+
+        setAgentMessages((prev) => [
+          ...prev,
+          {
+            id: `msg-${Date.now().toString(36)}-a`,
+            role: 'assistant',
+            content: resp.reply,
+            timestamp: Date.now(),
+            appliedSummaries: exec.appliedSummaries,
+            warnings: exec.warnings,
+            meta: resp.meta,
+            canUndo: exec.mutated,
+          },
+        ]);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Unable to reach AI Stand Designer right now.';
+        setAgentMessages((prev) => [
+          ...prev,
+          {
+            id: `msg-${Date.now().toString(36)}-e`,
+            role: 'system',
+            content: message,
+            timestamp: Date.now(),
+          },
+        ]);
+      } finally {
+        setAgentLoading(false);
+      }
+    },
+    [agentLoading, agentMessages, config, items, pushHistory, notify, triggerCamera]
+  );
 
   const openSidesBadge =
     config.openSides === 1
@@ -722,6 +824,8 @@ export function App() {
         onRedo={handleRedo}
         estimatedTotalGbp={estimate.grandTotalGbp}
         currency={currency}
+        agentOpen={showAgentDrawer}
+        onToggleAgent={() => setShowAgentDrawer((v) => !v)}
         onOpenProjects={() => setShowProjectsModal(true)}
         onOpenTemplates={() => setShowTemplatesModal(true)}
         onOpenEstimate={() => setShowEstimateModal(true)}
@@ -858,6 +962,21 @@ export function App() {
               <RotateCcw size={14} />
             </button>
           </div>
+
+          <AgentDrawer
+            open={showAgentDrawer}
+            onClose={() => setShowAgentDrawer(false)}
+            messages={agentMessages}
+            isLoading={agentLoading}
+            canUndo={historyIdx > 0}
+            onSendText={(text, viaVoice) => runAgentTurn({ text, viaVoice })}
+            onSendAudio={(audio) => runAgentTurn({ audio, viaVoice: true })}
+            onUndoLastTurn={() => {
+              handleUndo();
+              notify('Undid AI stand changes');
+            }}
+            onClearChat={() => setAgentMessages([])}
+          />
 
           {toast && <div className="studio-toast">{toast}</div>}
         </section>
