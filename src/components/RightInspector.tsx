@@ -1,0 +1,790 @@
+import React, { useRef } from 'react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Copy,
+  ImagePlus,
+  Lightbulb,
+  Lock,
+  RotateCw,
+  Sparkles,
+  Trash2,
+  Unlock,
+  X,
+} from 'lucide-react';
+import { CATALOG_MAP } from '../data/catalog';
+import type {
+  ArtworkFit,
+  BrandAsset,
+  ComplianceReport,
+  ShellWallSide,
+  StandConfig,
+  StandItem,
+  SurfaceArtwork,
+} from '../types/stand';
+import { formatArea, formatLength } from '../utils/pricing';
+
+interface RightInspectorProps {
+  config: StandConfig;
+  onUpdateConfig: (patch: Partial<StandConfig>) => void;
+  selectedItem: StandItem | null;
+  selectedSurfaceId: string | null;
+  selectedShellWall: ShellWallSide | null;
+  onSelectShellWall: (side: ShellWallSide | null) => void;
+  onUpdateItem: (id: string, patch: Partial<StandItem>, commit?: boolean) => void;
+  onUpdateItemArtwork: (
+    itemId: string,
+    surfaceId: string,
+    patch: Partial<SurfaceArtwork>
+  ) => void;
+  onUpdateShellArtwork: (side: ShellWallSide, patch: Partial<SurfaceArtwork> | null) => void;
+  onDuplicateItem: (id: string) => void;
+  onDeleteItem: (id: string) => void;
+  assets: BrandAsset[];
+  onUploadAssetForSurface: (
+    file: File,
+    target:
+      | { kind: 'item'; itemId: string; surfaceId: string }
+      | { kind: 'shell'; side: ShellWallSide }
+  ) => void;
+  compliance: ComplianceReport;
+  onOpenBrandingTab: () => void;
+}
+
+const DEFAULT_ART: SurfaceArtwork = {
+  assetId: null,
+  fit: 'cover',
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+  bgColor: '#1B365D',
+  emissive: false,
+};
+
+export const RightInspector: React.FC<RightInspectorProps> = ({
+  config,
+  onUpdateConfig,
+  selectedItem,
+  selectedSurfaceId,
+  selectedShellWall,
+  onSelectShellWall,
+  onUpdateItem,
+  onUpdateItemArtwork,
+  onUpdateShellArtwork,
+  onDuplicateItem,
+  onDeleteItem,
+  assets,
+  onUploadAssetForSurface,
+  compliance,
+  onOpenBrandingTab,
+}) => {
+  const surfaceFileInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadTargetRef = useRef<
+    | { kind: 'item'; itemId: string; surfaceId: string }
+    | { kind: 'shell'; side: ShellWallSide }
+    | null
+  >(null);
+
+  const triggerZoneUpload = (
+    target:
+      | { kind: 'item'; itemId: string; surfaceId: string }
+      | { kind: 'shell'; side: ShellWallSide }
+  ) => {
+    uploadTargetRef.current = target;
+    surfaceFileInputRef.current?.click();
+  };
+
+  const handleZoneFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const target = uploadTargetRef.current;
+    if (file && target) {
+      onUploadAssetForSurface(file, target);
+    }
+    e.target.value = '';
+  };
+
+  // ==================== SHELL WALL INSPECTOR ====================
+  if (selectedShellWall && !selectedItem) {
+    const wallLen = selectedShellWall === 'back' ? config.width : config.depth;
+    const art = config.shellArtwork[selectedShellWall] || {
+      ...DEFAULT_ART,
+      bgColor: config.primaryColor,
+    };
+
+    return (
+      <aside className="right-inspector" aria-label="Shell wall inspector">
+        <input
+          ref={surfaceFileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleZoneFileChange}
+        />
+        <div className="inspector-header">
+          <div>
+            <span className="inspector-kicker">Perimeter Shell Wall</span>
+            <h2>{selectedShellWall.toUpperCase()} Wall Graphic</h2>
+          </div>
+          <button
+            className="tiny-icon-btn"
+            onClick={() => onSelectShellWall(null)}
+            title="Close wall inspector"
+          >
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="inspector-body">
+          <div className="print-spec-banner">
+            <span>Full Wall Print Dimensions</span>
+            <strong className="mono-num">
+              {Math.round(wallLen * 1000)} × {Math.round(config.shellWallHeight * 1000)} mm
+            </strong>
+          </div>
+
+          <div className="control-block">
+            <div className="control-label-row">
+              <label className="block-label" style={{ marginBottom: 0 }}>
+                Wall Mural Artwork
+              </label>
+              <button
+                className="upload-inline-btn"
+                onClick={() => triggerZoneUpload({ kind: 'shell', side: selectedShellWall })}
+              >
+                <ImagePlus size={12} /> Upload
+              </button>
+            </div>
+
+            <div className="mini-asset-strip">
+              <button
+                className={`mini-asset-chip ${!art.assetId ? 'active' : ''}`}
+                onClick={() => onUpdateShellArtwork(selectedShellWall, null)}
+              >
+                <span>Blank Wall</span>
+              </button>
+              {assets.map((a) => (
+                <button
+                  key={a.id}
+                  className={`mini-asset-chip ${art.assetId === a.id ? 'active' : ''}`}
+                  onClick={() =>
+                    onUpdateShellArtwork(selectedShellWall, {
+                      ...art,
+                      assetId: a.id,
+                    })
+                  }
+                  title={a.name}
+                >
+                  <img src={a.dataUrl} alt={a.name} />
+                </button>
+              ))}
+            </div>
+
+            {art.assetId && (
+              <div className="artwork-framing-controls">
+                <div className="fit-btn-row">
+                  {(['cover', 'contain', 'stretch'] as ArtworkFit[]).map((mode) => (
+                    <button
+                      key={mode}
+                      className={`fit-btn ${art.fit === mode ? 'active' : ''}`}
+                      onClick={() => onUpdateShellArtwork(selectedShellWall, { fit: mode })}
+                    >
+                      {mode === 'cover' ? 'Fill' : mode === 'contain' ? 'Contain' : 'Stretch'}
+                    </button>
+                  ))}
+                </div>
+                <div className="slider-row">
+                  <div className="slider-header">
+                    <span>Scale</span>
+                    <span className="mono-num">{Math.round(art.scale * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.25}
+                    max={2}
+                    step={0.05}
+                    value={art.scale}
+                    onChange={(e) =>
+                      onUpdateShellArtwork(selectedShellWall, {
+                        scale: parseFloat(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="color-inline-row">
+                  <span>Backdrop Fill</span>
+                  <input
+                    type="color"
+                    value={art.bgColor}
+                    onChange={(e) =>
+                      onUpdateShellArtwork(selectedShellWall, { bgColor: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
+  // ==================== SELECTED ITEM INSPECTOR ====================
+  if (selectedItem) {
+    const def = CATALOG_MAP[selectedItem.catalogId];
+    const isOutOfBounds = compliance.outOfBoundsIds.includes(selectedItem.id);
+    const isOverHeight = compliance.overHeightIds.includes(selectedItem.id);
+
+    return (
+      <aside className="right-inspector" id="item-inspector" aria-label="Selected item inspector">
+        <input
+          ref={surfaceFileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleZoneFileChange}
+        />
+
+        <div className="inspector-header">
+          <div>
+            <span className="inspector-kicker">{def?.category || 'Equipment'}</span>
+            <h2>{selectedItem.name}</h2>
+          </div>
+        </div>
+
+        <div className="inspector-quickbar">
+          <button
+            id="btn-rotate-90"
+            className="quick-action-btn"
+            onClick={() =>
+              onUpdateItem(
+                selectedItem.id,
+                { rotationY: (selectedItem.rotationY + 90) % 360 },
+                true
+              )
+            }
+            title="Rotate 90°"
+          >
+            <RotateCw size={14} />
+            <span>90°</span>
+          </button>
+          <button
+            id="btn-duplicate-item"
+            className="quick-action-btn"
+            onClick={() => onDuplicateItem(selectedItem.id)}
+            title="Duplicate (Ctrl+D)"
+          >
+            <Copy size={14} />
+            <span>Copy</span>
+          </button>
+          <button
+            className={`quick-action-btn ${selectedItem.locked ? 'active' : ''}`}
+            onClick={() => onUpdateItem(selectedItem.id, { locked: !selectedItem.locked }, true)}
+            title={selectedItem.locked ? 'Unlock position' : 'Lock position'}
+          >
+            {selectedItem.locked ? <Lock size={14} /> : <Unlock size={14} />}
+            <span>{selectedItem.locked ? 'Locked' : 'Lock'}</span>
+          </button>
+          <button
+            id="btn-delete-item"
+            className="quick-action-btn danger"
+            onClick={() => onDeleteItem(selectedItem.id)}
+            title="Delete item (Del)"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+
+        <div className="inspector-body">
+          {(isOutOfBounds || isOverHeight) && (
+            <div className="inspector-alert">
+              <AlertTriangle size={15} />
+              <div>
+                {isOutOfBounds && <div>Extends outside booked stand footprint.</div>}
+                {isOverHeight && (
+                  <div>
+                    Exceeds venue height limit ({formatLength(config.heightLimit, config.unit)}).
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* BRANDABLE ARTWORK ZONES — Put front and center when item has graphic surfaces */}
+          {def && def.surfaces.length > 0 && (
+            <div className="control-block branding-zones-block">
+              <div className="control-label-row">
+                <label className="block-label" style={{ marginBottom: 0 }}>
+                  Custom Branding &amp; Artwork Zones
+                </label>
+                <Sparkles size={13} className="accent-icon" />
+              </div>
+
+              {def.surfaces.map((zone) => {
+                const art: SurfaceArtwork = {
+                  ...DEFAULT_ART,
+                  ...(selectedItem.artwork[zone.id] || { bgColor: config.primaryColor }),
+                };
+                const scaleW = selectedItem.dims.w / def.defaultDims.w;
+                const scaleH = selectedItem.dims.h / def.defaultDims.h;
+                const printW = Math.round(zone.widthMm * scaleW);
+                const printH = Math.round(zone.heightMm * scaleH);
+                const isFocused = selectedSurfaceId === zone.id;
+
+                return (
+                  <div
+                    key={zone.id}
+                    className={`surface-zone-card ${isFocused ? 'focused' : ''}`}
+                  >
+                    <div className="surface-zone-head">
+                      <div>
+                        <div className="surface-zone-title">{zone.label}</div>
+                        <div className="surface-zone-size mono-num">
+                          Print: {printW} × {printH} mm
+                        </div>
+                      </div>
+                      <button
+                        id={`upload-zone-${zone.id}`}
+                        className="upload-inline-btn"
+                        onClick={() =>
+                          triggerZoneUpload({
+                            kind: 'item',
+                            itemId: selectedItem.id,
+                            surfaceId: zone.id,
+                          })
+                        }
+                      >
+                        <ImagePlus size={12} />
+                        <span>Upload</span>
+                      </button>
+                    </div>
+
+                    <div className="mini-asset-strip">
+                      <button
+                        className={`mini-asset-chip ${!art.assetId ? 'active' : ''}`}
+                        onClick={() =>
+                          onUpdateItemArtwork(selectedItem.id, zone.id, { assetId: null })
+                        }
+                        title="Use automatic company name & brand colors"
+                      >
+                        <span>Auto Brand</span>
+                      </button>
+                      {assets.map((a) => (
+                        <button
+                          key={a.id}
+                          className={`mini-asset-chip ${art.assetId === a.id ? 'active' : ''}`}
+                          onClick={() =>
+                            onUpdateItemArtwork(selectedItem.id, zone.id, {
+                              assetId: a.id,
+                              fit: a.category === 'logo' ? 'contain' : 'cover',
+                            })
+                          }
+                          title={a.name}
+                        >
+                          <img src={a.dataUrl} alt={a.name} />
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="artwork-framing-controls">
+                      {art.assetId && (
+                        <>
+                          <div className="fit-btn-row">
+                            {(['cover', 'contain', 'stretch'] as ArtworkFit[]).map((mode) => (
+                              <button
+                                key={mode}
+                                className={`fit-btn ${art.fit === mode ? 'active' : ''}`}
+                                onClick={() =>
+                                  onUpdateItemArtwork(selectedItem.id, zone.id, { fit: mode })
+                                }
+                              >
+                                {mode === 'cover'
+                                  ? 'Fill'
+                                  : mode === 'contain'
+                                    ? 'Fit Logo'
+                                    : 'Stretch'}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="slider-row">
+                            <div className="slider-header">
+                              <span>Graphic Scale</span>
+                              <span className="mono-num">{Math.round(art.scale * 100)}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0.25}
+                              max={2}
+                              step={0.05}
+                              value={art.scale}
+                              onChange={(e) =>
+                                onUpdateItemArtwork(selectedItem.id, zone.id, {
+                                  scale: parseFloat(e.target.value),
+                                })
+                              }
+                            />
+                          </div>
+
+                          <div className="dual-slider-grid">
+                            <div className="slider-row">
+                              <div className="slider-header">
+                                <span>Offset X</span>
+                                <span className="mono-num">{Math.round(art.offsetX * 100)}%</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={-0.45}
+                                max={0.45}
+                                step={0.02}
+                                value={art.offsetX}
+                                onChange={(e) =>
+                                  onUpdateItemArtwork(selectedItem.id, zone.id, {
+                                    offsetX: parseFloat(e.target.value),
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="slider-row">
+                              <div className="slider-header">
+                                <span>Offset Y</span>
+                                <span className="mono-num">{Math.round(art.offsetY * 100)}%</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={-0.45}
+                                max={0.45}
+                                step={0.02}
+                                value={art.offsetY}
+                                onChange={(e) =>
+                                  onUpdateItemArtwork(selectedItem.id, zone.id, {
+                                    offsetY: parseFloat(e.target.value),
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      <div className="color-inline-row">
+                        <span>Surface Backdrop</span>
+                        <input
+                          type="color"
+                          value={art.bgColor}
+                          onChange={(e) =>
+                            onUpdateItemArtwork(selectedItem.id, zone.id, {
+                              bgColor: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+
+                      <div className="toggle-row compact">
+                        <span className="inline-icon-label">
+                          <Lightbulb size={12} /> Backlit LED Glow
+                        </span>
+                        <input
+                          type="checkbox"
+                          className="studio-switch"
+                          checked={Boolean(art.emissive || selectedItem.backlit)}
+                          onChange={(e) =>
+                            onUpdateItemArtwork(selectedItem.id, zone.id, {
+                              emissive: e.target.checked,
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* POSITION & ROTATION */}
+          <div className="control-block">
+            <label className="block-label">Position &amp; Orientation</label>
+            <div className="coord-grid">
+              <label className="num-field">
+                <span>X ({config.unit})</span>
+                <input
+                  type="number"
+                  step={0.1}
+                  value={Number(selectedItem.x.toFixed(2))}
+                  onChange={(e) =>
+                    onUpdateItem(selectedItem.id, { x: parseFloat(e.target.value) || 0 }, true)
+                  }
+                />
+              </label>
+              <label className="num-field">
+                <span>Z ({config.unit})</span>
+                <input
+                  type="number"
+                  step={0.1}
+                  value={Number(selectedItem.z.toFixed(2))}
+                  onChange={(e) =>
+                    onUpdateItem(selectedItem.id, { z: parseFloat(e.target.value) || 0 }, true)
+                  }
+                />
+              </label>
+              <label className="num-field">
+                <span>Elev Y</span>
+                <input
+                  type="number"
+                  step={0.1}
+                  min={0}
+                  max={5}
+                  value={Number(selectedItem.y.toFixed(2))}
+                  onChange={(e) =>
+                    onUpdateItem(
+                      selectedItem.id,
+                      { y: Math.max(0, parseFloat(e.target.value) || 0) },
+                      true
+                    )
+                  }
+                />
+              </label>
+            </div>
+
+            <div className="slider-row" style={{ marginTop: 10 }}>
+              <div className="slider-header">
+                <span>Rotation</span>
+                <span className="mono-num">{Math.round(selectedItem.rotationY)}°</span>
+              </div>
+              <input
+                type="range"
+                min={-180}
+                max={180}
+                step={5}
+                value={selectedItem.rotationY > 180 ? selectedItem.rotationY - 360 : selectedItem.rotationY}
+                onChange={(e) =>
+                  onUpdateItem(selectedItem.id, { rotationY: parseFloat(e.target.value) }, false)
+                }
+                onMouseUp={() =>
+                  onUpdateItem(selectedItem.id, { rotationY: selectedItem.rotationY }, true)
+                }
+              />
+            </div>
+          </div>
+
+          {/* DIMENSIONS */}
+          {def?.resizable && (
+            <div className="control-block">
+              <label className="block-label">Equipment Dimensions</label>
+              <div className="slider-row">
+                <div className="slider-header">
+                  <span>Width</span>
+                  <span className="mono-num">{formatLength(selectedItem.dims.w, config.unit)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={def.minDims.w}
+                  max={def.maxDims.w}
+                  step={0.05}
+                  value={selectedItem.dims.w}
+                  onChange={(e) =>
+                    onUpdateItem(
+                      selectedItem.id,
+                      { dims: { ...selectedItem.dims, w: parseFloat(e.target.value) } },
+                      false
+                    )
+                  }
+                />
+              </div>
+              <div className="slider-row">
+                <div className="slider-header">
+                  <span>Height</span>
+                  <span className="mono-num">{formatLength(selectedItem.dims.h, config.unit)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={def.minDims.h}
+                  max={def.maxDims.h}
+                  step={0.05}
+                  value={selectedItem.dims.h}
+                  onChange={(e) =>
+                    onUpdateItem(
+                      selectedItem.id,
+                      { dims: { ...selectedItem.dims, h: parseFloat(e.target.value) } },
+                      false
+                    )
+                  }
+                />
+              </div>
+            </div>
+          )}
+
+          {/* MATERIAL & COLOUR OVERRIDES */}
+          <div className="control-block">
+            <label className="block-label">Material &amp; Finish</label>
+            <div className="fit-btn-row" style={{ marginBottom: 10 }}>
+              {(['matte', 'oak', 'metal'] as const).map((fin) => (
+                <button
+                  key={fin}
+                  className={`fit-btn ${(selectedItem.finish || 'matte') === fin ? 'active' : ''}`}
+                  onClick={() => onUpdateItem(selectedItem.id, { finish: fin }, true)}
+                >
+                  {fin === 'matte' ? 'Matte White' : fin === 'oak' ? 'Warm Oak' : 'Anodized'}
+                </button>
+              ))}
+            </div>
+            <div className="custom-swatches-row">
+              <label className="swatch-picker">
+                <input
+                  type="color"
+                  value={selectedItem.primaryColor || config.primaryColor}
+                  onChange={(e) =>
+                    onUpdateItem(selectedItem.id, { primaryColor: e.target.value }, true)
+                  }
+                />
+                <span>Body</span>
+              </label>
+              <label className="swatch-picker">
+                <input
+                  type="color"
+                  value={selectedItem.accentColor || config.accentColor}
+                  onChange={(e) =>
+                    onUpdateItem(selectedItem.id, { accentColor: e.target.value }, true)
+                  }
+                />
+                <span>Accent</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
+  // ==================== DEFAULT STAND OVERVIEW INSPECTOR ====================
+  return (
+    <aside className="right-inspector" aria-label="Stand space overview">
+      <div className="inspector-header">
+        <div>
+          <span className="inspector-kicker">Space &amp; Brand Overview</span>
+          <h2>
+            {formatLength(config.width, config.unit)} × {formatLength(config.depth, config.unit)}{' '}
+            Stand
+          </h2>
+        </div>
+      </div>
+
+      <div className="inspector-body">
+        <div className={`compliance-card ${compliance.isCompliant ? 'ok' : 'warn'}`}>
+          {compliance.isCompliant ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+          <div>
+            <div className="compliance-title">
+              {compliance.isCompliant ? 'Space Verified' : 'Attention Required'}
+            </div>
+            <div className="compliance-sub">
+              {compliance.isCompliant
+                ? 'All items fit inside booked footprint & height limits.'
+                : `${compliance.outOfBoundsIds.length} outside bounds · ${compliance.overHeightIds.length} over height`}
+            </div>
+          </div>
+        </div>
+
+        <div className="metrics-grid">
+          <div className="metric-box">
+            <span>Floor Area</span>
+            <strong className="mono-num">{formatArea(compliance.areaM2, config.unit)}</strong>
+          </div>
+          <div className="metric-box">
+            <span>Print Graphics</span>
+            <strong className="mono-num">{compliance.totalPrintAreaM2.toFixed(1)} m²</strong>
+          </div>
+        </div>
+
+        <div className="control-block">
+          <div className="slider-header">
+            <span>Floor Space Utilization</span>
+            <span className="mono-num">{compliance.occupancyPct}%</span>
+          </div>
+          <div className="occupancy-bar">
+            <div
+              className={`occupancy-fill ${compliance.occupancyPct > 65 ? 'tight' : ''}`}
+              style={{ width: `${compliance.occupancyPct}%` }}
+            />
+          </div>
+          <p className="helper-note">
+            {compliance.occupancyPct <= 55
+              ? 'Comfortable visitor walkway clearance across open aisles.'
+              : 'Dense layout — consider leaving 1.2m clear aisle entryways.'}
+          </p>
+        </div>
+
+        {config.showShellWalls && config.openSides < 4 && (
+          <div className="control-block">
+            <label className="block-label">Brand Perimeter Shell Walls</label>
+            <div className="shell-wall-shortcuts">
+              <button
+                className="secondary-btn"
+                onClick={() => onSelectShellWall('back')}
+              >
+                Back Wall {config.shellArtwork.back?.assetId ? '✓' : ''}
+              </button>
+              {config.openSides <= 2 && (
+                <button
+                  className="secondary-btn"
+                  onClick={() => onSelectShellWall('left')}
+                >
+                  Left Wall {config.shellArtwork.left?.assetId ? '✓' : ''}
+                </button>
+              )}
+              {config.openSides === 1 && (
+                <button
+                  className="secondary-btn"
+                  onClick={() => onSelectShellWall('right')}
+                >
+                  Right Wall {config.shellArtwork.right?.assetId ? '✓' : ''}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="control-block">
+          <label className="block-label">Active Brand Palette</label>
+          <div className="custom-swatches-row">
+            <label className="swatch-picker">
+              <input
+                type="color"
+                value={config.primaryColor}
+                onChange={(e) => onUpdateConfig({ primaryColor: e.target.value })}
+              />
+              <span>Primary</span>
+            </label>
+            <label className="swatch-picker">
+              <input
+                type="color"
+                value={config.accentColor}
+                onChange={(e) => onUpdateConfig({ accentColor: e.target.value })}
+              />
+              <span>Accent</span>
+            </label>
+            <label className="swatch-picker">
+              <input
+                type="color"
+                value={config.wallColor}
+                onChange={(e) => onUpdateConfig({ wallColor: e.target.value })}
+              />
+              <span>Walls</span>
+            </label>
+          </div>
+          <button
+            className="secondary-btn full-width"
+            style={{ marginTop: 10 }}
+            onClick={onOpenBrandingTab}
+          >
+            Upload Logos &amp; Artwork
+          </button>
+        </div>
+
+        <div className="tip-card">
+          <strong>Pro Tip:</strong> Click any counter, pop-up wall, screen, or banner in the 3D
+          viewport to drag it into position or upload custom artwork directly to its print zone.
+        </div>
+      </div>
+    </aside>
+  );
+};

@@ -1,0 +1,868 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  Camera,
+  CheckCircle2,
+  Compass,
+  Eye,
+  Grid2x2,
+  Maximize2,
+  RotateCcw,
+} from 'lucide-react';
+import { CATALOG_MAP } from './data/catalog';
+import { BUILTIN_BRAND_ASSETS } from './data/palettes';
+import {
+  createItemId,
+  DEFAULT_STAND_CONFIG,
+  instantiateTemplate,
+  STAND_TEMPLATES,
+} from './data/templates';
+import { StandViewport3D, type StandViewportHandle } from './engine/StandViewport3D';
+import { LeftSidebar, type SidebarTab } from './components/LeftSidebar';
+import {
+  EstimateModal,
+  ExportModal,
+  ProjectsModal,
+  TemplatesModal,
+} from './components/Modals';
+import { RightInspector } from './components/RightInspector';
+import { TopBar } from './components/TopBar';
+import type {
+  BrandAsset,
+  CameraPreset,
+  CurrencyCode,
+  SavedProject,
+  ShellWallSide,
+  StandConfig,
+  StandItem,
+  StandTemplate,
+  SurfaceArtwork,
+  ViewMode,
+} from './types/stand';
+import { exportProductionBriefHtml } from './utils/briefExport';
+import { calculateEstimate, evaluateCompliance, formatArea, formatLength } from './utils/pricing';
+
+const STORAGE_KEY = 'standcraft_studio_projects_v1';
+
+interface HistorySnapshot {
+  config: StandConfig;
+  items: StandItem[];
+}
+
+function cloneSnapshot(config: StandConfig, items: StandItem[]): HistorySnapshot {
+  return {
+    config: JSON.parse(JSON.stringify(config)),
+    items: JSON.parse(JSON.stringify(items)),
+  };
+}
+
+function readImageFile(file: File): Promise<BrandAsset> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const img = new Image();
+      img.onload = () => {
+        resolve({
+          id: `asset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+          name: file.name.replace(/\.[^.]+$/, ''),
+          dataUrl,
+          width: img.naturalWidth || 1000,
+          height: img.naturalHeight || 1000,
+          kind: 'uploaded',
+          category: file.type.includes('svg') || file.type.includes('png') ? 'logo' : 'banner',
+        });
+      };
+      img.onerror = () => {
+        resolve({
+          id: `asset-${Date.now().toString(36)}`,
+          name: file.name.replace(/\.[^.]+$/, ''),
+          dataUrl,
+          width: 1000,
+          height: 1000,
+          kind: 'uploaded',
+          category: 'banner',
+        });
+      };
+      img.src = dataUrl;
+    };
+    reader.onerror = () => reject(new Error('Failed to read image file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadInitialProjects(): SavedProject[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as SavedProject[];
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {
+    // fallback to default template
+  }
+  const initial = instantiateTemplate(STAND_TEMPLATES[0]);
+  return [
+    {
+      id: 'proj-default',
+      name: 'Autumn Expo — Corner Showcase',
+      updatedAt: Date.now(),
+      config: initial.config,
+      items: initial.items,
+      customAssets: [],
+    },
+  ];
+}
+
+export function App() {
+  const [projects, setProjects] = useState<SavedProject[]>(() => loadInitialProjects());
+  const [activeProjectId, setActiveProjectId] = useState<string>(() => projects[0]?.id || 'proj-default');
+
+  const activeProj = projects.find((p) => p.id === activeProjectId) || projects[0];
+
+  const [projectName, setProjectName] = useState<string>(activeProj.name);
+  const [config, setConfig] = useState<StandConfig>(activeProj.config);
+  const [items, setItems] = useState<StandItem[]>(activeProj.items);
+  const [customAssets, setCustomAssets] = useState<BrandAsset[]>(activeProj.customAssets || []);
+
+  // History stack
+  const [history, setHistory] = useState<HistorySnapshot[]>(() => [
+    cloneSnapshot(activeProj.config, activeProj.items),
+  ]);
+  const [historyIdx, setHistoryIdx] = useState<number>(0);
+
+  // UI & selection state
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('catalog');
+  const [viewMode, setViewMode] = useState<ViewMode>('3d');
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [selectedSurfaceId, setSelectedSurfaceId] = useState<string | null>(null);
+  const [selectedShellWall, setSelectedShellWall] = useState<ShellWallSide | null>(null);
+  const [paintAssetId, setPaintAssetId] = useState<string | null>(null);
+  const [currency, setCurrency] = useState<CurrencyCode>('GBP');
+  const [pricingMode, setPricingMode] = useState<'hire' | 'buy'>('hire');
+
+  // Modals
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+  const [showEstimateModal, setShowEstimateModal] = useState(false);
+  const [showProjectsModal, setShowProjectsModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+
+  // Toast feedback
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const viewportRef = useRef<StandViewportHandle | null>(null);
+
+  const notify = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 2600);
+  }, []);
+
+  const allAssets = useMemo(
+    () => [...customAssets, ...BUILTIN_BRAND_ASSETS],
+    [customAssets]
+  );
+
+  const assetsMap = useMemo(() => {
+    const map = new Map<string, BrandAsset>();
+    allAssets.forEach((a) => map.set(a.id, a));
+    return map;
+  }, [allAssets]);
+
+  const compliance = useMemo(() => evaluateCompliance(config, items), [config, items]);
+  const estimate = useMemo(
+    () => calculateEstimate(config, items, pricingMode),
+    [config, items, pricingMode]
+  );
+
+  // Commit state to undo stack
+  const pushHistory = useCallback(
+    (nextConfig: StandConfig, nextItems: StandItem[]) => {
+      setHistory((prev) => {
+        const sliced = prev.slice(0, historyIdx + 1);
+        const updated = [...sliced, cloneSnapshot(nextConfig, nextItems)].slice(-40);
+        setHistoryIdx(updated.length - 1);
+        return updated;
+      });
+    },
+    [historyIdx]
+  );
+
+  const handleUndo = useCallback(() => {
+    if (historyIdx <= 0) return;
+    const target = history[historyIdx - 1];
+    setHistoryIdx(historyIdx - 1);
+    setConfig(JSON.parse(JSON.stringify(target.config)));
+    setItems(JSON.parse(JSON.stringify(target.items)));
+  }, [history, historyIdx]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIdx >= history.length - 1) return;
+    const target = history[historyIdx + 1];
+    setHistoryIdx(historyIdx + 1);
+    setConfig(JSON.parse(JSON.stringify(target.config)));
+    setItems(JSON.parse(JSON.stringify(target.items)));
+  }, [history, historyIdx]);
+
+  // Auto-save active project to localStorage
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setProjects((prev) => {
+        const next = prev.map((p) =>
+          p.id === activeProjectId
+            ? {
+                ...p,
+                name: projectName,
+                updatedAt: Date.now(),
+                config,
+                items,
+                customAssets,
+              }
+            : p
+        );
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          // storage quota exceeded if huge images uploaded; silently skip persistence
+        }
+        return next;
+      });
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [activeProjectId, projectName, config, items, customAssets]);
+
+  const updateConfig = useCallback(
+    (patch: Partial<StandConfig>) => {
+      setConfig((prev) => {
+        const next = { ...prev, ...patch };
+        pushHistory(next, items);
+        return next;
+      });
+    },
+    [items, pushHistory]
+  );
+
+  const addCatalogItem = useCallback(
+    (catalogId: string) => {
+      const def = CATALOG_MAP[catalogId];
+      if (!def) return;
+      const offsetJitter = ((items.length % 5) - 2) * 0.22;
+      const newItem: StandItem = {
+        id: createItemId(catalogId),
+        catalogId,
+        name: def.name,
+        x: Math.max(-config.width / 2 + 0.5, Math.min(config.width / 2 - 0.5, offsetJitter)),
+        y: def.elevatedY ?? 0,
+        z: Math.max(-config.depth / 2 + 0.5, Math.min(config.depth / 2 - 0.5, offsetJitter * 0.7)),
+        rotationY: 0,
+        dims: { ...def.defaultDims },
+        backlit: def.supportsBacklit ? true : false,
+        locked: false,
+        visible: true,
+        artwork: {},
+      };
+      const nextItems = [...items, newItem];
+      setItems(nextItems);
+      setSelectedItemId(newItem.id);
+      setSelectedSurfaceId(def.surfaces[0]?.id || null);
+      setSelectedShellWall(null);
+      pushHistory(config, nextItems);
+      notify(`Added ${def.shortName}`);
+    },
+    [items, config, pushHistory, notify]
+  );
+
+  const updateItem = useCallback(
+    (id: string, patch: Partial<StandItem>, commit = true) => {
+      setItems((prev) => {
+        const next = prev.map((it) => (it.id === id ? { ...it, ...patch } : it));
+        if (commit) pushHistory(config, next);
+        return next;
+      });
+    },
+    [config, pushHistory]
+  );
+
+  const moveItem = useCallback(
+    (id: string, x: number, z: number, commit: boolean) => {
+      setItems((prev) => {
+        const next = prev.map((it) => (it.id === id ? { ...it, x, z } : it));
+        if (commit) pushHistory(config, next);
+        return next;
+      });
+    },
+    [config, pushHistory]
+  );
+
+  const updateItemArtwork = useCallback(
+    (itemId: string, surfaceId: string, patch: Partial<SurfaceArtwork>) => {
+      setItems((prev) => {
+        const next = prev.map((it) => {
+          if (it.id !== itemId) return it;
+          const cur: SurfaceArtwork = it.artwork[surfaceId] || {
+            assetId: null,
+            fit: 'cover',
+            scale: 1,
+            offsetX: 0,
+            offsetY: 0,
+            bgColor: config.primaryColor,
+            emissive: false,
+          };
+          return {
+            ...it,
+            artwork: {
+              ...it.artwork,
+              [surfaceId]: { ...cur, ...patch },
+            },
+          };
+        });
+        pushHistory(config, next);
+        return next;
+      });
+    },
+    [config, pushHistory]
+  );
+
+  const updateShellArtwork = useCallback(
+    (side: ShellWallSide, patch: Partial<SurfaceArtwork> | null) => {
+      setConfig((prev) => {
+        const nextShell = { ...prev.shellArtwork };
+        if (patch === null) {
+          delete nextShell[side];
+        } else {
+          const cur: SurfaceArtwork = nextShell[side] || {
+            assetId: null,
+            fit: 'cover',
+            scale: 1,
+            offsetX: 0,
+            offsetY: 0,
+            bgColor: prev.primaryColor,
+            emissive: false,
+          };
+          nextShell[side] = { ...cur, ...patch };
+        }
+        const nextCfg = { ...prev, shellArtwork: nextShell };
+        pushHistory(nextCfg, items);
+        return nextCfg;
+      });
+    },
+    [items, pushHistory]
+  );
+
+  const duplicateItem = useCallback(
+    (id: string) => {
+      const src = items.find((i) => i.id === id);
+      if (!src) return;
+      const copy: StandItem = {
+        ...JSON.parse(JSON.stringify(src)),
+        id: createItemId(src.catalogId),
+        x: Number((src.x + 0.35).toFixed(2)),
+        z: Number((src.z + 0.25).toFixed(2)),
+        locked: false,
+      };
+      const nextItems = [...items, copy];
+      setItems(nextItems);
+      setSelectedItemId(copy.id);
+      pushHistory(config, nextItems);
+      notify(`Duplicated ${src.name}`);
+    },
+    [items, config, pushHistory, notify]
+  );
+
+  const deleteItem = useCallback(
+    (id: string) => {
+      const nextItems = items.filter((i) => i.id !== id);
+      setItems(nextItems);
+      if (selectedItemId === id) {
+        setSelectedItemId(null);
+        setSelectedSurfaceId(null);
+      }
+      pushHistory(config, nextItems);
+      notify('Removed equipment from stand');
+    },
+    [items, selectedItemId, config, pushHistory, notify]
+  );
+
+  const handleUploadAssets = useCallback(
+    async (files: FileList) => {
+      const uploaded: BrandAsset[] = [];
+      for (const file of Array.from(files)) {
+        if (!file.type.startsWith('image/')) continue;
+        try {
+          uploaded.push(await readImageFile(file));
+        } catch {
+          // skip unreadable
+        }
+      }
+      if (uploaded.length > 0) {
+        setCustomAssets((prev) => [...uploaded, ...prev]);
+        setPaintAssetId(uploaded[0].id);
+        notify(`Uploaded ${uploaded.length} graphic${uploaded.length > 1 ? 's' : ''} — click any 3D surface to assign!`);
+      }
+    },
+    [notify]
+  );
+
+  const handleUploadAssetForSurface = useCallback(
+    async (
+      file: File,
+      target:
+        | { kind: 'item'; itemId: string; surfaceId: string }
+        | { kind: 'shell'; side: ShellWallSide }
+    ) => {
+      try {
+        const asset = await readImageFile(file);
+        setCustomAssets((prev) => [asset, ...prev]);
+        if (target.kind === 'item') {
+          updateItemArtwork(target.itemId, target.surfaceId, {
+            assetId: asset.id,
+            fit: asset.category === 'logo' ? 'contain' : 'cover',
+          });
+        } else {
+          updateShellArtwork(target.side, {
+            assetId: asset.id,
+            fit: 'cover',
+          });
+        }
+        notify(`Applied "${asset.name}" to stand surface`);
+      } catch {
+        notify('Could not load image file');
+      }
+    },
+    [updateItemArtwork, updateShellArtwork, notify]
+  );
+
+  const handlePaintSurface = useCallback(
+    (
+      target:
+        | { kind: 'item'; itemId: string; surfaceId: string }
+        | { kind: 'shell'; side: ShellWallSide }
+    ) => {
+      if (!paintAssetId) return;
+      const asset = assetsMap.get(paintAssetId);
+      const fit = asset?.category === 'logo' ? 'contain' : 'cover';
+      if (target.kind === 'item') {
+        updateItemArtwork(target.itemId, target.surfaceId, {
+          assetId: paintAssetId,
+          fit,
+        });
+        notify(`Applied "${asset?.name || 'Artwork'}" to surface`);
+      } else {
+        updateShellArtwork(target.side, {
+          assetId: paintAssetId,
+          fit: 'cover',
+        });
+        notify(`Applied "${asset?.name || 'Artwork'}" to ${target.side.toUpperCase()} wall`);
+      }
+    },
+    [paintAssetId, assetsMap, updateItemArtwork, updateShellArtwork, notify]
+  );
+
+  const applyTemplate = useCallback(
+    (template: StandTemplate) => {
+      const inst = instantiateTemplate(template);
+      setConfig(inst.config);
+      setItems(inst.items);
+      setSelectedItemId(null);
+      setSelectedSurfaceId(null);
+      setSelectedShellWall(null);
+      setPaintAssetId(null);
+      pushHistory(inst.config, inst.items);
+      setTimeout(() => viewportRef.current?.setCameraPreset('isometric', true), 40);
+      notify(`Loaded "${template.name}" template`);
+    },
+    [pushHistory, notify]
+  );
+
+  const startBlankStand = useCallback(
+    (w: number, d: number, openSides: 1 | 2 | 3 | 4) => {
+      const nextCfg: StandConfig = {
+        ...DEFAULT_STAND_CONFIG,
+        width: w,
+        depth: d,
+        openSides,
+        showShellWalls: openSides < 4,
+      };
+      setConfig(nextCfg);
+      setItems([]);
+      setSelectedItemId(null);
+      setSelectedShellWall(null);
+      pushHistory(nextCfg, []);
+      setTimeout(() => viewportRef.current?.setCameraPreset('isometric', true), 40);
+      notify(`Created blank ${w}×${d}m stand`);
+    },
+    [pushHistory, notify]
+  );
+
+  // Export Actions
+  const handleDownloadPng = useCallback(() => {
+    const dataUrl = viewportRef.current?.captureSnapshot(1600, 1000);
+    if (!dataUrl) return;
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-3d-render.png`;
+    a.click();
+    notify('Saved 1600×1000 studio PNG snapshot');
+  }, [projectName, notify]);
+
+  const handleExportBrief = useCallback(() => {
+    const snap = viewportRef.current?.captureSnapshot(1400, 840) || null;
+    exportProductionBriefHtml(
+      projectName,
+      config,
+      items,
+      assetsMap,
+      snap,
+      currency,
+      pricingMode
+    );
+    notify('Opened print-ready Exhibition Production Brief');
+  }, [projectName, config, items, assetsMap, currency, pricingMode, notify]);
+
+  const handleDownloadJson = useCallback(() => {
+    const payload: SavedProject = {
+      id: activeProjectId,
+      name: projectName,
+      updatedAt: Date.now(),
+      config,
+      items,
+      customAssets,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.standcraft.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    notify('Exported project .JSON backup');
+  }, [activeProjectId, projectName, config, items, customAssets, notify]);
+
+  const handleImportJson = useCallback(
+    (file: File) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(String(reader.result || '')) as SavedProject;
+          if (!parsed.config || !Array.isArray(parsed.items)) throw new Error('Invalid');
+          const newId = `proj-${Date.now().toString(36)}`;
+          const imported: SavedProject = {
+            ...parsed,
+            id: newId,
+            updatedAt: Date.now(),
+          };
+          setProjects((prev) => [imported, ...prev]);
+          setActiveProjectId(newId);
+          setProjectName(imported.name || 'Imported Stand');
+          setConfig(imported.config);
+          setItems(imported.items);
+          setCustomAssets(imported.customAssets || []);
+          pushHistory(imported.config, imported.items);
+          notify(`Imported "${imported.name}"`);
+        } catch {
+          notify('Invalid StandCraft JSON file');
+        }
+      };
+      reader.readAsText(file);
+    },
+    [pushHistory, notify]
+  );
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) handleRedo();
+        else handleUndo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && selectedItemId) {
+        e.preventDefault();
+        duplicateItem(selectedItemId);
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedItemId) {
+        e.preventDefault();
+        deleteItem(selectedItemId);
+      } else if (e.key.toLowerCase() === 'r' && selectedItemId) {
+        const cur = items.find((i) => i.id === selectedItemId);
+        if (cur) {
+          updateItem(cur.id, { rotationY: (cur.rotationY + 90) % 360 }, true);
+        }
+      } else if (e.key === 'Escape') {
+        setPaintAssetId(null);
+        setSelectedItemId(null);
+        setSelectedShellWall(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleUndo, handleRedo, selectedItemId, duplicateItem, deleteItem, items, updateItem]);
+
+  const selectedItem = useMemo(
+    () => items.find((i) => i.id === selectedItemId) || null,
+    [items, selectedItemId]
+  );
+
+  const triggerCamera = (preset: CameraPreset) => {
+    if (preset === 'top') {
+      setViewMode('2d');
+    } else if (preset === 'eye-level') {
+      setViewMode('eye-level');
+    } else {
+      if (viewMode !== '3d') setViewMode('3d');
+      setTimeout(() => viewportRef.current?.setCameraPreset(preset), 10);
+    }
+  };
+
+  const openSidesBadge =
+    config.openSides === 1
+      ? 'Inline (1 Open)'
+      : config.openSides === 2
+        ? 'Corner (2 Open)'
+        : config.openSides === 3
+          ? 'Peninsula (3 Open)'
+          : 'Island (4 Open)';
+
+  return (
+    <div className="studio-app-shell">
+      <TopBar
+        projectName={projectName}
+        onChangeProjectName={setProjectName}
+        viewMode={viewMode}
+        onChangeViewMode={setViewMode}
+        config={config}
+        onUpdateConfig={updateConfig}
+        canUndo={historyIdx > 0}
+        canRedo={historyIdx < history.length - 1}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        estimatedTotalGbp={estimate.grandTotalGbp}
+        currency={currency}
+        onOpenProjects={() => setShowProjectsModal(true)}
+        onOpenTemplates={() => setShowTemplatesModal(true)}
+        onOpenEstimate={() => setShowEstimateModal(true)}
+        onOpenExport={() => setShowExportModal(true)}
+      />
+
+      <main className="studio-workspace">
+        <LeftSidebar
+          activeTab={sidebarTab}
+          onChangeTab={setSidebarTab}
+          config={config}
+          onUpdateConfig={updateConfig}
+          items={items}
+          selectedItemId={selectedItemId}
+          onSelectItem={(id) => {
+            setSelectedItemId(id);
+            setSelectedShellWall(null);
+          }}
+          onAddCatalogItem={addCatalogItem}
+          onDuplicateItem={duplicateItem}
+          onDeleteItem={deleteItem}
+          onUpdateItem={(id, patch) => updateItem(id, patch, true)}
+          assets={allAssets}
+          onUploadAssets={handleUploadAssets}
+          onDeleteAsset={(id) => {
+            setCustomAssets((prev) => prev.filter((a) => a.id !== id));
+            if (paintAssetId === id) setPaintAssetId(null);
+          }}
+          paintAssetId={paintAssetId}
+          onSetPaintAssetId={setPaintAssetId}
+          onApplyTemplate={applyTemplate}
+          currency={currency}
+          pricingMode={pricingMode}
+        />
+
+        <section className="viewport-stage" aria-label="Interactive 3D exhibition stand canvas">
+          <StandViewport3D
+            ref={viewportRef}
+            config={config}
+            items={items}
+            assetsMap={assetsMap}
+            selectedItemId={selectedItemId}
+            selectedShellWall={selectedShellWall}
+            viewMode={viewMode}
+            compliance={compliance}
+            paintAssetId={paintAssetId}
+            onSelectItem={(itemId, surfaceId) => {
+              setSelectedItemId(itemId);
+              setSelectedSurfaceId(surfaceId || null);
+            }}
+            onSelectShellWall={setSelectedShellWall}
+            onMoveItem={moveItem}
+            onPaintSurface={handlePaintSurface}
+          />
+
+          {/* Top-Left Floating Space & Compliance HUD */}
+          <div className="viewport-hud-top">
+            <div className="hud-space-pill">
+              <strong className="mono-num">
+                {formatLength(config.width, config.unit)} × {formatLength(config.depth, config.unit)}
+              </strong>
+              <span className="hud-sep">·</span>
+              <span className="mono-num">{formatArea(compliance.areaM2, config.unit)}</span>
+              <span className="hud-sep">·</span>
+              <span>{openSidesBadge}</span>
+            </div>
+
+            <div className={`hud-compliance-pill ${compliance.isCompliant ? 'ok' : 'warn'}`}>
+              {compliance.isCompliant ? (
+                <>
+                  <CheckCircle2 size={13} />
+                  <span>Within Bounds</span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle size={13} />
+                  <span>
+                    {compliance.outOfBoundsIds.length > 0
+                      ? `${compliance.outOfBoundsIds.length} Out of Bounds`
+                      : `${compliance.overHeightIds.length} Over Height Limit`}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom-Center Floating Camera Dock */}
+          <div className="viewport-camera-dock" role="toolbar" aria-label="Camera views">
+            <button onClick={() => triggerCamera('isometric')} title="Isometric 3D overview">
+              <Compass size={14} />
+              <span>Iso</span>
+            </button>
+            <button onClick={() => triggerCamera('front')} title="Front elevation view">
+              <Maximize2 size={14} />
+              <span>Front</span>
+            </button>
+            <button onClick={() => triggerCamera('left')} title="Left angle">
+              <span>Left</span>
+            </button>
+            <button onClick={() => triggerCamera('right')} title="Right angle">
+              <span>Right</span>
+            </button>
+            <button onClick={() => triggerCamera('top')} title="2D Top-Down Floor Plan">
+              <Grid2x2 size={14} />
+              <span>Top 2D</span>
+            </button>
+            <button onClick={() => triggerCamera('eye-level')} title="Visitor eye-level view (1.65m)">
+              <Eye size={14} />
+              <span>Eye Level</span>
+            </button>
+            <div className="dock-divider" />
+            <button onClick={handleDownloadPng} title="Download high-res PNG render">
+              <Camera size={14} />
+              <span>Snapshot</span>
+            </button>
+            <button
+              onClick={() => viewportRef.current?.setCameraPreset(viewMode === '2d' ? 'top' : 'isometric')}
+              title="Reset camera"
+              aria-label="Reset camera"
+            >
+              <RotateCcw size={14} />
+            </button>
+          </div>
+
+          {toast && <div className="studio-toast">{toast}</div>}
+        </section>
+
+        <RightInspector
+          config={config}
+          onUpdateConfig={updateConfig}
+          selectedItem={selectedItem}
+          selectedSurfaceId={selectedSurfaceId}
+          selectedShellWall={selectedShellWall}
+          onSelectShellWall={setSelectedShellWall}
+          onUpdateItem={updateItem}
+          onUpdateItemArtwork={updateItemArtwork}
+          onUpdateShellArtwork={updateShellArtwork}
+          onDuplicateItem={duplicateItem}
+          onDeleteItem={deleteItem}
+          assets={allAssets}
+          onUploadAssetForSurface={handleUploadAssetForSurface}
+          compliance={compliance}
+          onOpenBrandingTab={() => setSidebarTab('branding')}
+        />
+      </main>
+
+      <TemplatesModal
+        open={showTemplatesModal}
+        onClose={() => setShowTemplatesModal(false)}
+        onApplyTemplate={applyTemplate}
+        onStartBlank={startBlankStand}
+      />
+
+      <EstimateModal
+        open={showEstimateModal}
+        onClose={() => setShowEstimateModal(false)}
+        config={config}
+        items={items}
+        currency={currency}
+        onChangeCurrency={setCurrency}
+        pricingMode={pricingMode}
+        onChangePricingMode={setPricingMode}
+        onExportBrief={handleExportBrief}
+      />
+
+      <ProjectsModal
+        open={showProjectsModal}
+        onClose={() => setShowProjectsModal(false)}
+        projects={projects}
+        activeProjectId={activeProjectId}
+        onSaveNewCopy={() => {
+          const newId = `proj-${Date.now().toString(36)}`;
+          const copy: SavedProject = {
+            id: newId,
+            name: `${projectName} (Copy)`,
+            updatedAt: Date.now(),
+            config: JSON.parse(JSON.stringify(config)),
+            items: JSON.parse(JSON.stringify(items)),
+            customAssets: [...customAssets],
+          };
+          setProjects((prev) => [copy, ...prev]);
+          setActiveProjectId(newId);
+          setProjectName(copy.name);
+          notify(`Saved copy "${copy.name}"`);
+        }}
+        onLoadProject={(proj) => {
+          setActiveProjectId(proj.id);
+          setProjectName(proj.name);
+          setConfig(proj.config);
+          setItems(proj.items);
+          setCustomAssets(proj.customAssets || []);
+          setSelectedItemId(null);
+          setSelectedShellWall(null);
+          setHistory([cloneSnapshot(proj.config, proj.items)]);
+          setHistoryIdx(0);
+          notify(`Loaded "${proj.name}"`);
+        }}
+        onDeleteProject={(id) => {
+          setProjects((prev) => {
+            const next = prev.filter((p) => p.id !== id);
+            if (id === activeProjectId && next[0]) {
+              setActiveProjectId(next[0].id);
+              setProjectName(next[0].name);
+              setConfig(next[0].config);
+              setItems(next[0].items);
+            }
+            return next;
+          });
+        }}
+        onImportJson={handleImportJson}
+      />
+
+      <ExportModal
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        onDownloadPng={handleDownloadPng}
+        onExportBrief={handleExportBrief}
+        onDownloadJson={handleDownloadJson}
+      />
+    </div>
+  );
+}
+
+export default App;
