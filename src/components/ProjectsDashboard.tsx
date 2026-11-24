@@ -2,9 +2,12 @@ import React, { useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
+  Box,
   Copy,
   Download,
+  FileImage,
   FolderOpen,
+  Layers,
   LayoutTemplate,
   Palette,
   Pencil,
@@ -24,6 +27,7 @@ interface ProjectsDashboardProps {
   activeProjectId: string;
   currency: CurrencyCode;
   canReturnToEditor: boolean;
+  customAssetCount: number;
   onReturnToEditor: () => void;
   onOpenProject: (project: SavedProject) => void;
   onCreateBlankProject: () => void;
@@ -35,6 +39,8 @@ interface ProjectsDashboardProps {
   onImportJson: (file: File) => void;
   onOpenSetupGuide: () => void;
   onStartWalkthrough: () => void;
+  onOpenAssetLibrary: () => void;
+  onOpenAssetCreator: (mode: 'shapes' | 'schematic') => void;
 }
 
 function formatRelativeTime(ts: number): string {
@@ -186,6 +192,7 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
   activeProjectId,
   currency,
   canReturnToEditor,
+  customAssetCount,
   onReturnToEditor,
   onOpenProject,
   onCreateBlankProject,
@@ -197,6 +204,8 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
   onImportJson,
   onOpenSetupGuide,
   onStartWalkthrough,
+  onOpenAssetLibrary,
+  onOpenAssetCreator,
 }) => {
   const [search, setSearch] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -249,6 +258,13 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
             <Play size={13} />
             <span>Walkthrough</span>
           </button>
+          <button type="button" className="dash-ghost-btn" onClick={onOpenAssetLibrary}>
+            <Layers size={14} />
+            <span>Asset Library</span>
+            {customAssetCount > 0 && (
+              <span className="dash-header-badge mono-num">{customAssetCount}</span>
+            )}
+          </button>
           <button type="button" className="dash-ghost-btn" onClick={onOpenSetupGuide}>
             <Palette size={14} />
             <span>Brand Setup</span>
@@ -268,8 +284,8 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
             <div>
               <h1 className="dash-hero-title">Your Stand Projects</h1>
               <p className="dash-hero-sub">
-                Create a new stand, resume a saved design, duplicate concepts, or start from a
-                template.
+                Create a new stand, resume a saved design, build reusable custom assets, or start
+                from a template.
               </p>
             </div>
 
@@ -307,6 +323,64 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
               />
             </div>
           </div>
+
+          {/* Quick Asset Library & Asset Creator Options */}
+          <section className="dash-quick-tools" aria-label="Asset tools">
+            <button
+              type="button"
+              id="dash-open-asset-library"
+              className="dash-quick-card"
+              onClick={onOpenAssetLibrary}
+            >
+              <div className="dash-quick-icon">
+                <Layers size={20} />
+              </div>
+              <div className="dash-quick-text">
+                <div className="dash-quick-title-row">
+                  <strong>Asset Library</strong>
+                  <span className="dash-count-badge mono-num">{customAssetCount}</span>
+                </div>
+                <span>Browse, upload, name &amp; configure reusable 3D models and graphics</span>
+              </div>
+              <ArrowRight size={15} color="#94a3b8" />
+            </button>
+
+            <button
+              type="button"
+              id="dash-open-asset-creator"
+              className="dash-quick-card"
+              onClick={() => onOpenAssetCreator('shapes')}
+            >
+              <div className="dash-quick-icon accent">
+                <Box size={20} />
+              </div>
+              <div className="dash-quick-text">
+                <div className="dash-quick-title-row">
+                  <strong>Asset Creator (Shapes)</strong>
+                </div>
+                <span>Build custom products, furniture, structures or machines with mm sizing</span>
+              </div>
+              <ArrowRight size={15} color="#94a3b8" />
+            </button>
+
+            <button
+              type="button"
+              id="dash-open-schematic-creator"
+              className="dash-quick-card"
+              onClick={() => onOpenAssetCreator('schematic')}
+            >
+              <div className="dash-quick-icon">
+                <FileImage size={20} />
+              </div>
+              <div className="dash-quick-text">
+                <div className="dash-quick-title-row">
+                  <strong>2D Schematic to 3D</strong>
+                </div>
+                <span>Upload a 2D drawing to auto-generate or trace a scaled 3D asset</span>
+              </div>
+              <ArrowRight size={15} color="#94a3b8" />
+            </button>
+          </section>
 
           {/* Saved Projects Grid */}
           <section aria-label="Saved projects">

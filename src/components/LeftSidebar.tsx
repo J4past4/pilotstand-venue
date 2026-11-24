@@ -62,6 +62,7 @@ interface LeftSidebarProps {
   onLoadSampleMachine: () => void;
   customBuiltAssets: CustomBuiltAsset[];
   onOpenAssetBuilder: (mode: 'shapes' | 'schematic') => void;
+  onOpenAssetLibrary: () => void;
   onPlaceCustomBuiltAsset: (assetId: string) => void;
   onDeleteCustomBuiltAsset: (assetId: string) => void;
   paintAssetId: string | null;
@@ -125,6 +126,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onLoadSampleMachine,
   customBuiltAssets,
   onOpenAssetBuilder,
+  onOpenAssetLibrary,
   onPlaceCustomBuiltAsset,
   onDeleteCustomBuiltAsset,
   paintAssetId,
@@ -628,10 +630,16 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   <span className="custom-3d-title">
                     <Layers size={13} /> Custom Asset Builder
                   </span>
-                  <span className="mono-num custom-3d-formats">MM · 2D TRACE</span>
+                  <button
+                    type="button"
+                    className="cab-text-btn"
+                    onClick={onOpenAssetLibrary}
+                  >
+                    Open Library →
+                  </button>
                 </div>
                 <p className="custom-builder-desc">
-                  Build rough machines or props from dimensioned shapes, or auto-generate &amp; trace from a 2D schematic.
+                  Create custom products, furniture, structures, or machinery from dimensioned shapes, or auto-generate &amp; trace from a 2D schematic.
                 </p>
                 <div className="custom-3d-actions">
                   <button

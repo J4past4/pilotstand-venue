@@ -838,3 +838,39 @@
     min-height: 360px;
   }
 }
+
+.cab-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cab-category-select {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  color: var(--ink-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cab-category-select:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+}
+
+.cab-saved-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--status-ok);
+  background: var(--status-ok-bg);
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+

@@ -72,6 +72,14 @@ export interface CatalogItemDef {
 
 export type CustomModelFormat = 'glb' | 'gltf' | 'stl' | 'obj';
 
+export type CustomAssetCategory =
+  | 'product'
+  | 'machine'
+  | 'furniture'
+  | 'structure'
+  | 'signage'
+  | 'other';
+
 export interface CustomModelAsset {
   id: string;
   name: string;
@@ -80,6 +88,9 @@ export interface CustomModelAsset {
   originalDims: Dimensions3D; // normalized dimensions in meters
   /** Object URL or data URL for fast in-session loading */
   blobUrl: string;
+  category?: CustomAssetCategory;
+  zUpFix?: boolean;
+  defaultTintColor?: string;
 }
 
 export type AssetPrimitiveKind =
@@ -120,6 +131,7 @@ export interface AssetPrimitive {
 export interface CustomBuiltAsset {
   id: string;
   name: string;
+  category?: CustomAssetCategory;
   primitives: AssetPrimitive[];
   /** Bounding dimensions in meters */
   dims: Dimensions3D;

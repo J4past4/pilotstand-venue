@@ -40,6 +40,7 @@ import {
   CustomAssetBuilderModal,
   type BuilderMode,
 } from './components/CustomAssetBuilderModal';
+import { AssetLibraryModal } from './components/AssetLibraryModal';
 import { applyAgentActions } from './agent/actionExecutor';
 import { sendStandAgentPrompt } from './agent/agentClient';
 import type { AgentAudioPayload, AgentChatMessage, AgentHistoryTurn } from './agent/types';
@@ -49,6 +50,7 @@ import type {
   BrandKitSetupResult,
   CameraPreset,
   CurrencyCode,
+  CustomAssetCategory,
   CustomBuiltAsset,
   CustomModelAsset,
   SavedProject,
@@ -68,10 +70,24 @@ import { exportProductionBriefHtml } from './utils/briefExport';
 import { calculateEstimate, evaluateCompliance, formatArea, formatLength } from './utils/pricing';
 
 const STORAGE_KEY = 'zuki_exhibition_planner_projects_v2';
+const ASSET_LIBRARY_STORAGE_KEY = 'zuki_custom_asset_library_v1';
 const PURGED_STORAGE_KEYS = [
   'standcraft_studio_projects_v1',
   'zuki_exhibition_planner_projects_v1',
 ];
+
+function loadGlobalBuiltAssets(): CustomBuiltAsset[] {
+  try {
+    const raw = localStorage.getItem(ASSET_LIBRARY_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as CustomBuiltAsset[];
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return [];
+}
 
 interface HistorySnapshot {
   config: StandConfig;
@@ -156,9 +172,21 @@ export function App() {
   const [config, setConfig] = useState<StandConfig>(activeProj.config);
   const [items, setItems] = useState<StandItem[]>(activeProj.items);
   const [customAssets, setCustomAssets] = useState<BrandAsset[]>(activeProj.customAssets || []);
-  const [customBuiltAssets, setCustomBuiltAssets] = useState<CustomBuiltAsset[]>(
-    activeProj.customBuiltAssets || []
-  );
+  const [customBuiltAssets, setCustomBuiltAssets] = useState<CustomBuiltAsset[]>(() => {
+    const globalList = loadGlobalBuiltAssets();
+    const projList = activeProj.customBuiltAssets || [];
+    const merged = new Map<string, CustomBuiltAsset>();
+    for (const a of [...globalList, ...projList]) merged.set(a.id, a);
+    return Array.from(merged.values());
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ASSET_LIBRARY_STORAGE_KEY, JSON.stringify(customBuiltAssets));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [customBuiltAssets]);
 
   // Main Projects Dashboard, Setup Guide & Guided Walkthrough Popup state
   const [showDashboard, setShowDashboard] = useState<boolean>(true);
@@ -194,12 +222,15 @@ export function App() {
   const [showEstimateModal, setShowEstimateModal] = useState(false);
   const [showProjectsModal, setShowProjectsModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showAssetLibrary, setShowAssetLibrary] = useState(false);
   const [showAssetBuilder, setShowAssetBuilder] = useState(false);
   const [assetBuilderMode, setAssetBuilderMode] = useState<BuilderMode>('shapes');
+  const [assetBuilderContext, setAssetBuilderContext] = useState<'editor' | 'dashboard'>('editor');
   const [editingCustomAsset, setEditingCustomAsset] = useState<{
     itemId?: string;
     assetId?: string;
     name: string;
+    category?: CustomAssetCategory;
     primitives: AssetPrimitive[];
   } | null>(null);
   const [showAgentDrawer, setShowAgentDrawer] = useState(false);
@@ -357,7 +388,8 @@ export function App() {
         rotationY: 0,
         dims: { ...asset.originalDims },
         lockAspect: true,
-        zUpFix: false,
+        zUpFix: Boolean(asset.zUpFix),
+        modelTintColor: asset.defaultTintColor,
         locked: false,
         visible: true,
         artwork: {},
@@ -442,26 +474,48 @@ export function App() {
     [items, config, pushHistory, notify]
   );
 
-  const handleOpenAssetBuilder = useCallback((mode: BuilderMode) => {
-    setEditingCustomAsset(null);
-    setAssetBuilderMode(mode);
-    setShowAssetBuilder(true);
-    setRailPanelOpen(false);
-  }, []);
+  const handleOpenAssetBuilder = useCallback(
+    (mode: BuilderMode, context: 'editor' | 'dashboard' = 'editor') => {
+      setEditingCustomAsset(null);
+      setAssetBuilderMode(mode);
+      setAssetBuilderContext(context);
+      setShowAssetBuilder(true);
+      setRailPanelOpen(false);
+    },
+    []
+  );
 
   const handleEditCustomBuiltAsset = useCallback((item: StandItem) => {
+    const matched = customBuiltAssets.find((a) => a.id === item.customAssetId);
     setEditingCustomAsset({
       itemId: item.id,
       assetId: item.customAssetId,
       name: item.name,
+      category: matched?.category,
       primitives: item.customPrimitives || [],
     });
+    setAssetBuilderContext('editor');
+    setAssetBuilderMode('shapes');
+    setShowAssetBuilder(true);
+  }, [customBuiltAssets]);
+
+  const handleEditLibraryBuiltAsset = useCallback((asset: CustomBuiltAsset) => {
+    setEditingCustomAsset({
+      assetId: asset.id,
+      name: asset.name,
+      category: asset.category,
+      primitives: asset.primitives,
+    });
+    setAssetBuilderContext('dashboard');
     setAssetBuilderMode('shapes');
     setShowAssetBuilder(true);
   }, []);
 
   const handleSaveBuiltAsset = useCallback(
-    (asset: CustomBuiltAsset, options: { editingItemId?: string }) => {
+    (
+      asset: CustomBuiltAsset,
+      options: { editingItemId?: string; placeOnStand?: boolean; keepOpen?: boolean }
+    ) => {
       setCustomBuiltAssets((prev) => {
         const exists = prev.some((a) => a.id === asset.id);
         return exists ? prev.map((a) => (a.id === asset.id ? asset : a)) : [asset, ...prev];
@@ -487,12 +541,16 @@ export function App() {
           return next;
         });
         notify(`Updated "${asset.name}" (${asset.dims.w}×${asset.dims.d}×${asset.dims.h}m)`);
-      } else {
+      } else if (options.placeOnStand) {
         placeCustomBuiltAsset(asset);
+      } else {
+        notify(`Saved "${asset.name}" to Asset Library`);
       }
 
-      setShowAssetBuilder(false);
-      setEditingCustomAsset(null);
+      if (!options.keepOpen) {
+        setShowAssetBuilder(false);
+        setEditingCustomAsset(null);
+      }
     },
     [config, pushHistory, notify, placeCustomBuiltAsset]
   );
@@ -1224,31 +1282,137 @@ export function App() {
     );
   }
 
+  const totalCustomAssetCount =
+    customBuiltAssets.length + customModels.length + customAssets.length;
+
+  const assetModals = (
+    <>
+      {showAssetLibrary && (
+        <AssetLibraryModal
+          customBuiltAssets={customBuiltAssets}
+          customModels={customModels}
+          uploadedGraphics={customAssets}
+          onClose={() => setShowAssetLibrary(false)}
+          onOpenAssetBuilder={(mode) => {
+            setShowAssetLibrary(false);
+            handleOpenAssetBuilder(mode, showDashboard ? 'dashboard' : 'editor');
+          }}
+          onEditBuiltAsset={(asset) => {
+            setShowAssetLibrary(false);
+            handleEditLibraryBuiltAsset(asset);
+          }}
+          onDuplicateBuiltAsset={(asset) => {
+            const copy: CustomBuiltAsset = {
+              ...asset,
+              id: `built-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+              name: `${asset.name} (Copy)`,
+              primitives: asset.primitives.map((p) => ({
+                ...p,
+                points: p.points ? p.points.map((pt) => ({ ...pt })) : undefined,
+              })),
+              dims: { ...asset.dims },
+              createdAt: Date.now(),
+            };
+            setCustomBuiltAssets((prev) => [copy, ...prev]);
+            notify(`Duplicated "${asset.name}"`);
+          }}
+          onRenameBuiltAsset={(assetId, name, category) => {
+            setCustomBuiltAssets((prev) =>
+              prev.map((a) =>
+                a.id === assetId
+                  ? { ...a, name, ...(category ? { category } : {}) }
+                  : a
+              )
+            );
+          }}
+          onDeleteBuiltAsset={(assetId) => {
+            setCustomBuiltAssets((prev) => prev.filter((a) => a.id !== assetId));
+            notify('Removed custom asset from library');
+          }}
+          onPlaceBuiltAsset={(asset) => {
+            if (showDashboard) setShowDashboard(false);
+            placeCustomBuiltAsset(asset);
+          }}
+          onRegisterCustomModel={(asset) => {
+            setCustomModels((prev) => [asset, ...prev]);
+            notify(`Saved 3D asset "${asset.name}" to library`);
+          }}
+          onUpdateCustomModel={(assetId, patch) => {
+            setCustomModels((prev) =>
+              prev.map((m) => (m.id === assetId ? { ...m, ...patch } : m))
+            );
+            notify('Updated 3D asset settings');
+          }}
+          onDeleteCustomModel={(assetId) => {
+            setCustomModels((prev) => prev.filter((m) => m.id !== assetId));
+          }}
+          onPlaceCustomModel={(asset) => {
+            if (showDashboard) setShowDashboard(false);
+            placeCustomModelAsset(asset);
+          }}
+          onAddGraphicAsset={(asset) => {
+            setCustomAssets((prev) => [asset, ...prev]);
+            notify(`Saved graphic "${asset.name}" to library`);
+          }}
+          onUpdateGraphicAsset={(assetId, patch) => {
+            setCustomAssets((prev) =>
+              prev.map((g) => (g.id === assetId ? { ...g, ...patch } : g))
+            );
+          }}
+          onDeleteGraphicAsset={(assetId) => {
+            setCustomAssets((prev) => prev.filter((g) => g.id !== assetId));
+            if (paintAssetId === assetId) setPaintAssetId(null);
+          }}
+        />
+      )}
+
+      {showAssetBuilder && (
+        <CustomAssetBuilderModal
+          initialMode={assetBuilderMode}
+          launchContext={assetBuilderContext}
+          editingAsset={editingCustomAsset}
+          onClose={() => {
+            setShowAssetBuilder(false);
+            setEditingCustomAsset(null);
+          }}
+          onSaveAsset={handleSaveBuiltAsset}
+        />
+      )}
+    </>
+  );
+
   if (showDashboard) {
     return (
-      <ProjectsDashboard
-        projects={projects}
-        activeProjectId={activeProjectId}
-        currency={currency}
-        canReturnToEditor={projects.length > 0}
-        onReturnToEditor={() => setShowDashboard(false)}
-        onOpenProject={handleOpenProject}
-        onCreateBlankProject={handleCreateBlankProject}
-        onCreateFromTemplate={handleCreateProjectFromTemplate}
-        onDuplicateProject={handleDuplicateProject}
-        onRenameProject={handleRenameProject}
-        onDeleteProject={handleDeleteProject}
-        onExportProjectJson={handleExportProjectJson}
-        onImportJson={handleImportJson}
-        onOpenSetupGuide={() => {
-          setShowDashboard(false);
-          setShowSetupGuide(true);
-        }}
-        onStartWalkthrough={() => {
-          setShowDashboard(false);
-          window.setTimeout(() => startWalkthrough(), 120);
-        }}
-      />
+      <>
+        <ProjectsDashboard
+          projects={projects}
+          activeProjectId={activeProjectId}
+          currency={currency}
+          canReturnToEditor={projects.length > 0}
+          customAssetCount={totalCustomAssetCount}
+          onReturnToEditor={() => setShowDashboard(false)}
+          onOpenProject={handleOpenProject}
+          onCreateBlankProject={handleCreateBlankProject}
+          onCreateFromTemplate={handleCreateProjectFromTemplate}
+          onDuplicateProject={handleDuplicateProject}
+          onRenameProject={handleRenameProject}
+          onDeleteProject={handleDeleteProject}
+          onExportProjectJson={handleExportProjectJson}
+          onImportJson={handleImportJson}
+          onOpenSetupGuide={() => {
+            setShowDashboard(false);
+            setShowSetupGuide(true);
+          }}
+          onStartWalkthrough={() => {
+            setShowDashboard(false);
+            window.setTimeout(() => startWalkthrough(), 120);
+          }}
+          onOpenAssetLibrary={() => setShowAssetLibrary(true)}
+          onOpenAssetCreator={(mode) => handleOpenAssetBuilder(mode, 'dashboard')}
+        />
+        {assetModals}
+        {toast && <div role="status" className="studio-toast">{toast}</div>}
+      </>
     );
   }
 
@@ -1322,7 +1486,8 @@ export function App() {
           }}
           onLoadSampleMachine={handleLoadSampleMachine}
           customBuiltAssets={customBuiltAssets}
-          onOpenAssetBuilder={handleOpenAssetBuilder}
+          onOpenAssetBuilder={(mode) => handleOpenAssetBuilder(mode, 'editor')}
+          onOpenAssetLibrary={() => setShowAssetLibrary(true)}
           onPlaceCustomBuiltAsset={(assetId) => {
             const a = customBuiltAssets.find((x) => x.id === assetId);
             if (a) placeCustomBuiltAsset(a);
@@ -1505,17 +1670,7 @@ export function App() {
         />}
       </main>
 
-      {showAssetBuilder && (
-        <CustomAssetBuilderModal
-          initialMode={assetBuilderMode}
-          editingAsset={editingCustomAsset}
-          onClose={() => {
-            setShowAssetBuilder(false);
-            setEditingCustomAsset(null);
-          }}
-          onSaveAsset={handleSaveBuiltAsset}
-        />
-      )}
+      {assetModals}
 
       <TemplatesModal
         open={showTemplatesModal}
@@ -1563,7 +1718,13 @@ export function App() {
           setConfig(proj.config);
           setItems(proj.items);
           setCustomAssets(proj.customAssets || []);
-          setCustomBuiltAssets(proj.customBuiltAssets || []);
+          if (proj.customBuiltAssets && proj.customBuiltAssets.length > 0) {
+            setCustomBuiltAssets((prev) => {
+              const merged = new Map<string, CustomBuiltAsset>();
+              for (const a of [...prev, ...(proj.customBuiltAssets || [])]) merged.set(a.id, a);
+              return Array.from(merged.values());
+            });
+          }
           setSelectedItemId(null);
           setSelectedShellWall(null);
           setHistory([cloneSnapshot(proj.config, proj.items)]);

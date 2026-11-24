@@ -31,6 +31,7 @@ import {
   createDefaultPrimitive,
   createPrimitiveId,
   createSampleSchematicDataUrl,
+  CUSTOM_ASSET_CATEGORIES,
   CUSTOM_ASSET_PRESETS,
   instantiatePresetPrimitives,
 } from '../engine/customAssetMesh';
@@ -38,6 +39,7 @@ import type {
   AssetPrimitive,
   AssetPrimitiveFinish,
   AssetPrimitiveKind,
+  CustomAssetCategory,
   CustomBuiltAsset,
 } from '../types/stand';
 import {
@@ -52,16 +54,18 @@ type TraceTool = 'select' | 'calibrate' | 'box' | 'circle' | 'polygon';
 
 interface CustomAssetBuilderModalProps {
   initialMode?: BuilderMode;
+  launchContext?: 'editor' | 'dashboard';
   editingAsset?: {
     itemId?: string;
     assetId?: string;
     name: string;
+    category?: CustomAssetCategory;
     primitives: AssetPrimitive[];
   } | null;
   onClose: () => void;
   onSaveAsset: (
     asset: CustomBuiltAsset,
-    options: { editingItemId?: string }
+    options: { editingItemId?: string; placeOnStand?: boolean; keepOpen?: boolean }
   ) => void;
 }
 
@@ -341,18 +345,23 @@ const AssetBuilderPreview3D: React.FC<Preview3DProps> = ({
 
 export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = ({
   initialMode = 'shapes',
+  launchContext = 'editor',
   editingAsset = null,
   onClose,
   onSaveAsset,
 }) => {
   const [mode, setMode] = useState<BuilderMode>(initialMode);
   const [assetName, setAssetName] = useState<string>(
-    editingAsset?.name || 'Pallet Wrapper (1650 Turntable)'
+    editingAsset?.name || 'New Custom Asset'
   );
+  const [assetCategory, setAssetCategory] = useState<CustomAssetCategory>(
+    editingAsset?.category || 'product'
+  );
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [primitives, setPrimitives] = useState<AssetPrimitive[]>(() =>
     editingAsset && editingAsset.primitives.length > 0
       ? editingAsset.primitives.map((p) => ({ ...p }))
-      : instantiatePresetPrimitives('pallet-wrapper')
+      : instantiatePresetPrimitives('blank')
   );
   const [rawSelectedId, setSelectedId] = useState<string | null>(
     () => (editingAsset?.primitives[0]?.id ?? null)
@@ -436,6 +445,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
     setPrimitives(next);
     setSelectedId(next[0]?.id ?? null);
     setAssetName(preset.name);
+    setAssetCategory(preset.category);
   }, []);
 
   /* ==================== 2D SCHEMATIC STATE & TRACING ==================== */
@@ -815,12 +825,18 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
     );
   };
 
-  const handleSave = () => {
+  const handleSave = (opts?: { keepOpen?: boolean; placeOnStand?: boolean }) => {
     if (primitives.length === 0) return;
     const computed = computePrimitivesBounds(primitives);
+    const keepOpen = Boolean(opts?.keepOpen);
+    const finalName = assetName.trim() || 'Custom Asset';
     const builtAsset: CustomBuiltAsset = {
-      id: editingAsset?.assetId || `built-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
-      name: assetName.trim() || 'Custom Asset',
+      id:
+        !keepOpen && editingAsset?.assetId
+          ? editingAsset.assetId
+          : `built-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+      name: finalName,
+      category: assetCategory,
       primitives: primitives.map((p) => ({
         ...p,
         points: p.points ? p.points.map((pt) => ({ ...pt })) : undefined,
@@ -828,7 +844,20 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
       dims: computed.dims,
       createdAt: Date.now(),
     };
-    onSaveAsset(builtAsset, { editingItemId: editingAsset?.itemId });
+    onSaveAsset(builtAsset, {
+      editingItemId: !keepOpen ? editingAsset?.itemId : undefined,
+      placeOnStand: opts?.placeOnStand ?? (launchContext === 'editor' && !keepOpen),
+      keepOpen,
+    });
+
+    if (keepOpen) {
+      const fresh = instantiatePresetPrimitives('blank');
+      setPrimitives(fresh);
+      setSelectedId(fresh[0]?.id ?? null);
+      setAssetName('New Custom Asset');
+      setSavedNotice(`Saved "${finalName}" to Asset Library — ready to build your next asset.`);
+      window.setTimeout(() => setSavedNotice(null), 3500);
+    }
   };
 
   return (
@@ -851,15 +880,29 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
               <Box size={18} />
             </div>
             <div className="cab-title-group">
-              <input
-                id="cab-asset-name-input"
-                className="cab-name-input"
-                type="text"
-                aria-label="Custom asset name"
-                value={assetName}
-                onChange={(e) => setAssetName(e.target.value)}
-                placeholder="Name your machine or custom asset..."
-              />
+              <div className="cab-title-row">
+                <input
+                  id="cab-asset-name-input"
+                  className="cab-name-input"
+                  type="text"
+                  aria-label="Custom asset name"
+                  value={assetName}
+                  onChange={(e) => setAssetName(e.target.value)}
+                  placeholder="Name your custom asset..."
+                />
+                <select
+                  className="cab-category-select"
+                  aria-label="Asset category"
+                  value={assetCategory}
+                  onChange={(e) => setAssetCategory(e.target.value as CustomAssetCategory)}
+                >
+                  {CUSTOM_ASSET_CATEGORIES.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <span className="cab-subtitle">
                 Custom Asset Builder · All dimensions in millimetres (mm)
               </span>
@@ -919,7 +962,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
                         onClick={() => applyPreset(preset.id)}
                         title={preset.subtitle}
                       >
-                        {preset.name.split(' (')[0]}
+                        {preset.shortLabel}
                       </button>
                     ))}
                   </div>
@@ -1866,26 +1909,61 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
         {/* ==================== FOOTER ==================== */}
         <footer className="cab-footer">
           <div className="cab-footer-meta mono-num">
-            <span>{primitives.length} part{primitives.length === 1 ? '' : 's'}</span>
-            <span>·</span>
-            <span>
-              Overall {bounds.widthMm} × {bounds.depthMm} × {bounds.heightMm} mm ({bounds.dims.w} ×{' '}
-              {bounds.dims.d} × {bounds.dims.h} m)
-            </span>
+            {savedNotice ? (
+              <span className="cab-saved-notice">
+                <Check size={13} /> {savedNotice}
+              </span>
+            ) : (
+              <>
+                <span>
+                  {primitives.length} part{primitives.length === 1 ? '' : 's'}
+                </span>
+                <span>·</span>
+                <span>
+                  Overall {bounds.widthMm} × {bounds.depthMm} × {bounds.heightMm} mm (
+                  {bounds.dims.w} × {bounds.dims.d} × {bounds.dims.h} m)
+                </span>
+              </>
+            )}
           </div>
           <div className="cab-footer-actions">
             <button type="button" className="secondary-btn" onClick={onClose}>
               Cancel
             </button>
+            {!editingAsset?.itemId && (
+              <button
+                type="button"
+                className="secondary-btn"
+                disabled={primitives.length === 0}
+                onClick={() => handleSave({ keepOpen: true, placeOnStand: false })}
+                title="Save this asset to your Asset Library and start building another one"
+              >
+                <Plus size={14} />
+                <span>Save &amp; Create Another</span>
+              </button>
+            )}
             <button
               id="cab-save-asset-btn"
               type="button"
               className="primary-btn"
               disabled={primitives.length === 0}
-              onClick={handleSave}
+              onClick={() =>
+                handleSave({
+                  keepOpen: false,
+                  placeOnStand: launchContext === 'editor',
+                })
+              }
             >
-              <Plus size={14} />
-              <span>{editingAsset?.itemId ? 'Update Asset on Stand' : 'Save & Place on Stand'}</span>
+              <Check size={14} />
+              <span>
+                {editingAsset?.itemId
+                  ? 'Update Asset on Stand'
+                  : editingAsset?.assetId
+                    ? 'Save Changes'
+                    : launchContext === 'dashboard'
+                      ? 'Save to Asset Library'
+                      : 'Save & Place on Stand'}
+              </span>
             </button>
           </div>
         </footer>
