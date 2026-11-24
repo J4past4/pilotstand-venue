@@ -1339,6 +1339,33 @@ select {
   background: var(--brand-accent);
 }
 
+.wall-collision-banner {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 12.5px;
+  padding: 8px 16px;
+  border-radius: 99px;
+  box-shadow: 0 8px 24px rgba(220, 38, 38, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 16;
+  white-space: nowrap;
+}
+
+.wall-collision-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fecaca;
+  box-shadow: 0 0 0 3px rgba(254, 202, 202, 0.35);
+}
+
 /* Floating Viewport HUD */
 .viewport-hud-top {
   position: absolute;

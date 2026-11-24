@@ -22,6 +22,7 @@ import { buildBoothShell, buildScaleFigures, buildStandItemMesh } from './meshFa
 import { buildCustomModelMesh } from './modelLoader';
 import { buildCustomBuiltAssetMesh } from './customAssetMesh';
 import { formatLength } from '../utils/pricing';
+import { checkWallCollision, findNearestAllowedPosition } from '../utils/wallCollision';
 
 export interface StandViewportHandle {
   setCameraPreset: (preset: CameraPreset, instant?: boolean) => void;
@@ -81,6 +82,63 @@ function disposeObject3D(obj: THREE.Object3D) {
   });
 }
 
+function applyWallCollisionRedTint(meshGroup: THREE.Group, item: StandItem) {
+  meshGroup.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    // Skip floor contact shadows so we don't paint a red smudge on the floor
+    if (child.renderOrder === 1) return;
+
+    const tintMaterial = (mat: THREE.Material): THREE.Material => {
+      const cloned = mat.clone();
+      if (
+        cloned instanceof THREE.MeshStandardMaterial ||
+        cloned instanceof THREE.MeshPhysicalMaterial ||
+        cloned instanceof THREE.MeshPhongMaterial ||
+        cloned instanceof THREE.MeshLambertMaterial
+      ) {
+        cloned.color.set('#EF4444');
+        cloned.emissive.set('#DC2626');
+        cloned.emissiveMap = null;
+        cloned.emissiveIntensity = 0.65;
+        cloned.transparent = true;
+        cloned.opacity = 0.88;
+      } else if (cloned instanceof THREE.MeshBasicMaterial) {
+        cloned.color.set('#EF4444');
+      }
+      cloned.needsUpdate = true;
+      return cloned;
+    };
+
+    if (Array.isArray(child.material)) {
+      child.material = child.material.map(tintMaterial);
+    } else if (child.material) {
+      child.material = tintMaterial(child.material);
+    }
+  });
+
+  // Crisp vivid-red 3D wireframe cage around the colliding item
+  const boxGeom = new THREE.BoxGeometry(
+    item.dims.w + 0.04,
+    item.dims.h + 0.04,
+    item.dims.d + 0.04
+  );
+  const boxWire = new THREE.LineSegments(
+    new THREE.EdgesGeometry(boxGeom),
+    new THREE.LineBasicMaterial({ color: '#FF1F1F' })
+  );
+  boxGeom.dispose();
+  boxWire.position.y = item.dims.h / 2;
+  meshGroup.add(boxWire);
+}
+
+interface WallCollisionFeedback {
+  itemId: string;
+  collidedShellSides: ShellWallSide[];
+  collidedWallItemIds: string[];
+  snapX: number;
+  snapZ: number;
+}
+
 // Keep the stand in frame as the canvas narrows or switches to portrait.
 function resizePerspectiveCamera(camera: THREE.PerspectiveCamera, aspect: number) {
   camera.aspect = aspect;
@@ -130,6 +188,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
     const [hoverPaintLabel, setHoverPaintLabel] = useState<string | null>(null);
     const [overlayLabels, setOverlayLabels] = useState<OverlayLabel[]>([]);
     const [dropHint, setDropHint] = useState<string | null>(null);
+    const [wallCollision, setWallCollision] = useState<WallCollisionFeedback | null>(null);
 
     // Keep latest props accessible inside pointer/animation closures
     const propsRef = useRef({
@@ -177,6 +236,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       moved: boolean;
       lastX: number;
       lastZ: number;
+      lastValidX: number;
+      lastValidZ: number;
+      colliding: boolean;
       pointerDownX: number;
       pointerDownY: number;
     }>({
@@ -187,6 +249,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       moved: false,
       lastX: 0,
       lastZ: 0,
+      lastValidX: 0,
+      lastValidZ: 0,
+      colliding: false,
       pointerDownX: 0,
       pointerDownY: 0,
     });
@@ -541,10 +606,14 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
                 moved: false,
                 lastX: itemObj.x,
                 lastZ: itemObj.z,
+                lastValidX: itemObj.x,
+                lastValidZ: itemObj.z,
+                colliding: false,
                 pointerDownX: ev.clientX,
                 pointerDownY: ev.clientY,
               };
               controls.enabled = false;
+              renderer.domElement.style.cursor = 'grabbing';
               renderer.domElement.setPointerCapture(ev.pointerId);
             }
           }
@@ -569,7 +638,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
           raycaster.setFromCamera(pointerNDC, activeCamRef.current);
           if (raycaster.ray.intersectPlane(floorPlane, planeHit)) {
-            const { config: cfg, onMoveItem: moveItem } = propsRef.current;
+            const { config: cfg, items: curItems, onMoveItem: moveItem } = propsRef.current;
             let nx = planeHit.x + drag.offsetX;
             let nz = planeHit.z + drag.offsetZ;
             if (cfg.snapToGrid) {
@@ -584,6 +653,33 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
               drag.moved = true;
               drag.lastX = nx;
               drag.lastZ = nz;
+
+              const itemObj = curItems.find((i) => i.id === drag.itemId);
+              if (itemObj) {
+                const collision = checkWallCollision(itemObj, nx, nz, cfg, curItems);
+                if (collision.collides) {
+                  const nearest = findNearestAllowedPosition(itemObj, nx, nz, cfg, curItems, {
+                    x: drag.lastValidX,
+                    z: drag.lastValidZ,
+                  });
+                  drag.colliding = true;
+                  renderer.domElement.style.cursor = 'not-allowed';
+                  setWallCollision({
+                    itemId: drag.itemId,
+                    collidedShellSides: collision.collidedShellSides,
+                    collidedWallItemIds: collision.collidedWallItemIds,
+                    snapX: nearest.x,
+                    snapZ: nearest.z,
+                  });
+                } else {
+                  drag.colliding = false;
+                  drag.lastValidX = nx;
+                  drag.lastValidZ = nz;
+                  renderer.domElement.style.cursor = 'grabbing';
+                  setWallCollision((prev) => (prev ? null : prev));
+                }
+              }
+
               moveItem(drag.itemId, nx, nz, false);
             }
           }
@@ -611,26 +707,48 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         }
       };
 
-      const onPointerUp = (ev: PointerEvent) => {
+      const finishDrag = (pointerId?: number) => {
         const drag = dragStateRef.current;
-        if (drag.active) {
-          if (drag.moved && drag.itemId) {
-            propsRef.current.onMoveItem(drag.itemId, drag.lastX, drag.lastZ, true);
+        if (!drag.active) return;
+
+        if (drag.moved && drag.itemId) {
+          const { config: cfg, items: curItems, onMoveItem: moveItem } = propsRef.current;
+          const itemObj = curItems.find((i) => i.id === drag.itemId);
+          let finalX = drag.lastX;
+          let finalZ = drag.lastZ;
+          if (itemObj) {
+            const nearest = findNearestAllowedPosition(itemObj, drag.lastX, drag.lastZ, cfg, curItems, {
+              x: drag.lastValidX,
+              z: drag.lastValidZ,
+            });
+            finalX = nearest.x;
+            finalZ = nearest.z;
           }
-          dragStateRef.current.active = false;
-          dragStateRef.current.itemId = null;
-          controls.enabled = true;
+          moveItem(drag.itemId, finalX, finalZ, true);
+        }
+
+        dragStateRef.current.active = false;
+        dragStateRef.current.itemId = null;
+        dragStateRef.current.colliding = false;
+        setWallCollision(null);
+        controls.enabled = true;
+        renderer.domElement.style.cursor = 'default';
+        if (typeof pointerId === 'number') {
           try {
-            renderer.domElement.releasePointerCapture(ev.pointerId);
+            renderer.domElement.releasePointerCapture(pointerId);
           } catch {
             // ignore
           }
         }
       };
 
+      const onPointerUp = (ev: PointerEvent) => finishDrag(ev.pointerId);
+      const onPointerCancel = (ev: PointerEvent) => finishDrag(ev.pointerId);
+
       renderer.domElement.addEventListener('pointerdown', onPointerDown);
       renderer.domElement.addEventListener('pointermove', onPointerMove);
       window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerCancel);
 
       // Resize observer
       const ro = new ResizeObserver(() => {
@@ -749,6 +867,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         renderer.domElement.removeEventListener('pointerdown', onPointerDown);
         renderer.domElement.removeEventListener('pointermove', onPointerMove);
         window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('pointercancel', onPointerCancel);
         controls.dispose();
         envRT.dispose();
         renderer.dispose();
@@ -909,6 +1028,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
     }, [config, assetsMap, selectedShellWall, textureTick, viewMode]);
 
     // Rebuild Equipment Items
+    const collidingItemId = wallCollision?.itemId ?? null;
     useEffect(() => {
       const itemsGroup = itemsGroupRef.current;
       if (!itemsGroup) return;
@@ -975,9 +1095,13 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           meshGroup.add(rcpOutline);
         }
 
+        if (collidingItemId && collidingItemId === item.id) {
+          applyWallCollisionRedTint(meshGroup, item);
+        }
+
         itemsGroup.add(meshGroup);
       }
-    }, [items, config, assetsMap, textureTick, viewMode]);
+    }, [items, config, assetsMap, textureTick, viewMode, collidingItemId]);
 
     // Rebuild Helpers (Floor Grid, Selection Ring, Boundary Alerts, Venue Height Limit Frame)
     useEffect(() => {
@@ -1024,7 +1148,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       const borderLine = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(borderPts),
         new THREE.LineBasicMaterial({
-          color: compliance.isCompliant ? '#1B365D' : '#DC2626',
+          color: compliance.isCompliant && !wallCollision ? '#1B365D' : '#DC2626',
           transparent: true,
           opacity: 0.65,
         })
@@ -1038,8 +1162,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           const pad = 0.08;
           const bw = sel.dims.w + pad * 2;
           const bd = sel.dims.d + pad * 2;
+          const isWallColliding = wallCollision?.itemId === sel.id;
           const isOob = compliance.outOfBoundsIds.includes(sel.id);
-          const selColor = isOob ? '#DC2626' : '#D95D39';
+          const selColor = isWallColliding ? '#EF4444' : isOob ? '#DC2626' : '#D95D39';
 
           const ringGroup = new THREE.Group();
           ringGroup.position.set(sel.x, 0.012, sel.z);
@@ -1065,7 +1190,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
             new THREE.MeshBasicMaterial({
               color: selColor,
               transparent: true,
-              opacity: 0.14,
+              opacity: isWallColliding ? 0.34 : 0.14,
               side: THREE.DoubleSide,
               depthWrite: false,
             })
@@ -1083,6 +1208,84 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           ringGroup.add(arrowMesh);
 
           helpersGroup.add(ringGroup);
+
+          // Ghost preview showing the nearest allowed snap-back position on drop
+          if (isWallColliding && wallCollision) {
+            const snapGroup = new THREE.Group();
+            snapGroup.position.set(wallCollision.snapX, 0.016, wallCollision.snapZ);
+            snapGroup.rotation.y = (sel.rotationY * Math.PI) / 180;
+
+            const snapPts = [
+              new THREE.Vector3(-sel.dims.w / 2, 0, -sel.dims.d / 2),
+              new THREE.Vector3(sel.dims.w / 2, 0, -sel.dims.d / 2),
+              new THREE.Vector3(sel.dims.w / 2, 0, sel.dims.d / 2),
+              new THREE.Vector3(-sel.dims.w / 2, 0, sel.dims.d / 2),
+              new THREE.Vector3(-sel.dims.w / 2, 0, -sel.dims.d / 2),
+            ];
+            const snapOutline = new THREE.Line(
+              new THREE.BufferGeometry().setFromPoints(snapPts),
+              new THREE.LineDashedMaterial({
+                color: '#10B981',
+                dashSize: 0.12,
+                gapSize: 0.08,
+              })
+            );
+            snapOutline.computeLineDistances();
+            snapGroup.add(snapOutline);
+
+            const snapPad = new THREE.Mesh(
+              new THREE.PlaneGeometry(sel.dims.w, sel.dims.d),
+              new THREE.MeshBasicMaterial({
+                color: '#10B981',
+                transparent: true,
+                opacity: 0.14,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+              })
+            );
+            snapPad.rotation.x = -Math.PI / 2;
+            snapGroup.add(snapPad);
+            helpersGroup.add(snapGroup);
+
+            // Dashed guide line connecting dragged item to its snap-back destination
+            const guideLine = new THREE.Line(
+              new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(sel.x, 0.02, sel.z),
+                new THREE.Vector3(wallCollision.snapX, 0.02, wallCollision.snapZ),
+              ]),
+              new THREE.LineDashedMaterial({
+                color: '#EF4444',
+                dashSize: 0.1,
+                gapSize: 0.07,
+              })
+            );
+            guideLine.computeLineDistances();
+            helpersGroup.add(guideLine);
+          }
+        }
+      }
+
+      // Highlight collided perimeter shell wall(s) in vivid red
+      if (wallCollision && config.showShellWalls) {
+        for (const side of wallCollision.collidedShellSides) {
+          const wallW = side === 'back' ? width : depth;
+          const wallH = config.shellWallHeight;
+          const boxGeom = new THREE.BoxGeometry(wallW + 0.02, wallH + 0.02, 0.13);
+          const wallWarn = new THREE.LineSegments(
+            new THREE.EdgesGeometry(boxGeom),
+            new THREE.LineBasicMaterial({ color: '#FF1F1F' })
+          );
+          boxGeom.dispose();
+          if (side === 'back') {
+            wallWarn.position.set(0, wallH / 2, -depth / 2 - 0.04);
+          } else if (side === 'left') {
+            wallWarn.position.set(-width / 2 - 0.04, wallH / 2, 0);
+            wallWarn.rotation.y = Math.PI / 2;
+          } else {
+            wallWarn.position.set(width / 2 + 0.04, wallH / 2, 0);
+            wallWarn.rotation.y = -Math.PI / 2;
+          }
+          helpersGroup.add(wallWarn);
         }
       }
 
@@ -1122,7 +1325,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         ceilPlane.position.y = heightLimit;
         helpersGroup.add(ceilPlane);
       }
-    }, [config, items, selectedItemId, compliance]);
+    }, [config, items, selectedItemId, compliance, wallCollision]);
 
     const projectClientToFloor = (clientX: number, clientY: number): { x: number; z: number } => {
       const renderer = rendererRef.current;
@@ -1233,6 +1436,16 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
             <span>
               <strong>Click-to-Brand Mode:</strong>{' '}
               {hoverPaintLabel || 'Click any wall, counter, banner, or screen to apply artwork'}
+            </span>
+          </div>
+        )}
+
+        {/* Wall Collision Warning Banner */}
+        {wallCollision && (
+          <div className="wall-collision-banner" role="alert">
+            <span className="wall-collision-dot" />
+            <span>
+              <strong>Blocked by wall:</strong> Release to snap back to nearest allowed position
             </span>
           </div>
         )}

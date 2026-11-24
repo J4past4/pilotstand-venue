@@ -43,6 +43,7 @@ import {
 import { AssetLibraryModal } from './components/AssetLibraryModal';
 import { applyAgentActions } from './agent/actionExecutor';
 import { sendStandAgentPrompt } from './agent/agentClient';
+import { findNearestAllowedPosition } from './utils/wallCollision';
 import type { AgentAudioPayload, AgentChatMessage, AgentHistoryTurn } from './agent/types';
 import type {
   AssetPrimitive,
@@ -361,6 +362,9 @@ export function App() {
         visible: true,
         artwork: {},
       };
+      const resolved = findNearestAllowedPosition(newItem, px, pz, config, items);
+      newItem.x = resolved.x;
+      newItem.z = resolved.z;
       const nextItems = [...items, newItem];
       setItems(nextItems);
       setRailPanelOpen(false);
@@ -394,6 +398,9 @@ export function App() {
         visible: true,
         artwork: {},
       };
+      const resolved = findNearestAllowedPosition(newItem, px, pz, config, items);
+      newItem.x = resolved.x;
+      newItem.z = resolved.z;
       const nextItems = [...items, newItem];
       setItems(nextItems);
       setRailPanelOpen(false);
@@ -462,6 +469,9 @@ export function App() {
         visible: true,
         artwork: {},
       };
+      const resolved = findNearestAllowedPosition(newItem, px, pz, config, items);
+      newItem.x = resolved.x;
+      newItem.z = resolved.z;
       const nextItems = [...items, newItem];
       setItems(nextItems);
       setRailPanelOpen(false);
@@ -558,7 +568,28 @@ export function App() {
   const updateItem = useCallback(
     (id: string, patch: Partial<StandItem>, commit = true) => {
       setItems((prev) => {
-        const next = prev.map((it) => (it.id === id ? { ...it, ...patch } : it));
+        const affectsFootprint =
+          patch.x !== undefined ||
+          patch.z !== undefined ||
+          patch.rotationY !== undefined ||
+          patch.dims !== undefined;
+        const next = prev.map((it) => {
+          if (it.id !== id) return it;
+          const updated = { ...it, ...patch };
+          if (commit && affectsFootprint) {
+            const resolved = findNearestAllowedPosition(
+              updated,
+              updated.x,
+              updated.z,
+              config,
+              prev,
+              { x: it.x, z: it.z }
+            );
+            updated.x = resolved.x;
+            updated.z = resolved.z;
+          }
+          return updated;
+        });
         if (commit) pushHistory(config, next);
         return next;
       });
@@ -643,6 +674,9 @@ export function App() {
         z: Number((src.z + 0.25).toFixed(2)),
         locked: false,
       };
+      const resolved = findNearestAllowedPosition(copy, copy.x, copy.z, config, items);
+      copy.x = resolved.x;
+      copy.z = resolved.z;
       const nextItems = [...items, copy];
       setItems(nextItems);
       setSelectedItemId(copy.id);
