@@ -4,6 +4,7 @@ import {
   hasDurableUserStore,
   isBetaAuthEnabled,
   isBetaSignupEnabled,
+  isPasscodeMode,
   isPublicLaunchMode,
 } from '../_lib/auth.ts';
 
@@ -28,6 +29,7 @@ export default function handler(req: VercelLikeRequest, res: VercelLikeResponse)
 
   const accessMode = getAppAccessMode();
   const publicLaunch = isPublicLaunchMode();
+  const passcodeMode = isPasscodeMode();
   const authEnabled = isBetaAuthEnabled();
   const signupEnabled = isBetaSignupEnabled();
   const signupReady = signupEnabled && (hasDurableUserStore() || !process.env.VERCEL);
@@ -36,6 +38,7 @@ export default function handler(req: VercelLikeRequest, res: VercelLikeResponse)
     return res.status(200).json({
       accessMode,
       publicLaunch: false,
+      passcodeMode: false,
       authEnabled: false,
       signupEnabled: false,
       signupReady: false,
@@ -48,6 +51,7 @@ export default function handler(req: VercelLikeRequest, res: VercelLikeResponse)
   return res.status(200).json({
     accessMode,
     publicLaunch,
+    passcodeMode,
     authEnabled: true,
     signupEnabled,
     signupReady,

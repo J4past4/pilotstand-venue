@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { extractClientIp } from './security.ts';
 
-export type AppAccessMode = 'public' | 'beta' | 'open';
+export type AppAccessMode = 'public' | 'beta' | 'passcode' | 'open';
 
 export type PublicUserType = 'exhibitor' | 'agency' | 'builder' | 'supplier' | 'other';
 
@@ -42,6 +42,7 @@ export interface BetaSessionUser {
 interface SessionPayload extends BetaSessionUser {
   iat: number;
   exp: number;
+  codeSig?: string;
 }
 
 export const SESSION_COOKIE_NAME = 'zuki_beta_session';
@@ -313,6 +314,7 @@ export function parseInviteCodes(raw: string | undefined = process.env.BETA_INVI
 export function getAppAccessMode(env: NodeJS.ProcessEnv = process.env): AppAccessMode {
   const explicit = (env.APP_ACCESS_MODE || '').trim().toLowerCase();
   if (explicit === 'public') return 'public';
+  if (explicit === 'passcode') return 'passcode';
   if (explicit === 'beta') return 'beta';
   if (explicit === 'open') return 'open';
   if ((env.PUBLIC_LAUNCH_ENABLED || '').trim().toLowerCase() === 'true') return 'public';
@@ -326,12 +328,45 @@ export function isPublicLaunchMode(env: NodeJS.ProcessEnv = process.env): boolea
   return getAppAccessMode(env) === 'public';
 }
 
+export function isPasscodeMode(env: NodeJS.ProcessEnv = process.env): boolean {
+  return getAppAccessMode(env) === 'passcode';
+}
+
+function passcodeFingerprint(env: NodeJS.ProcessEnv = process.env): string {
+  const codes = parseInviteCodes(env.BETA_INVITE_CODE).join(',');
+  return createHash('sha256').update(`zuki-passcode::${codes}`).digest('hex').slice(0, 16);
+}
+
+/**
+ * Verifies a single shared beta passcode (case-sensitive, constant-time) against BETA_INVITE_CODE.
+ * Changing BETA_INVITE_CODE in Vercel immediately invalidates all previously issued passcode sessions.
+ */
+export function authenticatePasscode(
+  inputCode: string,
+  env: NodeJS.ProcessEnv = process.env
+): BetaSessionUser | null {
+  const trimmed = inputCode.trim();
+  if (!trimmed) return null;
+  const codes = parseInviteCodes(env.BETA_INVITE_CODE);
+  if (codes.length === 0) return null;
+  const inputHash = sha256Buffer(trimmed);
+  const matched = codes.some((code) => timingSafeEqual(inputHash, sha256Buffer(code)));
+  if (!matched) return null;
+  return {
+    email: 'beta-access@zukistudio.co.uk',
+    name: 'Beta Access',
+    role: 'admin',
+  };
+}
+
 export function isBetaSignupEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (isPasscodeMode(env)) return false;
   return isPublicLaunchMode(env) || parseInviteCodes(env.BETA_INVITE_CODE).length > 0;
 }
 
 export function isBetaAuthEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return (
+    isPasscodeMode(env) ||
     isPublicLaunchMode(env) ||
     parseBetaUsers(env.BETA_USERS).length > 0 ||
     parseInviteCodes(env.BETA_INVITE_CODE).length > 0
@@ -610,6 +645,7 @@ export function createSessionToken(
     name: user.name,
     role: user.role,
     ...(user.company ? { company: user.company } : {}),
+    ...(isPasscodeMode(env) ? { codeSig: passcodeFingerprint(env) } : {}),
     iat: nowSec,
     exp: nowSec + SESSION_TTL_SECONDS,
   };
@@ -646,6 +682,17 @@ export function verifySessionToken(
       return null;
     }
     if (parsed.exp <= nowSec) return null;
+
+    if (isPasscodeMode(env)) {
+      if (parsed.codeSig !== passcodeFingerprint(env)) {
+        return null;
+      }
+      return {
+        email: parsed.email,
+        name: parsed.name,
+        role: parsed.role,
+      };
+    }
 
     // When only static BETA_USERS is used (no self-signup), verify the user still exists
     // in BETA_USERS so removing them from Vercel env revokes their session immediately.

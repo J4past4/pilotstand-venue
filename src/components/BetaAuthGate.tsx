@@ -19,8 +19,9 @@ export interface PublicAuthPromptOptions {
 }
 
 interface SessionResponse {
-  accessMode?: 'public' | 'beta' | 'open';
+  accessMode?: 'public' | 'beta' | 'passcode' | 'open';
   publicLaunch?: boolean;
+  passcodeMode?: boolean;
   authEnabled: boolean;
   signupEnabled?: boolean;
   signupReady?: boolean;
@@ -54,6 +55,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
   const [status, setStatus] = useState<'checking' | 'ready' | 'login' | 'error'>('checking');
   const [authEnabled, setAuthEnabled] = useState(false);
   const [publicLaunch, setPublicLaunch] = useState(false);
+  const [passcodeMode, setPasscodeMode] = useState(false);
   const [signupEnabled, setSignupEnabled] = useState(false);
   const [user, setUser] = useState<BetaUser | null>(null);
 
@@ -87,6 +89,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
           kind: 'ready' as const,
           authEnabled: false,
           publicLaunch: false,
+          passcodeMode: false,
           signupEnabled: false,
           user: null,
           error: null,
@@ -98,6 +101,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
           kind: 'error' as const,
           authEnabled: true,
           publicLaunch: false,
+          passcodeMode: false,
           signupEnabled: false,
           user: null,
           error: 'Unable to verify access right now. Please try again.',
@@ -106,7 +110,8 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
 
       const data = (await resp.json()) as SessionResponse;
       const isPublic = Boolean(data.publicLaunch || data.accessMode === 'public');
-      const canSignup = Boolean(data.signupEnabled || isPublic);
+      const isPasscode = Boolean(data.passcodeMode || data.accessMode === 'passcode');
+      const canSignup = !isPasscode && Boolean(data.signupEnabled || isPublic);
 
       // In Public Launch mode, let visitors straight into the 3D sandbox even when anonymous
       if (isPublic || !data.authEnabled || (data.authenticated && data.user)) {
@@ -114,6 +119,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
           kind: 'ready' as const,
           authEnabled: Boolean(data.authEnabled),
           publicLaunch: isPublic,
+          passcodeMode: isPasscode,
           signupEnabled: canSignup,
           user: data.user || null,
           error: null,
@@ -123,6 +129,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
         kind: 'login' as const,
         authEnabled: true,
         publicLaunch: false,
+        passcodeMode: isPasscode,
         signupEnabled: canSignup,
         user: null,
         error: null,
@@ -132,6 +139,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
         kind: 'error' as const,
         authEnabled: true,
         publicLaunch: false,
+        passcodeMode: false,
         signupEnabled: false,
         user: null,
         error: 'Could not connect to the authentication service. Please check your connection.',
@@ -145,6 +153,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
     const res = await fetchSessionState();
     setAuthEnabled(res.authEnabled);
     setPublicLaunch(res.publicLaunch);
+    setPasscodeMode(res.passcodeMode);
     setSignupEnabled(res.signupEnabled);
     setUser(res.user);
     setErrorMsg(res.error);
@@ -158,6 +167,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
       if (cancelled) return;
       setAuthEnabled(res.authEnabled);
       setPublicLaunch(res.publicLaunch);
+      setPasscodeMode(res.passcodeMode);
       setSignupEnabled(res.signupEnabled);
       setUser(res.user);
       setErrorMsg(res.error);
@@ -255,6 +265,43 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
       return;
     }
 
+    if (passcodeMode) {
+      if (!password.trim()) {
+        setErrorMsg('Please enter the beta access code.');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        const resp = await fetch('/api/auth/login', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ passcode: password }),
+        });
+
+        const data = (await resp.json().catch(() => ({}))) as {
+          ok?: boolean;
+          user?: BetaUser | null;
+          error?: string;
+        };
+
+        if (!resp.ok || !data.ok) {
+          setErrorMsg(data.error || 'Incorrect beta access code.');
+          return;
+        }
+
+        setUser(data.user || null);
+        setAuthEnabled(true);
+        setPassword('');
+        setStatus('ready');
+      } catch {
+        setErrorMsg('Network error while verifying access code. Please try again.');
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     if (!trimmedEmail || !password) {
       setErrorMsg('Please enter both your email address and password.');
       return;
@@ -302,10 +349,10 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
     }
     setUser(null);
     setMode('signin');
-    if (authEnabled) {
+    if (authEnabled && !publicLaunch) {
       setStatus('login');
     }
-  }, [authEnabled]);
+  }, [authEnabled, publicLaunch]);
 
   if (status === 'checking') {
     return (
@@ -363,7 +410,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
             </span>
           </div>
 
-          {signupEnabled && (
+          {!passcodeMode && signupEnabled && (
             <div className="beta-auth-tabs" role="tablist" aria-label="Authentication mode">
               <button
                 type="button"
@@ -393,89 +440,125 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
           )}
 
           <h1 className="beta-auth-title">
-            {isSignup ? 'Create your beta account' : 'Sign in to your workspace'}
+            {passcodeMode
+              ? 'Enter beta access code'
+              : isSignup
+                ? 'Create your beta account'
+                : 'Sign in to your workspace'}
           </h1>
           <p className="beta-auth-sub">
-            {isSignup
-              ? 'Use your invite code to set up your own personal login and workspace.'
-              : 'Enter your personal beta credentials to access the 3D stand planner and your saved projects.'}
+            {passcodeMode
+              ? 'This private preview is protected. Enter your beta access code to unlock the 3D stand planner.'
+              : isSignup
+                ? 'Use your invite code to set up your own personal login and workspace.'
+                : 'Enter your personal beta credentials to access the 3D stand planner and your saved projects.'}
           </p>
 
           <form className="beta-auth-form" onSubmit={handleSubmit} noValidate>
-            {isSignup && (
+            {passcodeMode ? (
               <label className="beta-auth-field">
-                <span>Full Name</span>
-                <input
-                  type="text"
-                  name="name"
-                  autoComplete="name"
-                  autoFocus
-                  required
-                  placeholder="Alex Taylor"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  disabled={submitting}
-                />
-              </label>
-            )}
-
-            <label className="beta-auth-field">
-              <span>Work Email</span>
-              <input
-                type="email"
-                name="email"
-                autoComplete="email"
-                autoFocus={!isSignup}
-                required
-                placeholder="name@company.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={submitting}
-              />
-            </label>
-
-            <label className="beta-auth-field">
-              <span>{isSignup ? 'Create Password' : 'Password'}</span>
-              <div className="beta-auth-password-wrap">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  name="password"
-                  autoComplete={isSignup ? 'new-password' : 'current-password'}
-                  required
-                  placeholder={isSignup ? 'At least 8 characters' : 'Enter your password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={submitting}
-                />
-                <button
-                  type="button"
-                  className="beta-auth-eye-btn"
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-            </label>
-
-            {isSignup && (
-              <label className="beta-auth-field">
-                <span>Invite Code</span>
-                <div className="beta-auth-icon-input-wrap">
-                  <KeyRound size={14} className="beta-auth-field-icon" aria-hidden="true" />
+                <span>Beta Access Code</span>
+                <div className="beta-auth-password-wrap">
                   <input
-                    type="text"
-                    name="inviteCode"
-                    autoComplete="off"
+                    type={showPassword ? 'text' : 'password'}
+                    name="passcode"
+                    autoComplete="current-password"
+                    autoFocus
                     required
-                    placeholder="Enter your beta invite code"
-                    value={inviteCode}
-                    onChange={(e) => setInviteCode(e.target.value)}
+                    placeholder="Enter beta access code"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     disabled={submitting}
                   />
+                  <button
+                    type="button"
+                    className="beta-auth-eye-btn"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? 'Hide access code' : 'Show access code'}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
                 </div>
               </label>
+            ) : (
+              <>
+                {isSignup && (
+                  <label className="beta-auth-field">
+                    <span>Full Name</span>
+                    <input
+                      type="text"
+                      name="name"
+                      autoComplete="name"
+                      autoFocus
+                      required
+                      placeholder="Alex Taylor"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      disabled={submitting}
+                    />
+                  </label>
+                )}
+
+                <label className="beta-auth-field">
+                  <span>Work Email</span>
+                  <input
+                    type="email"
+                    name="email"
+                    autoComplete="email"
+                    autoFocus={!isSignup}
+                    required
+                    placeholder="name@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={submitting}
+                  />
+                </label>
+
+                <label className="beta-auth-field">
+                  <span>{isSignup ? 'Create Password' : 'Password'}</span>
+                  <div className="beta-auth-password-wrap">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="password"
+                      autoComplete={isSignup ? 'new-password' : 'current-password'}
+                      required
+                      placeholder={isSignup ? 'At least 8 characters' : 'Enter your password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={submitting}
+                    />
+                    <button
+                      type="button"
+                      className="beta-auth-eye-btn"
+                      onClick={() => setShowPassword((v) => !v)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </label>
+
+                {isSignup && (
+                  <label className="beta-auth-field">
+                    <span>Invite Code</span>
+                    <div className="beta-auth-icon-input-wrap">
+                      <KeyRound size={14} className="beta-auth-field-icon" aria-hidden="true" />
+                      <input
+                        type="text"
+                        name="inviteCode"
+                        autoComplete="off"
+                        required
+                        placeholder="Enter your beta invite code"
+                        value={inviteCode}
+                        onChange={(e) => setInviteCode(e.target.value)}
+                        disabled={submitting}
+                      />
+                    </div>
+                  </label>
+                )}
+              </>
             )}
 
             {errorMsg && (
@@ -485,15 +568,19 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
             )}
 
             <button type="submit" className="beta-auth-submit" disabled={submitting}>
-              {isSignup ? <UserPlus size={15} /> : <LogIn size={15} />}
+              {passcodeMode ? <KeyRound size={15} /> : isSignup ? <UserPlus size={15} /> : <LogIn size={15} />}
               <span>
                 {submitting
-                  ? isSignup
-                    ? 'Creating account…'
-                    : 'Signing in…'
-                  : isSignup
-                    ? 'Create account'
-                    : 'Sign in'}
+                  ? passcodeMode
+                    ? 'Verifying…'
+                    : isSignup
+                      ? 'Creating account…'
+                      : 'Signing in…'
+                  : passcodeMode
+                    ? 'Unlock workspace'
+                    : isSignup
+                      ? 'Create account'
+                      : 'Sign in'}
               </span>
             </button>
           </form>

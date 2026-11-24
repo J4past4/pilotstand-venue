@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   authenticateBetaUser,
   authenticateBetaUserAsync,
+  authenticatePasscode,
   buildClearSessionCookie,
   buildSessionCookie,
   checkLoginRateLimit,
@@ -13,6 +14,7 @@ import {
   hashPassword,
   isBetaAuthEnabled,
   isBetaSignupEnabled,
+  isPasscodeMode,
   parseBetaUsers,
   recordLoginFailure,
   registerBetaUser,
@@ -269,5 +271,35 @@ describe('Private Beta Auth Library', () => {
 
     await clearLoginFailures(headers, {});
     expect((await checkLoginRateLimit(headers, {})).allowed).toBe(true);
+  });
+
+  it('supports single beta passcode gate and revokes all sessions immediately when BETA_INVITE_CODE changes', () => {
+    const passcodeEnv: NodeJS.ProcessEnv = {
+      APP_ACCESS_MODE: 'passcode',
+      BETA_INVITE_CODE: 'SecretPasscode!2026',
+      AUTH_SESSION_SECRET: 'test-super-secret-key-32-chars-minimum',
+    };
+
+    expect(isPasscodeMode(passcodeEnv)).toBe(true);
+    expect(isBetaAuthEnabled(passcodeEnv)).toBe(true);
+    expect(isBetaSignupEnabled(passcodeEnv)).toBe(false);
+
+    // Wrong code and wrong case rejected
+    expect(authenticatePasscode('wrong-code', passcodeEnv)).toBeNull();
+    expect(authenticatePasscode('secretpasscode!2026', passcodeEnv)).toBeNull();
+
+    // Exact passcode succeeds
+    const user = authenticatePasscode('SecretPasscode!2026', passcodeEnv);
+    expect(user).not.toBeNull();
+
+    const token = createSessionToken(user!, passcodeEnv);
+    expect(verifySessionToken(token, passcodeEnv)).toEqual(user);
+
+    // Changing BETA_INVITE_CODE immediately invalidates existing session cookies
+    const rotatedEnv: NodeJS.ProcessEnv = {
+      ...passcodeEnv,
+      BETA_INVITE_CODE: 'NewRotatedCode!2026',
+    };
+    expect(verifySessionToken(token, rotatedEnv)).toBeNull();
   });
 });

@@ -1,10 +1,12 @@
 import {
   authenticateBetaUserAsync,
+  authenticatePasscode,
   buildSessionCookie,
   checkLoginRateLimit,
   clearLoginFailures,
   createSessionToken,
   isBetaAuthEnabled,
+  isPasscodeMode,
   isSecureRequest,
   recordLoginFailure,
 } from '../_lib/auth.ts';
@@ -25,6 +27,7 @@ interface VercelLikeResponse {
 interface LoginBody {
   email?: unknown;
   password?: unknown;
+  passcode?: unknown;
 }
 
 export default async function handler(req: VercelLikeRequest, res: VercelLikeResponse) {
@@ -59,6 +62,32 @@ export default async function handler(req: VercelLikeRequest, res: VercelLikeRes
     }
   } else {
     body = req.body as LoginBody | undefined;
+  }
+
+  if (isPasscodeMode()) {
+    const passcode =
+      typeof body?.passcode === 'string'
+        ? body.passcode
+        : typeof body?.password === 'string'
+          ? body.password
+          : '';
+    if (!passcode.trim()) {
+      return res.status(400).json({ error: 'Please enter the beta access code.' });
+    }
+    const user = authenticatePasscode(passcode);
+    if (!user) {
+      await recordLoginFailure(req.headers);
+      return res.status(401).json({ error: 'Incorrect beta access code.' });
+    }
+    await clearLoginFailures(req.headers);
+    const token = createSessionToken(user);
+    res.setHeader('Set-Cookie', buildSessionCookie(token, isSecureRequest(req.headers)));
+    return res.status(200).json({
+      ok: true,
+      authEnabled: true,
+      passcodeMode: true,
+      user,
+    });
   }
 
   const email = typeof body?.email === 'string' ? body.email.trim() : '';
