@@ -194,14 +194,16 @@ export function calculateEstimate(
   const grouped = new Map<string, { name: string; category: string; qty: number; unit: number }>();
   for (const item of items) {
     if (item.visible === false) continue;
-    if (item.catalogId === 'custom-3d-model') {
+    if (item.catalogId === 'custom-3d-model' || item.catalogId === 'custom-built-asset') {
       const key = `custom:${item.name}`;
       const existing = grouped.get(key);
       if (existing) {
         existing.qty += 1;
       } else {
+        const tag =
+          item.catalogId === 'custom-built-asset' ? 'Custom Built Asset' : 'Client 3D Exhibit';
         grouped.set(key, {
-          name: `${item.name} (Client 3D Exhibit — ${item.dims.w}×${item.dims.d}m)`,
+          name: `${item.name} (${tag} — ${item.dims.w}×${item.dims.d}m)`,
           category: 'Client Exhibit',
           qty: 1,
           unit: 0,

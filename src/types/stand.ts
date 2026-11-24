@@ -82,6 +82,50 @@ export interface CustomModelAsset {
   blobUrl: string;
 }
 
+export type AssetPrimitiveKind =
+  | 'box'
+  | 'cylinder'
+  | 'cone'
+  | 'sphere'
+  | 'wedge'
+  | 'ring'
+  | 'extrusion';
+
+export type AssetPrimitiveFinish = 'matte' | 'metal' | 'dark-steel' | 'glass' | 'accent';
+
+export interface AssetPrimitive {
+  id: string;
+  label: string;
+  kind: AssetPrimitiveKind;
+  /** Dimensions in millimetres (mm) */
+  w: number;
+  h: number;
+  d: number;
+  /** Position in mm relative to asset origin; y is bottom elevation from floor */
+  x: number;
+  y: number;
+  z: number;
+  /** Optional rotations in degrees */
+  rotX?: number;
+  rotY?: number;
+  rotZ?: number;
+  color: string;
+  finish: AssetPrimitiveFinish;
+  /** For 'extrusion' kind: 2D polygon vertices in mm relative to primitive center */
+  points?: Array<{ x: number; y: number }>;
+  /** Axis along which traced 2D polygons are extruded ('y' = top-down plan, 'z' = front elevation) */
+  extrudeAxis?: 'y' | 'z';
+}
+
+export interface CustomBuiltAsset {
+  id: string;
+  name: string;
+  primitives: AssetPrimitive[];
+  /** Bounding dimensions in meters */
+  dims: Dimensions3D;
+  createdAt: number;
+}
+
 export interface StandItem {
   id: string;
   catalogId: string;
@@ -100,6 +144,9 @@ export interface StandItem {
   artwork: Record<string, SurfaceArtwork>;
   /** For imported custom 3D models (.glb, .gltf, .stl, .obj) */
   customModelId?: string;
+  /** For user-created parametric/traced assets from the Custom Asset Builder */
+  customAssetId?: string;
+  customPrimitives?: AssetPrimitive[];
   zUpFix?: boolean;
   lockAspect?: boolean;
   modelTintColor?: string;
@@ -211,6 +258,7 @@ export interface SavedProject {
   config: StandConfig;
   items: StandItem[];
   customAssets: BrandAsset[];
+  customBuiltAssets?: CustomBuiltAsset[];
 }
 
 export interface ComplianceReport {

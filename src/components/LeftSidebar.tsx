@@ -5,8 +5,10 @@ import {
   Copy,
   Eye,
   EyeOff,
+  FileImage,
   Image,
   ImagePlus,
+  Layers,
   Lock,
   Paintbrush,
   Plus,
@@ -22,6 +24,7 @@ import { STAND_TEMPLATES } from '../data/templates';
 import type {
   BrandAsset,
   CurrencyCode,
+  CustomBuiltAsset,
   CustomModelAsset,
   EquipmentCategory,
   FloorMaterial,
@@ -57,6 +60,10 @@ interface LeftSidebarProps {
   onUpload3DModels: (files: FileList) => void;
   onPlaceCustomModel: (modelAssetId: string) => void;
   onLoadSampleMachine: () => void;
+  customBuiltAssets: CustomBuiltAsset[];
+  onOpenAssetBuilder: (mode: 'shapes' | 'schematic') => void;
+  onPlaceCustomBuiltAsset: (assetId: string) => void;
+  onDeleteCustomBuiltAsset: (assetId: string) => void;
   paintAssetId: string | null;
   onSetPaintAssetId: (assetId: string | null) => void;
   onApplyTemplate: (template: StandTemplate) => void;
@@ -116,6 +123,10 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onUpload3DModels,
   onPlaceCustomModel,
   onLoadSampleMachine,
+  customBuiltAssets,
+  onOpenAssetBuilder,
+  onPlaceCustomBuiltAsset,
+  onDeleteCustomBuiltAsset,
   paintAssetId,
   onSetPaintAssetId,
   onApplyTemplate,
@@ -267,6 +278,27 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     {CATEGORY_META[cat].shortLabel}
                   </button>
                 ))}
+              </div>
+
+              <div className="custom-builder-banner">
+                <button
+                  type="button"
+                  id="btn-open-asset-builder-catalog"
+                  className="secondary-btn custom-builder-banner-btn"
+                  onClick={() => onOpenAssetBuilder('shapes')}
+                >
+                  <Layers size={13} />
+                  <span>Build Custom Asset</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-open-schematic-catalog"
+                  className="secondary-btn custom-builder-banner-btn"
+                  onClick={() => onOpenAssetBuilder('schematic')}
+                >
+                  <FileImage size={13} />
+                  <span>2D Schematic</span>
+                </button>
               </div>
 
               <div className="catalog-grid">
@@ -590,6 +622,72 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
           {activeTab === 'assets' && (
             <div className="panel-section-stack">
+              {/* Custom Asset Builder (Simple Shapes + 2D Schematic Auto/Trace) */}
+              <div className="custom-3d-box">
+                <div className="custom-3d-head">
+                  <span className="custom-3d-title">
+                    <Layers size={13} /> Custom Asset Builder
+                  </span>
+                  <span className="mono-num custom-3d-formats">MM · 2D TRACE</span>
+                </div>
+                <p className="custom-builder-desc">
+                  Build rough machines or props from dimensioned shapes, or auto-generate &amp; trace from a 2D schematic.
+                </p>
+                <div className="custom-3d-actions">
+                  <button
+                    type="button"
+                    id="btn-open-asset-builder"
+                    className="primary-btn custom-3d-upload-btn"
+                    onClick={() => onOpenAssetBuilder('shapes')}
+                  >
+                    <Plus size={13} />
+                    <span>Shape Builder</span>
+                  </button>
+                  <button
+                    type="button"
+                    id="btn-open-schematic-builder"
+                    className="secondary-btn custom-3d-sample-btn"
+                    onClick={() => onOpenAssetBuilder('schematic')}
+                    title="Upload a 2D drawing or schematic to auto-generate or trace a 3D model"
+                  >
+                    <FileImage size={13} />
+                    <span>2D Schematic</span>
+                  </button>
+                </div>
+                {customBuiltAssets.length > 0 && (
+                  <div className="uploaded-models-list">
+                    {customBuiltAssets.map((a) => (
+                      <div key={a.id} className="uploaded-model-chip-wrap">
+                        <button
+                          type="button"
+                          className="uploaded-model-chip"
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('application/x-zuki-custom-asset', a.id);
+                            e.dataTransfer.effectAllowed = 'copy';
+                          }}
+                          onClick={() => onPlaceCustomBuiltAsset(a.id)}
+                          title="Click or drag onto stand floor"
+                        >
+                          <span className="uploaded-model-name">{a.name}</span>
+                          <span className="mono-num uploaded-model-meta">
+                            {a.dims.w}×{a.dims.d}×{a.dims.h}m · {a.primitives.length}p
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="uploaded-model-del-btn"
+                          title="Remove custom asset from library"
+                          onClick={() => onDeleteCustomBuiltAsset(a.id)}
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Custom 3D Models (.GLB, .GLTF, .STL, .OBJ) */}
               <div className="custom-3d-box">
                 <div className="custom-3d-head">

@@ -245,3 +245,56 @@ aside.left-studio-rail {
 .rail-panel .swatch-picker {
   min-height: 30px;
 }
+
+.custom-builder-banner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.custom-builder-banner-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 12px;
+  padding: 7px 8px;
+}
+
+.custom-builder-desc {
+  margin: 0 0 8px 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink-secondary);
+}
+
+.uploaded-model-chip-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.uploaded-model-chip-wrap .uploaded-model-chip {
+  flex: 1;
+  min-width: 0;
+}
+
+.uploaded-model-del-btn {
+  width: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-0);
+  color: var(--ink-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.uploaded-model-del-btn:hover {
+  color: var(--status-warn);
+  border-color: var(--status-warn);
+  background: var(--status-warn-bg);
+}
+

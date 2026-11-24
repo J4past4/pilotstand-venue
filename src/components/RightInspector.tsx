@@ -52,6 +52,7 @@ interface RightInspectorProps {
   ) => void;
   compliance: ComplianceReport;
   onOpenBrandingTab: () => void;
+  onEditCustomBuiltAsset?: (item: StandItem) => void;
   onClose: () => void;
 }
 
@@ -81,6 +82,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   onUploadAssetForSurface,
   compliance,
   onOpenBrandingTab,
+  onEditCustomBuiltAsset,
   onClose,
 }) => {
   const surfaceFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -355,13 +357,28 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               <div><dt>Depth</dt><dd>{formatLength(selectedItem.dims.d, config.unit)}</dd></div>
               <div><dt>Height</dt><dd>{formatLength(selectedItem.dims.h, config.unit)}</dd></div>
             </dl>
-            {selectedItem.catalogId === 'custom-3d-model' && (
+            {(selectedItem.catalogId === 'custom-3d-model' ||
+              selectedItem.catalogId === 'custom-built-asset') && (
               <div className="control-block branding-zones-block">
                 <div className="control-label-row">
                   <label className="block-label" style={{ marginBottom: 0 }}>
-                    3D Showcase Model Scale &amp; CAD Fix
+                    {selectedItem.catalogId === 'custom-built-asset'
+                      ? 'Custom Built Asset Scale'
+                      : '3D Showcase Model Scale & CAD Fix'}
                   </label>
                 </div>
+
+                {selectedItem.catalogId === 'custom-built-asset' && onEditCustomBuiltAsset && (
+                  <button
+                    type="button"
+                    className="primary-btn full-width"
+                    style={{ marginBottom: 10 }}
+                    onClick={() => onEditCustomBuiltAsset(selectedItem)}
+                  >
+                    <Box size={14} />
+                    <span>Edit Shapes / Dimensions</span>
+                  </button>
+                )}
 
                 <div className="toggle-row compact" style={{ marginTop: 0, marginBottom: 8 }}>
                   <span>Lock Proportions</span>
@@ -486,30 +503,32 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   />
                 </div>
 
-                <div className="toggle-row compact" style={{ marginTop: 10 }}>
-                  <span>CAD Z-Up → Y-Up Fix</span>
-                  <input
-                    id="toggle-cad-zup"
-                    type="checkbox"
-                    className="studio-switch"
-                    checked={Boolean(selectedItem.zUpFix)}
-                    onChange={(e) => {
-                      const nextZ = e.target.checked;
-                      onUpdateItem(
-                        selectedItem.id,
-                        {
-                          zUpFix: nextZ,
-                          dims: {
-                            w: selectedItem.dims.w,
-                            h: selectedItem.dims.d,
-                            d: selectedItem.dims.h,
+                {selectedItem.catalogId === 'custom-3d-model' && (
+                  <div className="toggle-row compact" style={{ marginTop: 10 }}>
+                    <span>CAD Z-Up → Y-Up Fix</span>
+                    <input
+                      id="toggle-cad-zup"
+                      type="checkbox"
+                      className="studio-switch"
+                      checked={Boolean(selectedItem.zUpFix)}
+                      onChange={(e) => {
+                        const nextZ = e.target.checked;
+                        onUpdateItem(
+                          selectedItem.id,
+                          {
+                            zUpFix: nextZ,
+                            dims: {
+                              w: selectedItem.dims.w,
+                              h: selectedItem.dims.d,
+                              d: selectedItem.dims.h,
+                            },
                           },
-                        },
-                        true
-                      );
-                    }}
-                  />
-                </div>
+                          true
+                        );
+                      }}
+                    />
+                  </div>
+                )}
 
                 <div className="color-inline-row" style={{ marginTop: 8 }}>
                   <span>CAD Mesh Tint</span>

@@ -36,14 +36,20 @@ import { SetupGuidePage } from './components/SetupGuidePage';
 import { StudioWalkthrough, WALKTHROUGH_DISMISSED_KEY } from './components/StudioWalkthrough';
 import { TopBar } from './components/TopBar';
 import { AgentDrawer } from './components/AgentDrawer';
+import {
+  CustomAssetBuilderModal,
+  type BuilderMode,
+} from './components/CustomAssetBuilderModal';
 import { applyAgentActions } from './agent/actionExecutor';
 import { sendStandAgentPrompt } from './agent/agentClient';
 import type { AgentAudioPayload, AgentChatMessage, AgentHistoryTurn } from './agent/types';
 import type {
+  AssetPrimitive,
   BrandAsset,
   BrandKitSetupResult,
   CameraPreset,
   CurrencyCode,
+  CustomBuiltAsset,
   CustomModelAsset,
   SavedProject,
   ShellWallSide,
@@ -150,6 +156,9 @@ export function App() {
   const [config, setConfig] = useState<StandConfig>(activeProj.config);
   const [items, setItems] = useState<StandItem[]>(activeProj.items);
   const [customAssets, setCustomAssets] = useState<BrandAsset[]>(activeProj.customAssets || []);
+  const [customBuiltAssets, setCustomBuiltAssets] = useState<CustomBuiltAsset[]>(
+    activeProj.customBuiltAssets || []
+  );
 
   // Main Projects Dashboard, Setup Guide & Guided Walkthrough Popup state
   const [showDashboard, setShowDashboard] = useState<boolean>(true);
@@ -185,6 +194,14 @@ export function App() {
   const [showEstimateModal, setShowEstimateModal] = useState(false);
   const [showProjectsModal, setShowProjectsModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showAssetBuilder, setShowAssetBuilder] = useState(false);
+  const [assetBuilderMode, setAssetBuilderMode] = useState<BuilderMode>('shapes');
+  const [editingCustomAsset, setEditingCustomAsset] = useState<{
+    itemId?: string;
+    assetId?: string;
+    name: string;
+    primitives: AssetPrimitive[];
+  } | null>(null);
   const [showAgentDrawer, setShowAgentDrawer] = useState(false);
   const [agentMessages, setAgentMessages] = useState<AgentChatMessage[]>([]);
   const [agentLoading, setAgentLoading] = useState(false);
@@ -389,6 +406,96 @@ export function App() {
     setCustomModels((prev) => (prev.some((m) => m.id === sample.id) ? prev : [sample, ...prev]));
     placeCustomModelAsset(sample, 0.4, 0.2);
   }, [placeCustomModelAsset]);
+
+  const placeCustomBuiltAsset = useCallback(
+    (asset: CustomBuiltAsset, dropX?: number, dropZ?: number) => {
+      const px = dropX !== undefined ? dropX : 0;
+      const pz = dropZ !== undefined ? dropZ : 0.15;
+      const newItem: StandItem = {
+        id: createItemId('built'),
+        catalogId: 'custom-built-asset',
+        name: asset.name,
+        customAssetId: asset.id,
+        customPrimitives: asset.primitives.map((p) => ({
+          ...p,
+          points: p.points ? p.points.map((pt) => ({ ...pt })) : undefined,
+        })),
+        x: px,
+        y: 0,
+        z: pz,
+        rotationY: 0,
+        dims: { ...asset.dims },
+        lockAspect: true,
+        locked: false,
+        visible: true,
+        artwork: {},
+      };
+      const nextItems = [...items, newItem];
+      setItems(nextItems);
+      setRailPanelOpen(false);
+      setSelectedItemId(newItem.id);
+      setSelectedSurfaceId(null);
+      setSelectedShellWall(null);
+      pushHistory(config, nextItems);
+      notify(`Placed "${asset.name}" (${asset.dims.w}×${asset.dims.d}×${asset.dims.h}m)`);
+    },
+    [items, config, pushHistory, notify]
+  );
+
+  const handleOpenAssetBuilder = useCallback((mode: BuilderMode) => {
+    setEditingCustomAsset(null);
+    setAssetBuilderMode(mode);
+    setShowAssetBuilder(true);
+    setRailPanelOpen(false);
+  }, []);
+
+  const handleEditCustomBuiltAsset = useCallback((item: StandItem) => {
+    setEditingCustomAsset({
+      itemId: item.id,
+      assetId: item.customAssetId,
+      name: item.name,
+      primitives: item.customPrimitives || [],
+    });
+    setAssetBuilderMode('shapes');
+    setShowAssetBuilder(true);
+  }, []);
+
+  const handleSaveBuiltAsset = useCallback(
+    (asset: CustomBuiltAsset, options: { editingItemId?: string }) => {
+      setCustomBuiltAssets((prev) => {
+        const exists = prev.some((a) => a.id === asset.id);
+        return exists ? prev.map((a) => (a.id === asset.id ? asset : a)) : [asset, ...prev];
+      });
+
+      if (options.editingItemId) {
+        setItems((prev) => {
+          const next = prev.map((it) =>
+            it.id === options.editingItemId
+              ? {
+                  ...it,
+                  name: asset.name,
+                  customAssetId: asset.id,
+                  customPrimitives: asset.primitives.map((p) => ({
+                    ...p,
+                    points: p.points ? p.points.map((pt) => ({ ...pt })) : undefined,
+                  })),
+                  dims: { ...asset.dims },
+                }
+              : it
+          );
+          pushHistory(config, next);
+          return next;
+        });
+        notify(`Updated "${asset.name}" (${asset.dims.w}×${asset.dims.d}×${asset.dims.h}m)`);
+      } else {
+        placeCustomBuiltAsset(asset);
+      }
+
+      setShowAssetBuilder(false);
+      setEditingCustomAsset(null);
+    },
+    [config, pushHistory, notify, placeCustomBuiltAsset]
+  );
 
   const updateItem = useCallback(
     (id: string, patch: Partial<StandItem>, commit = true) => {
@@ -645,6 +752,7 @@ export function App() {
       config,
       items,
       customAssets,
+      customBuiltAssets,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -654,7 +762,7 @@ export function App() {
     a.click();
     URL.revokeObjectURL(url);
     notify('Exported project .JSON backup');
-  }, [activeProjectId, projectName, config, items, customAssets, notify]);
+  }, [activeProjectId, projectName, config, items, customAssets, customBuiltAssets, notify]);
 
   const handleImportJson = useCallback(
     (file: File) => {
@@ -1213,6 +1321,15 @@ export function App() {
             if (m) placeCustomModelAsset(m);
           }}
           onLoadSampleMachine={handleLoadSampleMachine}
+          customBuiltAssets={customBuiltAssets}
+          onOpenAssetBuilder={handleOpenAssetBuilder}
+          onPlaceCustomBuiltAsset={(assetId) => {
+            const a = customBuiltAssets.find((x) => x.id === assetId);
+            if (a) placeCustomBuiltAsset(a);
+          }}
+          onDeleteCustomBuiltAsset={(assetId) => {
+            setCustomBuiltAssets((prev) => prev.filter((a) => a.id !== assetId));
+          }}
           paintAssetId={paintAssetId}
           onSetPaintAssetId={setPaintAssetId}
           onApplyTemplate={applyTemplate}
@@ -1244,6 +1361,10 @@ export function App() {
             onDropCustomModelAsset={(modelId, x, z) => {
               const m = customModels.find((cm) => cm.id === modelId);
               if (m) placeCustomModelAsset(m, x, z);
+            }}
+            onDropCustomBuiltAsset={(assetId, x, z) => {
+              const a = customBuiltAssets.find((ca) => ca.id === assetId);
+              if (a) placeCustomBuiltAsset(a, x, z);
             }}
             onDrop3DFiles={(files, x, z) => handleUpload3DModels(files, x, z)}
           />
@@ -1374,6 +1495,7 @@ export function App() {
             setSidebarTab('branding');
             setRailPanelOpen(true);
           }}
+          onEditCustomBuiltAsset={handleEditCustomBuiltAsset}
           onClose={() => {
             setSelectedItemId(null);
             setSelectedSurfaceId(null);
@@ -1382,6 +1504,18 @@ export function App() {
           }}
         />}
       </main>
+
+      {showAssetBuilder && (
+        <CustomAssetBuilderModal
+          initialMode={assetBuilderMode}
+          editingAsset={editingCustomAsset}
+          onClose={() => {
+            setShowAssetBuilder(false);
+            setEditingCustomAsset(null);
+          }}
+          onSaveAsset={handleSaveBuiltAsset}
+        />
+      )}
 
       <TemplatesModal
         open={showTemplatesModal}
@@ -1416,6 +1550,7 @@ export function App() {
             config: JSON.parse(JSON.stringify(config)),
             items: JSON.parse(JSON.stringify(items)),
             customAssets: [...customAssets],
+            customBuiltAssets: JSON.parse(JSON.stringify(customBuiltAssets)),
           };
           setProjects((prev) => [copy, ...prev]);
           setActiveProjectId(newId);
@@ -1428,6 +1563,7 @@ export function App() {
           setConfig(proj.config);
           setItems(proj.items);
           setCustomAssets(proj.customAssets || []);
+          setCustomBuiltAssets(proj.customBuiltAssets || []);
           setSelectedItemId(null);
           setSelectedShellWall(null);
           setHistory([cloneSnapshot(proj.config, proj.items)]);

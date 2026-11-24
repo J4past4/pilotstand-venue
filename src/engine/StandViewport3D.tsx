@@ -20,6 +20,7 @@ import type {
 } from '../types/stand';
 import { buildBoothShell, buildScaleFigures, buildStandItemMesh } from './meshFactory';
 import { buildCustomModelMesh } from './modelLoader';
+import { buildCustomBuiltAssetMesh } from './customAssetMesh';
 import { formatLength } from '../utils/pricing';
 
 export interface StandViewportHandle {
@@ -53,6 +54,7 @@ interface StandViewportProps {
   ) => void;
   onDropCatalogItem: (catalogId: string, x: number, z: number) => void;
   onDropCustomModelAsset: (modelAssetId: string, x: number, z: number) => void;
+  onDropCustomBuiltAsset?: (customAssetId: string, x: number, z: number) => void;
   onDrop3DFiles: (files: FileList, x: number, z: number) => void;
 }
 
@@ -105,6 +107,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       onPaintSurface,
       onDropCatalogItem,
       onDropCustomModelAsset,
+      onDropCustomBuiltAsset,
       onDrop3DFiles,
     },
     ref
@@ -926,7 +929,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         const meshGroup =
           item.catalogId === 'custom-3d-model'
             ? buildCustomModelMesh(item)
-            : buildStandItemMesh(item, ctx);
+            : item.catalogId === 'custom-built-asset'
+              ? buildCustomBuiltAssetMesh(item)
+              : buildStandItemMesh(item, ctx);
 
         // In 2D Plan mode, render overhead rigging/hanging signs as semi-transparent
         // Reflected Ceiling Plan (RCP) outlines so they never obscure floor furniture below
@@ -1155,6 +1160,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         setDropHint('Release to place equipment onto stand floor');
       } else if (types.includes('application/x-zuki-model')) {
         setDropHint('Release to place 3D model onto stand floor');
+      } else if (types.includes('application/x-zuki-custom-asset')) {
+        setDropHint('Release to place custom asset onto stand floor');
       } else {
         setDropHint('Drop 3D model (.GLB, .GLTF, .STL, .OBJ) to place on stand');
       }
@@ -1179,6 +1186,12 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       const modelAssetId = e.dataTransfer.getData('application/x-zuki-model');
       if (modelAssetId) {
         onDropCustomModelAsset(modelAssetId, pos.x, pos.z);
+        return;
+      }
+
+      const customAssetId = e.dataTransfer.getData('application/x-zuki-custom-asset');
+      if (customAssetId && onDropCustomBuiltAsset) {
+        onDropCustomBuiltAsset(customAssetId, pos.x, pos.z);
         return;
       }
 
