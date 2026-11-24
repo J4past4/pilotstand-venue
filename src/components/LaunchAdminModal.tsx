@@ -151,7 +151,7 @@ export const LaunchAdminModal: React.FC<LaunchAdminModalProps> = ({ open, onClos
     if (!data) return;
     if (tab === 'users') {
       downloadCsv(
-        'zuki-launch-signups.csv',
+        'pilotstand-launch-signups.csv',
         ['Name', 'Email', 'Company', 'Role', 'Stand Size', 'Upcoming Event', 'Marketing Opt-In', 'Source', 'Created'],
         data.users.map((u) => [
           u.name,
@@ -167,7 +167,7 @@ export const LaunchAdminModal: React.FC<LaunchAdminModalProps> = ({ open, onClos
       );
     } else if (tab === 'suppliers') {
       downloadCsv(
-        'zuki-supplier-inquiries.csv',
+        'pilotstand-supplier-inquiries.csv',
         ['Company', 'Contact', 'Email', 'Plan', 'Region', 'SKUs', 'Categories', 'Created'],
         data.supplierInquiries.map((s) => [
           s.companyName,
@@ -182,7 +182,7 @@ export const LaunchAdminModal: React.FC<LaunchAdminModalProps> = ({ open, onClos
       );
     } else {
       downloadCsv(
-        'zuki-quote-requests.csv',
+        'pilotstand-quote-requests.csv',
         ['Contact', 'Email', 'Company', 'Event', 'Stand (m)', 'Items', 'Est GBP', 'Created'],
         data.quoteRequests.map((q) => [
           q.contactName,

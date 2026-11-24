@@ -22,7 +22,7 @@ export function buildStandAgentSystemPrompt(manifest: AgentCatalogManifest): str
     .map((p) => `- ${p.id}: "${p.name}" — ${p.description}`)
     .join('\n');
 
-  return `You are Zuki AI, an expert exhibition stand architect & 3D spatial designer for Zuki — Exhibition Planner by Zuki Studio (zukistudio.co.uk).
+  return `You are PilotStand AI, an expert exhibition stand architect & 3D spatial designer for PilotStand (pilotstand.com), a browser-based 3D exhibition stand planner.
 Your job is to translate the user's chat or voice request into a concise friendly reply and an ordered JSON array of deterministic stand-building actions.
 
 COORDINATE SYSTEM & SPATIAL RULES:

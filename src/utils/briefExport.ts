@@ -74,12 +74,12 @@ export function exportProductionBriefHtml(
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>${escapeHtml(projectName)} — Zuki Exhibition Planner Production Brief</title>
+<title>${escapeHtml(projectName)} — PilotStand Production Brief</title>
 <style>
   * { box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
-    color: #18191B;
+    color: #111315;
     background: #FFFFFF;
     margin: 0;
     padding: 36px 42px;
@@ -89,7 +89,7 @@ export function exportProductionBriefHtml(
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
-    border-bottom: 2px solid #1B365D;
+    border-bottom: 2px solid #111315;
     padding-bottom: 18px;
     margin-bottom: 26px;
   }
@@ -97,7 +97,7 @@ export function exportProductionBriefHtml(
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.14em;
-    color: #D95D39;
+    color: #FF4D2E;
     font-weight: 700;
     margin-bottom: 4px;
   }
@@ -117,7 +117,7 @@ export function exportProductionBriefHtml(
     margin-bottom: 26px;
   }
   .stat {
-    background: #F7F7F5;
+    background: #F6F5F1;
     border: 1px solid #E6E5E0;
     border-radius: 8px;
     padding: 12px 14px;
@@ -129,13 +129,13 @@ export function exportProductionBriefHtml(
     margin: 26px 0 12px;
     padding-bottom: 6px;
     border-bottom: 1px solid #E6E5E0;
-    color: #1B365D;
+    color: #111315;
   }
   .swatches { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
   .swatch { display: flex; align-items: center; gap: 8px; font-size: 13px; }
   .swatch-dot { width: 22px; height: 22px; border-radius: 5px; border: 1px solid rgba(0,0,0,0.15); }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; padding: 9px 10px; background: #F7F7F5; border-bottom: 1px solid #D8D6D0; font-weight: 600; }
+  th { text-align: left; padding: 9px 10px; background: #F6F5F1; border-bottom: 1px solid #D8D6D0; font-weight: 600; }
   td { padding: 8px 10px; border-bottom: 1px solid #EEEDE8; }
   .num { text-align: right; font-family: ui-monospace, SFMono-Regular, monospace; }
   .totals {
@@ -145,10 +145,10 @@ export function exportProductionBriefHtml(
     font-size: 14px;
   }
   .totals-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #EEEDE8; }
-  .totals-grand { font-size: 18px; font-weight: 800; color: #1B365D; border-bottom: none; padding-top: 10px; }
+  .totals-grand { font-size: 18px; font-weight: 800; color: #111315; border-bottom: none; padding-top: 10px; }
   .print-btn {
     position: fixed; top: 18px; right: 18px;
-    background: #1B365D; color: #FFF; border: none; border-radius: 8px;
+    background: #111315; color: #FFF; border: none; border-radius: 8px;
     padding: 10px 18px; font-weight: 600; cursor: pointer;
   }
   @media print {
@@ -161,7 +161,7 @@ export function exportProductionBriefHtml(
   <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
   <div class="header">
     <div>
-      <div class="brand-kicker">Zuki — Exhibition Planner · by Zuki Studio (zukistudio.co.uk)</div>
+      <div class="brand-kicker">PilotStand — 3D Exhibition Stand Planner · pilotstand.com</div>
       <h1>${escapeHtml(projectName)}</h1>
     </div>
     <div class="meta">
@@ -263,8 +263,8 @@ export function exportProductionBriefHtml(
     <div class="totals-row totals-grand"><span>Estimated Total</span><span class="num">${formatMoney(estimate.grandTotalGbp, currency)}</span></div>
   </div>
   <div style="margin-top:34px;padding-top:12px;border-top:1px solid #E6E5E0;font-size:11px;color:#848994;display:flex;justify-content:space-between;">
-    <span>Generated with <strong>Zuki — Exhibition Planner</strong> by Zuki Studio</span>
-    <span>zukistudio.co.uk</span>
+    <span>Planned in <strong>PilotStand</strong> — Free 3D Exhibition Stand Planner</span>
+    <span>pilotstand.com</span>
   </div>
 </body>
 </html>`;

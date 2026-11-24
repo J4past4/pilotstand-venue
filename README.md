@@ -1,8 +1,8 @@
-# Zuki — Exhibition Planner
+# PilotStand — 3D Exhibition Stand Planner
 
-> Built by **[Zuki Studio](https://zukistudio.co.uk)** for the exhibition and trade show market.
+> **Test-drive your exhibition stand in 3D before you build.** Free browser-based stand planning, modular kit configuration, and hosted supplier 3D asset catalog.
 
-A browser-based 3D & 2D exhibition stand planner for exhibitors and event teams to design, customize, brand, and visualize exhibition stands in real time.
+A browser-based 3D & 2D exhibition stand planner for exhibitors, agencies, and event teams to design, customize, brand, and visualize exhibition stands in real time.
 
 ## Key Features
 

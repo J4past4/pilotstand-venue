@@ -1,21 +1,21 @@
 :root {
   --bg-canvas: #e6e9ef;
   --surface-0: #ffffff;
-  --surface-1: #f7f7f5;
-  --surface-2: #efeee9;
-  --surface-hover: #f0f1f4;
+  --surface-1: #f6f5f1;
+  --surface-2: #eeede7;
+  --surface-hover: #efeff2;
   --border-subtle: #e5e4de;
   --border-strong: #d3d1c9;
 
-  --ink-primary: #17191d;
+  --ink-primary: #111315;
   --ink-secondary: #585c66;
   --ink-muted: #848994;
 
-  --brand-primary: #1b365d;
-  --brand-primary-hover: #132847;
-  --brand-primary-soft: #eaf0f8;
-  --brand-accent: #d95d39;
-  --brand-accent-soft: #fdf0ec;
+  --brand-primary: #111315;
+  --brand-primary-hover: #23272e;
+  --brand-primary-soft: #eef0f3;
+  --brand-accent: #ff4d2e;
+  --brand-accent-soft: #fff0ed;
 
   --status-ok: #15803d;
   --status-ok-bg: #ecfdf3;

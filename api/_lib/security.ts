@@ -157,7 +157,7 @@ export async function enforceRateLimits(
       allowed: false,
       statusCode: 503,
       error:
-        'Zuki AI Designer has reached its daily safety budget cap. Manual 3D editing remains fully available — please try again tomorrow.',
+        'PilotStand AI Designer has reached its daily safety budget cap. Manual 3D editing remains fully available — please try again tomorrow.',
       remainingHourly,
       remainingDaily,
     };

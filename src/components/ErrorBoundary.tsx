@@ -86,7 +86,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           </div>
 
           <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700 }}>
-            {this.props.fallbackTitle || 'Zuki Exhibition Planner hit a snag'}
+            {this.props.fallbackTitle || 'PilotStand hit a snag'}
           </h2>
           <p
             style={{
@@ -107,7 +107,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 fontSize: 11.5,
                 padding: '8px 10px',
                 borderRadius: 8,
-                background: '#f7f7f5',
+                background: '#f6f5f1',
                 border: '1px solid #e5e4de',
                 color: '#585c66',
                 marginBottom: 18,
@@ -127,7 +127,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 borderRadius: 8,
                 border: '1px solid #d3d1c9',
                 background: '#ffffff',
-                color: '#17191d',
+                color: '#111315',
                 fontSize: 13,
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -145,7 +145,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 padding: '9px 16px',
                 borderRadius: 8,
                 border: 'none',
-                background: '#1b365d',
+                background: '#111315',
                 color: '#ffffff',
                 fontSize: 13,
                 fontWeight: 600,

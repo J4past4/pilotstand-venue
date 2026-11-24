@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { BrandMark } from './BrandMark';
 import {
   ArrowLeft,
   ArrowRight,
@@ -255,13 +256,10 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
       <header className="dash-header">
         <div className="dash-brand">
           <div className="dash-brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-              <path d="M2 2h11l8 10h-11L2 2Z" />
-              <path d="M10 12h11l-8 10H2l8-10Z" opacity=".8" />
-            </svg>
+            <BrandMark size={18} />
           </div>
-          <span className="dash-brand-name">Zuki</span>
-          <span className="dash-brand-sub">Exhibition Stand Planner</span>
+          <span className="dash-brand-name">PilotStand</span>
+          <span className="dash-brand-sub">3D Exhibition Planner</span>
         </div>
 
         <div className="dash-header-actions">

@@ -104,7 +104,7 @@ const WalkthroughViewport3D: React.FC<{
 
   const primaryHex = brandConfig.primaryColor || '#1B365D';
   const accentHex = brandConfig.accentColor || '#D95D39';
-  const brandName = brandConfig.brandName || 'ZUKI STUDIO';
+  const brandName = brandConfig.brandName || 'PILOTSTAND';
   const brandTagline = brandConfig.brandTagline || 'Modular Exhibition Architecture';
 
   useEffect(() => {
@@ -688,7 +688,7 @@ const StudioWalkthroughModal: React.FC<{
       className="wt-modal-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label="Zuki Studio Guided Walkthrough"
+      aria-label="PilotStand Guided Walkthrough"
       onClick={onClose}
     >
       <div className="wt-modal-shell" onClick={(e) => e.stopPropagation()}>
@@ -698,7 +698,7 @@ const StudioWalkthroughModal: React.FC<{
             <span className="wt-studio-badge" style={{ background: accent }}>
               GUIDED TOUR
             </span>
-            <h2 className="wt-modal-title">How to Build Your Stand in Zuki Studio</h2>
+            <h2 className="wt-modal-title">How to Build Your Stand in PilotStand</h2>
             <span className="wt-duration-chip mono-num">1:16 · 7 Steps</span>
           </div>
           <button
@@ -725,13 +725,13 @@ const StudioWalkthroughModal: React.FC<{
                   transformOrigin: `${zoom.originX}% ${zoom.originY}%`,
                 }}
               >
-                {/* Miniature Zuki TopBar */}
+                {/* Miniature PilotStand TopBar */}
                 <div className="wt-app-topbar">
                   <div className="wt-app-brand">
                     <span className="wt-app-mark" style={{ background: primary }}>
-                      Z
+                      P
                     </span>
-                    <span className="wt-app-wordmark">Zuki</span>
+                    <span className="wt-app-wordmark">PilotStand</span>
                     <span className="wt-app-proj-pill">
                       {ws.boothSize === '6x4' ? '6×4m Launch Stand' : '4×3m New Stand'}
                     </span>

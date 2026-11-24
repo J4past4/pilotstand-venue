@@ -920,7 +920,7 @@ function App({
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.zuki-stand.json`;
+        a.download = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.pilotstand.json`;
         a.click();
         URL.revokeObjectURL(url);
         trackLaunchMetric({ event: 'json_exported' });
@@ -952,7 +952,7 @@ function App({
           setShowDashboard(false);
           notify(`Imported "${imported.name}"`);
         } catch {
-          notify('Invalid Zuki Exhibition Planner JSON file');
+          notify('Invalid PilotStand JSON file');
         }
       };
       reader.readAsText(file);
@@ -1357,7 +1357,7 @@ function App({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${proj.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.zuki-stand.json`;
+      a.download = `${proj.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.pilotstand.json`;
       a.click();
       URL.revokeObjectURL(url);
       notify(`Exported "${proj.name}"`);

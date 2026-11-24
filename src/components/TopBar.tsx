@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { BrandMark } from './BrandMark';
 import {
   BarChart3,
   Box,
@@ -118,20 +119,17 @@ export const TopBar: React.FC<TopBarProps> = ({
       <div className="topbar-global">
         <a
           className="brand-lockup"
-          href="https://zukistudio.co.uk"
+          href="https://pilotstand.com"
           target="_blank"
           rel="noopener noreferrer"
-          title="Zuki — Exhibition Planner by Zuki Studio (zukistudio.co.uk)"
+          title="PilotStand — Free 3D Exhibition Stand Planner (pilotstand.com)"
         >
           <div className="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-              <path d="M2 2h11l8 10h-11L2 2Z" />
-              <path d="M10 12h11l-8 10H2l8-10Z" opacity=".8" />
-            </svg>
+            <BrandMark size={24} />
           </div>
           <div className="brand-text-group">
-            <span className="brand-wordmark">Zuki</span>
-            <span className="brand-submark">Exhibition stand planner</span>
+            <span className="brand-wordmark">PilotStand</span>
+            <span className="brand-submark">3D Exhibition Planner</span>
           </div>
         </a>
         <div className="topbar-right">

@@ -119,7 +119,7 @@ export const AgentDrawer: React.FC<AgentDrawerProps> = ({
     <aside
       className="agent-drawer"
       id="ai-agent-drawer"
-      aria-label="Zuki AI Designer chat and voice assistant"
+      aria-label="PilotStand AI Designer chat and voice assistant"
     >
       <div className="agent-drawer-header">
         <div className="agent-header-title">
@@ -127,7 +127,7 @@ export const AgentDrawer: React.FC<AgentDrawerProps> = ({
             <Sparkles size={14} />
           </div>
           <div>
-            <h3>Zuki AI Designer</h3>
+            <h3>PilotStand AI Designer</h3>
             <span className="agent-subtitle">{statusLabel}</span>
           </div>
         </div>

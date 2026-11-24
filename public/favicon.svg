@@ -1,12 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="8" fill="#1B365D" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="8" fill="#111315" />
   <path
-    d="M9 10H23L11 22H23"
-    stroke="#FFFFFF"
-    stroke-width="2.6"
+    d="M16 5.5L25.5 10.8V19L23.1 17.6V12.2L16 8.2L8.9 12.2V19.6L14.4 22.7V25.5L6.5 21V10.8L16 5.5Z"
+    fill="#F6F5F1"
+  />
+  <path
+    d="M16 8.2V16.5M16 16.5L9.2 20.3M16 16.5L21.8 19.8"
+    stroke="#F6F5F1"
+    stroke-width="1.6"
     stroke-linecap="round"
     stroke-linejoin="round"
-    fill="none"
+    opacity="0.5"
   />
-  <circle cx="23" cy="10" r="2.2" fill="#D95D39" />
+  <path d="M18 18.4L26.8 21.3L22.7 23L21.2 27L18 18.4Z" fill="#FF4D2E" />
 </svg>

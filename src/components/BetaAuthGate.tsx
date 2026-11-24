@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Eye, EyeOff, KeyRound, Lock, LogIn, ShieldCheck, UserPlus } from 'lucide-react';
+import { BrandMark } from './BrandMark';
 import { PublicLaunchModal } from './PublicLaunchModal';
 import { SupplierPartnerModal } from './SupplierPartnerModal';
 import './authGate.css';
@@ -311,12 +312,9 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
       <div className="beta-auth-shell" aria-busy="true">
         <div className="beta-auth-loading">
           <div className="beta-auth-brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path d="M2 2h11l8 10h-11L2 2Z" />
-              <path d="M10 12h11l-8 10H2l8-10Z" opacity=".8" />
-            </svg>
+            <BrandMark size={20} />
           </div>
-          <span>Opening Zuki Exhibition Planner…</span>
+          <span>Opening PilotStand…</span>
         </div>
       </div>
     );
@@ -352,14 +350,11 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
           <div className="beta-auth-header">
             <div className="beta-auth-brand-row">
               <div className="beta-auth-brand-mark" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                  <path d="M2 2h11l8 10h-11L2 2Z" />
-                  <path d="M10 12h11l-8 10H2l8-10Z" opacity=".8" />
-                </svg>
+                <BrandMark size={18} />
               </div>
               <div>
-                <div className="beta-auth-brand-name">Zuki</div>
-                <div className="beta-auth-brand-sub">Exhibition Stand Planner</div>
+                <div className="beta-auth-brand-name">PilotStand</div>
+                <div className="beta-auth-brand-sub">3D Exhibition Planner</div>
               </div>
             </div>
             <span className="beta-auth-badge">
@@ -504,7 +499,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
           </form>
 
           <p className="beta-auth-footer">
-            Invite-only preview by Zuki Studio. Need access? Contact your team admin.
+            Invite-only preview of PilotStand. Need access? Contact your team admin.
           </p>
         </div>
       </div>

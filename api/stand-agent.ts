@@ -50,7 +50,7 @@ export default async function handler(req: VercelLikeRequest, res: VercelLikeRes
 
   const session = requireBetaSession(req.headers);
   if (!session.authorized) {
-    return res.status(401).json({ error: 'Sign in required to use Zuki AI Designer.' });
+    return res.status(401).json({ error: 'Sign in required to use PilotStand AI Designer.' });
   }
 
   const provider = resolveActiveProvider();

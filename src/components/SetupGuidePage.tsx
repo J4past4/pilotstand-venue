@@ -18,6 +18,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { COLOR_PALETTES } from '../data/palettes';
+import { BrandMark } from './BrandMark';
 import './header.css';
 import type {
   BrandAsset,
@@ -233,13 +234,10 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
       <header className="setup-header">
         <div className="setup-brand">
           <div className="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-              <path d="M2 2h11l8 10h-11L2 2Z" />
-              <path d="M10 12h11l-8 10H2l8-10Z" opacity=".8" />
-            </svg>
+            <BrandMark size={24} />
           </div>
           <div>
-            <span className="setup-brand-name">Zuki</span>
+            <span className="setup-brand-name">PilotStand</span>
             <span className="setup-brand-sub">Exhibition Setup Guide</span>
           </div>
         </div>
@@ -887,7 +885,7 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
                 <p className="setup-subtitle">
                   We have prepared your extravagant 8m × 6m Grand Flagship Pavilion branded with your
                   colours, typography, and assets. Launch now for a fast-paced 48-second interactive 3D
-                  product film of your flagship stand and Zuki Studio tools.
+                  product film of your flagship stand and PilotStand tools.
                 </p>
 
                 <div className="setup-summary-grid">
@@ -1042,7 +1040,7 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
                     style={{ background: primaryColor }}
                   />
                 )}
-                <span>{effectiveBrand} — Zuki</span>
+                <span>{effectiveBrand} — PilotStand</span>
               </div>
             </div>
 

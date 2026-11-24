@@ -818,7 +818,7 @@ export function buildWalkthroughStandConfig(
     floorColor: floorMaterial === 'oak-timber' ? '#B8956A' : '#2E333B',
     wallColor: '#F4F3EF',
     trimColor: '#C5C9CE',
-    brandName: brandConfig.brandName || 'ZUKI STUDIO',
+    brandName: brandConfig.brandName || 'PILOTSTAND',
     brandTagline: brandConfig.brandTagline || 'Modular Exhibition Architecture',
     primaryColor: brandConfig.primaryColor || '#1B365D',
     accentColor: brandConfig.accentColor || '#D95D39',
