@@ -1,0 +1,46 @@
+name: Auto-Merge Queue
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, unlabeled]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Verify queue without merging'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Strictly serialize merges into main so parallel chats queue cleanly one-by-one.
+# Never cancel an in-flight merge; GitHub queues the next run right behind it.
+concurrency:
+  group: merge-queue-main
+  cancel-in-progress: false
+
+jobs:
+  merge-queue:
+    name: Serialized Merge Queue
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Drain Merge Queue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+        run: node .github/scripts/merge-queue.mjs
