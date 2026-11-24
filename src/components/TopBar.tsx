@@ -10,6 +10,7 @@ import {
   LayoutTemplate,
   Magnet,
   Moon,
+  Palette,
   Redo2,
   Ruler,
   SlidersHorizontal,
@@ -37,6 +38,7 @@ interface TopBarProps {
   currency: CurrencyCode;
   agentOpen: boolean;
   onToggleAgent: () => void;
+  onOpenSetupGuide: () => void;
   onOpenProjects: () => void;
   onOpenTemplates: () => void;
   onOpenEstimate: () => void;
@@ -64,6 +66,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   currency,
   agentOpen,
   onToggleAgent,
+  onOpenSetupGuide,
   onOpenProjects,
   onOpenTemplates,
   onOpenEstimate,
@@ -94,25 +97,30 @@ export const TopBar: React.FC<TopBarProps> = ({
   return (
     <header className="studio-topbar" id="studio-topbar">
       <div className="topbar-left">
-        <div className="brand-lockup">
+        <a
+          className="brand-lockup"
+          href="https://zukistudio.co.uk"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Zuki — Exhibition Planner by Zuki Studio (zukistudio.co.uk)"
+        >
           <div className="brand-mark" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
               <path
-                d="M4 17.5V7.5L12 3.5L20 7.5V17.5L12 21L4 17.5Z"
+                d="M6.5 7H17.5L7.5 17H17.5"
                 stroke="currentColor"
-                strokeWidth="2"
+                strokeWidth="2.3"
+                strokeLinecap="round"
                 strokeLinejoin="round"
               />
-              <path
-                d="M12 11.5L20 7.5M12 11.5L4 7.5M12 11.5V21"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinejoin="round"
-              />
+              <circle cx="17.5" cy="7" r="2" fill="#D95D39" />
             </svg>
           </div>
-          <span className="brand-wordmark">StandCraft</span>
-        </div>
+          <div className="brand-text-group">
+            <span className="brand-wordmark">Zuki</span>
+            <span className="brand-submark">Exhibition Planner</span>
+          </div>
+        </a>
 
         <div className="topbar-divider" />
 
@@ -281,6 +289,15 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       <div className="topbar-right">
+        <button
+          id="btn-brand-setup"
+          className="ghost-btn"
+          onClick={onOpenSetupGuide}
+          title="Open Brand Kit & Stand Setup Guide"
+        >
+          <Palette size={14} />
+          <span>Brand Setup</span>
+        </button>
         <button
           id="btn-ai-designer"
           className={`agent-toggle-btn ${agentOpen ? 'active' : ''}`}

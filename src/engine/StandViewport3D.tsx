@@ -24,6 +24,7 @@ import { formatLength } from '../utils/pricing';
 
 export interface StandViewportHandle {
   setCameraPreset: (preset: CameraPreset, instant?: boolean) => void;
+  setCameraTransform: (pos: [number, number, number], target: [number, number, number]) => void;
   captureSnapshot: (width?: number, height?: number) => string | null;
 }
 
@@ -36,6 +37,8 @@ interface StandViewportProps {
   viewMode: ViewMode;
   compliance: ComplianceReport;
   paintAssetId: string | null;
+  tourActive?: boolean;
+  onUserInterruptTour?: () => void;
   onSelectItem: (itemId: string | null, surfaceId?: string | null) => void;
   onSelectShellWall: (side: ShellWallSide | null) => void;
   onMoveItem: (itemId: string, x: number, z: number, commitHistory: boolean) => void;
@@ -83,6 +86,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       viewMode,
       compliance,
       paintAssetId,
+      tourActive,
+      onUserInterruptTour,
       onSelectItem,
       onSelectShellWall,
       onMoveItem,
@@ -119,6 +124,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       selectedItemId,
       viewMode,
       paintAssetId,
+      tourActive,
+      onUserInterruptTour,
       onSelectItem,
       onSelectShellWall,
       onMoveItem,
@@ -130,6 +137,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       selectedItemId,
       viewMode,
       paintAssetId,
+      tourActive,
+      onUserInterruptTour,
       onSelectItem,
       onSelectShellWall,
       onMoveItem,
@@ -244,6 +253,19 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       () => ({
         setCameraPreset: (preset: CameraPreset, instant?: boolean) =>
           applyCameraPreset(preset, instant),
+        setCameraTransform: (pos: [number, number, number], target: [number, number, number]) => {
+          const persp = perspCamRef.current;
+          const controls = controlsRef.current;
+          if (!persp || !controls) return;
+          activeCamRef.current = persp;
+          controls.object = persp;
+          controls.enableRotate = true;
+          controls.screenSpacePanning = false;
+          cameraAnimRef.current.active = false;
+          persp.position.set(pos[0], pos[1], pos[2]);
+          controls.target.set(target[0], target[1], target[2]);
+          controls.update();
+        },
         captureSnapshot: (width = 1600, height = 1000) => {
           const renderer = rendererRef.current;
           const scene = sceneRef.current;
@@ -348,6 +370,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       // Stop camera animation if user manually interacts
       controls.addEventListener('start', () => {
         cameraAnimRef.current.active = false;
+        if (propsRef.current.tourActive && propsRef.current.onUserInterruptTour) {
+          propsRef.current.onUserInterruptTour();
+        }
       });
 
       // Surrounding Exhibition Hall Floor
@@ -1103,9 +1128,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
       const types = Array.from(e.dataTransfer.types || []);
-      if (types.includes('application/x-standcraft-catalog')) {
+      if (types.includes('application/x-zuki-catalog')) {
         setDropHint('Release to place equipment onto stand floor');
-      } else if (types.includes('application/x-standcraft-model')) {
+      } else if (types.includes('application/x-zuki-model')) {
         setDropHint('Release to place 3D model onto stand floor');
       } else {
         setDropHint('Drop 3D model (.GLB, .GLTF, .STL, .OBJ) to place on stand');
@@ -1122,13 +1147,13 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       setDropHint(null);
       const pos = projectClientToFloor(e.clientX, e.clientY);
 
-      const catalogId = e.dataTransfer.getData('application/x-standcraft-catalog');
+      const catalogId = e.dataTransfer.getData('application/x-zuki-catalog');
       if (catalogId) {
         onDropCatalogItem(catalogId, pos.x, pos.z);
         return;
       }
 
-      const modelAssetId = e.dataTransfer.getData('application/x-standcraft-model');
+      const modelAssetId = e.dataTransfer.getData('application/x-zuki-model');
       if (modelAssetId) {
         onDropCustomModelAsset(modelAssetId, pos.x, pos.z);
         return;

@@ -1,6 +1,8 @@
-# StandCraft Studio — 3D Exhibition Stand & Trade Show Booth Designer
+# Zuki — Exhibition Planner
 
-A browser-based SaaS studio for exhibitors and event teams to design, customize, brand, and visualize exhibition stands in real-time 3D and 2D floor plans.
+> Built by **[Zuki Studio](https://zukistudio.co.uk)** for the exhibition and trade show market.
+
+A browser-based 3D & 2D exhibition stand planner for exhibitors and event teams to design, customize, brand, and visualize exhibition stands in real time.
 
 ## Key Features
 
