@@ -59,6 +59,9 @@ function drawProceduralBrandGraphic(
   const accent = config.accentColor || '#D95D39';
   const brand = (customHeading || config.brandName || 'YOUR BRAND').toUpperCase();
   const tagline = config.brandTagline || 'Exhibition Showcase';
+  const displayFont = `"${config.displayFont || 'Plus Jakarta Sans'}", "Plus Jakarta Sans", sans-serif`;
+  const bodyFont = `"${config.bodyFont || 'Inter'}", Inter, sans-serif`;
+  const standBadge = [config.eventName, config.standNumber].filter(Boolean).join(' · ').toUpperCase();
 
   // Background
   const grad = ctx.createLinearGradient(0, 0, w, h);
@@ -75,12 +78,17 @@ function drawProceduralBrandGraphic(
     ctx.fillStyle = accent;
     ctx.fillRect(w * 0.06, h * 0.24, w * 0.28, h * 0.015);
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = `700 ${Math.round(h * 0.11)}px "Plus Jakarta Sans", sans-serif`;
+    ctx.font = `700 ${Math.round(h * 0.11)}px ${displayFont}`;
     ctx.textAlign = 'left';
     ctx.fillText(brand, w * 0.06, h * 0.42);
     ctx.fillStyle = '#94A3B8';
-    ctx.font = `400 ${Math.round(h * 0.05)}px Inter, sans-serif`;
+    ctx.font = `400 ${Math.round(h * 0.05)}px ${bodyFont}`;
     ctx.fillText(tagline, w * 0.06, h * 0.54);
+    if (standBadge) {
+      ctx.fillStyle = accent;
+      ctx.font = `600 ${Math.max(14, Math.round(h * 0.036))}px ${bodyFont}`;
+      ctx.fillText(standBadge, w * 0.06, h * 0.82);
+    }
     // Decorative UI chart bars
     for (let i = 0; i < 6; i++) {
       const barH = h * (0.14 + ((i * 19) % 28) * 0.01);
@@ -109,7 +117,7 @@ function drawProceduralBrandGraphic(
     ctx.fillStyle = accent;
     ctx.fillRect(0, h * 0.86, w, h * 0.14);
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.font = `700 ${Math.round(Math.min(w, h) * 0.09)}px "Plus Jakarta Sans", sans-serif`;
+    ctx.font = `700 ${Math.round(Math.min(w, h) * 0.09)}px ${displayFont}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(brand, w / 2, h * 0.5);
@@ -134,7 +142,7 @@ function drawProceduralBrandGraphic(
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const fontSize = Math.min(h * 0.46, (w * 0.72) / Math.max(4, brand.length * 0.62));
-    ctx.font = `800 ${Math.round(fontSize)}px "Plus Jakarta Sans", sans-serif`;
+    ctx.font = `800 ${Math.round(fontSize)}px ${displayFont}`;
     ctx.fillText(brand, w / 2, h * 0.47);
     return;
   }
@@ -145,12 +153,12 @@ function drawProceduralBrandGraphic(
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const fontSize = Math.min(h * 0.22, (w * 0.8) / Math.max(4, brand.length * 0.65));
-    ctx.font = `800 ${Math.round(fontSize)}px "Plus Jakarta Sans", sans-serif`;
+    ctx.font = `800 ${Math.round(fontSize)}px ${displayFont}`;
     ctx.fillText(brand, w / 2, h * 0.48);
 
     ctx.fillStyle = 'rgba(255,255,255,0.78)';
     const subSize = Math.max(14, Math.round(fontSize * 0.34));
-    ctx.font = `500 ${subSize}px Inter, sans-serif`;
+    ctx.font = `500 ${subSize}px ${bodyFont}`;
     ctx.fillText(tagline.slice(0, 34), w / 2, h * 0.63);
     return;
   }
@@ -161,12 +169,18 @@ function drawProceduralBrandGraphic(
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   const titleSize = Math.min(h * 0.17, (w * 0.75) / Math.max(4, brand.length * 0.62));
-  ctx.font = `800 ${Math.round(titleSize)}px "Plus Jakarta Sans", sans-serif`;
+  ctx.font = `800 ${Math.round(titleSize)}px ${displayFont}`;
   ctx.fillText(brand, w * 0.08, h * 0.47);
 
   ctx.fillStyle = 'rgba(255,255,255,0.82)';
-  ctx.font = `500 ${Math.round(h * 0.055)}px Inter, sans-serif`;
+  ctx.font = `500 ${Math.round(h * 0.055)}px ${bodyFont}`;
   ctx.fillText(tagline, w * 0.08, h * 0.59);
+
+  if (standBadge) {
+    ctx.fillStyle = 'rgba(255,255,255,0.68)';
+    ctx.font = `600 ${Math.max(14, Math.round(h * 0.036))}px ${bodyFont}`;
+    ctx.fillText(standBadge, w * 0.08, h * 0.78);
+  }
 
   // Decorative accent circle
   ctx.fillStyle = accent;
@@ -214,6 +228,10 @@ export function getSurfaceTexture(
     heading: artwork?.customHeading || config.brandName,
     tagline: config.brandTagline,
     accent: config.accentColor,
+    displayFont: config.displayFont || 'Plus Jakarta Sans',
+    bodyFont: config.bodyFont || 'Inter',
+    standNumber: config.standNumber || '',
+    eventName: config.eventName || '',
     loaded: asset ? Boolean(loadedImages.get(asset.dataUrl)) : false,
   });
 

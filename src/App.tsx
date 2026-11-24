@@ -7,6 +7,7 @@ import {
   Eye,
   Grid2x2,
   Maximize2,
+  Play,
   RotateCcw,
 } from 'lucide-react';
 import { CATALOG_MAP } from './data/catalog';
@@ -31,6 +32,8 @@ import {
   TemplatesModal,
 } from './components/Modals';
 import { RightInspector } from './components/RightInspector';
+import { SetupGuidePage } from './components/SetupGuidePage';
+import { StudioWalkthrough } from './components/StudioWalkthrough';
 import { TopBar } from './components/TopBar';
 import { AgentDrawer } from './components/AgentDrawer';
 import { applyAgentActions } from './agent/actionExecutor';
@@ -38,6 +41,7 @@ import { sendStandAgentPrompt } from './agent/agentClient';
 import type { AgentAudioPayload, AgentChatMessage, AgentHistoryTurn } from './agent/types';
 import type {
   BrandAsset,
+  BrandKitSetupResult,
   CameraPreset,
   CurrencyCode,
   CustomModelAsset,
@@ -49,6 +53,11 @@ import type {
   SurfaceArtwork,
   ViewMode,
 } from './types/stand';
+import {
+  applyDocumentFavicon,
+  buildBrandedStandFromSetup,
+  ensureGoogleFontPairingLoaded,
+} from './utils/brandKit';
 import { exportProductionBriefHtml } from './utils/briefExport';
 import { calculateEstimate, evaluateCompliance, formatArea, formatLength } from './utils/pricing';
 
@@ -116,7 +125,7 @@ function loadInitialProjects(): SavedProject[] {
   return [
     {
       id: 'proj-default',
-      name: 'Autumn Expo — Corner Showcase',
+      name: 'Grand Flagship Pavilion (8m × 6m)',
       updatedAt: Date.now(),
       config: initial.config,
       items: initial.items,
@@ -135,6 +144,17 @@ export function App() {
   const [config, setConfig] = useState<StandConfig>(activeProj.config);
   const [items, setItems] = useState<StandItem[]>(activeProj.items);
   const [customAssets, setCustomAssets] = useState<BrandAsset[]>(activeProj.customAssets || []);
+
+  // First-page Setup Guide & 30-second Cinematic Walkthrough state
+  const [showSetupGuide, setShowSetupGuide] = useState<boolean>(true);
+  const [tourActive, setTourActive] = useState<boolean>(false);
+  const [tourPaused, setTourPaused] = useState<boolean>(false);
+
+  // Sync brand fonts and browser favicon whenever config updates
+  useEffect(() => {
+    ensureGoogleFontPairingLoaded(config.displayFont, config.bodyFont);
+    applyDocumentFavicon(config.faviconDataUrl);
+  }, [config.displayFont, config.bodyFont, config.faviconDataUrl]);
 
   // History stack
   const [history, setHistory] = useState<HistorySnapshot[]>(() => [
@@ -801,6 +821,95 @@ export function App() {
     [agentLoading, agentMessages, config, items, pushHistory, notify, triggerCamera]
   );
 
+  const startWalkthrough = useCallback(() => {
+    setViewMode('3d');
+    setSelectedItemId(null);
+    setSelectedShellWall(null);
+    setPaintAssetId(null);
+    setTourPaused(false);
+    setTourActive(true);
+  }, []);
+
+  const handleCompleteSetup = useCallback(
+    async (result: BrandKitSetupResult) => {
+      ensureGoogleFontPairingLoaded(result.displayFont, result.bodyFont);
+      applyDocumentFavicon(result.faviconDataUrl);
+
+      const built = buildBrandedStandFromSetup(STAND_TEMPLATES[0], result);
+
+      // Parse any uploaded 3D model files and place them on the pavilion floor
+      const extraModelItems: StandItem[] = [];
+      const newlyLoadedModels: CustomModelAsset[] = [];
+      for (let i = 0; i < result.customModelFiles.length; i++) {
+        try {
+          const modelAsset = await parseAndRegister3DModel(result.customModelFiles[i]);
+          newlyLoadedModels.push(modelAsset);
+          extraModelItems.push({
+            id: createItemId('model3d'),
+            catalogId: 'custom-3d-model',
+            name: modelAsset.name,
+            customModelId: modelAsset.id,
+            x: Number((-1.2 + i * 0.9).toFixed(2)),
+            y: 0,
+            z: 0.3,
+            rotationY: 0,
+            dims: { ...modelAsset.originalDims },
+            lockAspect: true,
+            zUpFix: false,
+            locked: false,
+            visible: true,
+            artwork: {},
+          });
+        } catch {
+          // skip invalid model file
+        }
+      }
+
+      if (newlyLoadedModels.length > 0) {
+        setCustomModels((prev) => [...newlyLoadedModels, ...prev]);
+      }
+
+      const finalItems = [...built.items, ...extraModelItems];
+      setProjectName(built.projectTitle);
+      setConfig(built.config);
+      setItems(finalItems);
+      setCustomAssets((prev) => {
+        const map = new Map<string, BrandAsset>();
+        [...built.uploadedAssets, ...prev].forEach((a) => map.set(a.id, a));
+        return Array.from(map.values());
+      });
+      setSelectedItemId(null);
+      setSelectedSurfaceId(null);
+      setSelectedShellWall(null);
+      setPaintAssetId(null);
+      setHistory([cloneSnapshot(built.config, finalItems)]);
+      setHistoryIdx(0);
+      setShowSetupGuide(false);
+
+      if (result.startTour) {
+        window.setTimeout(() => startWalkthrough(), 80);
+      } else {
+        window.setTimeout(() => viewportRef.current?.setCameraPreset('isometric', true), 80);
+        notify(`Loaded "${built.projectTitle}"`);
+      }
+    },
+    [startWalkthrough, notify]
+  );
+
+  const handleSkipSetup = useCallback(() => {
+    const inst = instantiateTemplate(STAND_TEMPLATES[0]);
+    setProjectName('Grand Flagship Pavilion (8m × 6m)');
+    setConfig(inst.config);
+    setItems(inst.items);
+    setSelectedItemId(null);
+    setSelectedSurfaceId(null);
+    setSelectedShellWall(null);
+    setHistory([cloneSnapshot(inst.config, inst.items)]);
+    setHistoryIdx(0);
+    setShowSetupGuide(false);
+    window.setTimeout(() => startWalkthrough(), 80);
+  }, [startWalkthrough]);
+
   const openSidesBadge =
     config.openSides === 1
       ? 'Inline (1 Open)'
@@ -810,13 +919,29 @@ export function App() {
           ? 'Peninsula (3 Open)'
           : 'Island (4 Open)';
 
+  if (showSetupGuide) {
+    return (
+      <SetupGuidePage
+        initialConfig={config}
+        initialAssets={customAssets}
+        onComplete={(res) => {
+          void handleCompleteSetup(res);
+        }}
+        onSkipDemo={handleSkipSetup}
+      />
+    );
+  }
+
   return (
     <div className="studio-app-shell">
       <TopBar
         projectName={projectName}
         onChangeProjectName={setProjectName}
         viewMode={viewMode}
-        onChangeViewMode={setViewMode}
+        onChangeViewMode={(mode) => {
+          if (tourActive) setTourActive(false);
+          setViewMode(mode);
+        }}
         config={config}
         onUpdateConfig={updateConfig}
         canUndo={historyIdx > 0}
@@ -827,6 +952,10 @@ export function App() {
         currency={currency}
         agentOpen={showAgentDrawer}
         onToggleAgent={() => setShowAgentDrawer((v) => !v)}
+        onOpenSetupGuide={() => {
+          setTourActive(false);
+          setShowSetupGuide(true);
+        }}
         onOpenProjects={() => setShowProjectsModal(true)}
         onOpenTemplates={() => setShowTemplatesModal(true)}
         onOpenEstimate={() => setShowEstimateModal(true)}
@@ -880,6 +1009,8 @@ export function App() {
             viewMode={viewMode}
             compliance={compliance}
             paintAssetId={paintAssetId}
+            tourActive={tourActive && !tourPaused}
+            onUserInterruptTour={() => setTourPaused(true)}
             onSelectItem={(itemId, surfaceId) => {
               setSelectedItemId(itemId);
               setSelectedSurfaceId(surfaceId || null);
@@ -926,43 +1057,68 @@ export function App() {
             </div>
           </div>
 
-          {/* Bottom-Center Floating Camera Dock */}
-          <div className="viewport-camera-dock" role="toolbar" aria-label="Camera views">
-            <button onClick={() => triggerCamera('isometric')} title="Isometric 3D overview">
-              <Compass size={14} />
-              <span>Iso</span>
-            </button>
-            <button onClick={() => triggerCamera('front')} title="Front elevation view">
-              <Maximize2 size={14} />
-              <span>Front</span>
-            </button>
-            <button onClick={() => triggerCamera('left')} title="Left angle">
-              <span>Left</span>
-            </button>
-            <button onClick={() => triggerCamera('right')} title="Right angle">
-              <span>Right</span>
-            </button>
-            <button onClick={() => triggerCamera('top')} title="2D Top-Down Floor Plan">
-              <Grid2x2 size={14} />
-              <span>Top 2D</span>
-            </button>
-            <button onClick={() => triggerCamera('eye-level')} title="Visitor eye-level view (1.65m)">
-              <Eye size={14} />
-              <span>Eye Level</span>
-            </button>
-            <div className="dock-divider" />
-            <button onClick={handleDownloadPng} title="Download high-res PNG render">
-              <Camera size={14} />
-              <span>Snapshot</span>
-            </button>
-            <button
-              onClick={() => viewportRef.current?.setCameraPreset(viewMode === '2d' ? 'top' : 'isometric')}
-              title="Reset camera"
-              aria-label="Reset camera"
-            >
-              <RotateCcw size={14} />
-            </button>
-          </div>
+          {/* 30-Second HyperFrames-Styled Cinematic Walkthrough */}
+          <StudioWalkthrough
+            active={tourActive}
+            paused={tourPaused}
+            config={config}
+            viewportRef={viewportRef}
+            onTogglePause={() => setTourPaused((p) => !p)}
+            onFinish={() => {
+              setTourActive(false);
+              setTourPaused(false);
+              notify('Walkthrough complete — click any element to start customizing!');
+            }}
+            onSkip={() => {
+              setTourActive(false);
+              setTourPaused(false);
+              viewportRef.current?.setCameraPreset('isometric');
+            }}
+          />
+
+          {/* Bottom-Center Floating Camera Dock (hidden while 30s timeline bar is active) */}
+          {!tourActive && (
+            <div className="viewport-camera-dock" role="toolbar" aria-label="Camera views">
+              <button onClick={() => triggerCamera('isometric')} title="Isometric 3D overview">
+                <Compass size={14} />
+                <span>Iso</span>
+              </button>
+              <button onClick={() => triggerCamera('front')} title="Front elevation view">
+                <Maximize2 size={14} />
+                <span>Front</span>
+              </button>
+              <button onClick={() => triggerCamera('left')} title="Left angle">
+                <span>Left</span>
+              </button>
+              <button onClick={() => triggerCamera('right')} title="Right angle">
+                <span>Right</span>
+              </button>
+              <button onClick={() => triggerCamera('top')} title="2D Top-Down Floor Plan">
+                <Grid2x2 size={14} />
+                <span>Top 2D</span>
+              </button>
+              <button onClick={() => triggerCamera('eye-level')} title="Visitor eye-level view (1.65m)">
+                <Eye size={14} />
+                <span>Eye Level</span>
+              </button>
+              <div className="dock-divider" />
+              <button onClick={startWalkthrough} title="Replay 30-second animated walkthrough">
+                <Play size={13} />
+                <span>30s Tour</span>
+              </button>
+              <button onClick={handleDownloadPng} title="Download high-res PNG render">
+                <Camera size={14} />
+                <span>Snapshot</span>
+              </button>
+              <button
+                onClick={() => viewportRef.current?.setCameraPreset(viewMode === '2d' ? 'top' : 'isometric')}
+                title="Reset camera"
+                aria-label="Reset camera"
+              >
+                <RotateCcw size={14} />
+              </button>
+            </div>
+          )}
 
           <AgentDrawer
             open={showAgentDrawer}

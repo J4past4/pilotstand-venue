@@ -120,6 +120,13 @@ export interface StandConfig {
   brandTagline: string;
   primaryColor: string;
   accentColor: string;
+  displayFont?: string;
+  bodyFont?: string;
+  faviconDataUrl?: string | null;
+  websiteUrl?: string;
+  eventName?: string;
+  standNumber?: string;
+  brandNotes?: string;
   lightingPreset: LightingPreset;
   showScaleFigures: boolean;
   showDimensions: boolean;
@@ -128,6 +135,39 @@ export interface StandConfig {
   gridStep: number; // 0.1 or 0.25
   unit: MeasurementUnit;
   shellArtwork: Partial<Record<ShellWallSide, SurfaceArtwork>>;
+}
+
+export interface BrandFontPairing {
+  id: string;
+  label: string;
+  styleTag: string;
+  displayFont: string;
+  bodyFont: string;
+  googleFontsHref?: string;
+}
+
+export interface BrandKitSetupResult {
+  brandName: string;
+  brandTagline: string;
+  websiteUrl: string;
+  eventName: string;
+  standNumber: string;
+  brandNotes: string;
+  displayFont: string;
+  bodyFont: string;
+  primaryColor: string;
+  accentColor: string;
+  wallColor: string;
+  floorMaterial: FloorMaterial;
+  floorColor: string;
+  lightingPreset: LightingPreset;
+  faviconDataUrl: string | null;
+  logoAsset: BrandAsset | null;
+  heroAsset: BrandAsset | null;
+  screenAsset: BrandAsset | null;
+  extraAssets: BrandAsset[];
+  customModelFiles: File[];
+  startTour: boolean;
 }
 
 export interface BrandAsset {

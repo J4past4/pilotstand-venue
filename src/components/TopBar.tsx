@@ -9,6 +9,7 @@ import {
   LayoutTemplate,
   Magnet,
   Moon,
+  Palette,
   Redo2,
   Ruler,
   Sparkles,
@@ -35,6 +36,7 @@ interface TopBarProps {
   currency: CurrencyCode;
   agentOpen: boolean;
   onToggleAgent: () => void;
+  onOpenSetupGuide: () => void;
   onOpenProjects: () => void;
   onOpenTemplates: () => void;
   onOpenEstimate: () => void;
@@ -58,6 +60,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   currency,
   agentOpen,
   onToggleAgent,
+  onOpenSetupGuide,
   onOpenProjects,
   onOpenTemplates,
   onOpenEstimate,
@@ -236,6 +239,15 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       <div className="topbar-right">
+        <button
+          id="btn-brand-setup"
+          className="ghost-btn"
+          onClick={onOpenSetupGuide}
+          title="Open Brand Kit & Stand Setup Guide"
+        >
+          <Palette size={14} />
+          <span>Brand Setup</span>
+        </button>
         <button
           id="btn-ai-designer"
           className={`agent-toggle-btn ${agentOpen ? 'active' : ''}`}
