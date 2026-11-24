@@ -24,7 +24,11 @@ import { formatLength } from '../utils/pricing';
 
 export interface StandViewportHandle {
   setCameraPreset: (preset: CameraPreset, instant?: boolean) => void;
-  setCameraTransform: (pos: [number, number, number], target: [number, number, number]) => void;
+  setCameraTransform: (
+    pos: [number, number, number],
+    target: [number, number, number],
+    fov?: number
+  ) => void;
   captureSnapshot: (width?: number, height?: number) => string | null;
 }
 
@@ -213,6 +217,10 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       controls.object = persp;
       controls.enableRotate = true;
       controls.screenSpacePanning = false;
+      if (Math.abs(persp.fov - 42) > 0.01) {
+        persp.fov = 42;
+        persp.updateProjectionMatrix();
+      }
 
       const targetPos = new THREE.Vector3();
       const targetLook = new THREE.Vector3(0, 1.05, 0);
@@ -253,7 +261,11 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       () => ({
         setCameraPreset: (preset: CameraPreset, instant?: boolean) =>
           applyCameraPreset(preset, instant),
-        setCameraTransform: (pos: [number, number, number], target: [number, number, number]) => {
+        setCameraTransform: (
+          pos: [number, number, number],
+          target: [number, number, number],
+          fov?: number
+        ) => {
           const persp = perspCamRef.current;
           const controls = controlsRef.current;
           if (!persp || !controls) return;
@@ -262,6 +274,10 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           controls.enableRotate = true;
           controls.screenSpacePanning = false;
           cameraAnimRef.current.active = false;
+          if (typeof fov === 'number' && Math.abs(persp.fov - fov) > 0.01) {
+            persp.fov = fov;
+            persp.updateProjectionMatrix();
+          }
           persp.position.set(pos[0], pos[1], pos[2]);
           controls.target.set(target[0], target[1], target[2]);
           controls.update();
