@@ -1,4 +1,5 @@
 import { getDefaultModelForProvider, resolveActiveProvider } from './_lib/providers.ts';
+import { requireBetaSession } from './_lib/auth.ts';
 import {
   enforceRateLimits,
   extractClientIp,
@@ -96,6 +97,11 @@ export default async function handler(req: VercelLikeRequest, res: VercelLikeRes
     return res.status(403).json({ error: 'Origin not allowed' });
   }
 
+  const session = requireBetaSession(req.headers);
+  if (!session.authorized) {
+    return res.status(401).json({ error: 'Sign in required to analyze schematics.' });
+  }
+
   const provider = resolveActiveProvider();
   if (!provider) {
     return res.status(501).json({
@@ -112,9 +118,16 @@ export default async function handler(req: VercelLikeRequest, res: VercelLikeRes
       .json({ error: limit.error || 'Rate limit exceeded.' });
   }
 
-  const body = (typeof req.body === 'string' ? JSON.parse(req.body) : req.body) as
-    | SchematicRequestBody
-    | undefined;
+  let body: SchematicRequestBody | undefined;
+  if (typeof req.body === 'string') {
+    try {
+      body = JSON.parse(req.body) as SchematicRequestBody;
+    } catch {
+      return res.status(400).json({ error: 'Invalid JSON request body.' });
+    }
+  } else {
+    body = req.body as SchematicRequestBody | undefined;
+  }
 
   if (!body?.imageDataUrl || typeof body.imageDataUrl !== 'string') {
     return res.status(400).json({ error: 'Missing imageDataUrl.' });

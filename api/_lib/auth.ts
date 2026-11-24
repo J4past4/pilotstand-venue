@@ -1,0 +1,332 @@
+import { createHash, createHmac, scryptSync, timingSafeEqual } from 'node:crypto';
+import { extractClientIp } from './security.ts';
+
+export interface BetaUserRecord {
+  email: string;
+  name: string;
+  role: 'admin' | 'beta';
+  password: string;
+}
+
+export interface BetaSessionUser {
+  email: string;
+  name: string;
+  role: 'admin' | 'beta';
+}
+
+interface SessionPayload extends BetaSessionUser {
+  iat: number;
+  exp: number;
+}
+
+export const SESSION_COOKIE_NAME = 'zuki_beta_session';
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_FAILED_LOGINS_PER_WINDOW = 10;
+
+interface LoginFailureBucket {
+  count: number;
+  resetAt: number;
+}
+
+const loginFailures = new Map<string, LoginFailureBucket>();
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/**
+ * Parses `BETA_USERS` environment variable.
+ *
+ * Supported formats:
+ * 1. JSON array (recommended):
+ *    [{"email":"you@company.com","name":"James","role":"admin","password":"..."}]
+ * 2. Comma-separated shorthand:
+ *    you@company.com:password123:James:admin,marketer@company.com:secret456:Alex:beta
+ */
+export function parseBetaUsers(raw: string | undefined = process.env.BETA_USERS): BetaUserRecord[] {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return [];
+
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      const users: BetaUserRecord[] = [];
+      for (const entry of parsed) {
+        if (!entry || typeof entry !== 'object') continue;
+        const rec = entry as Record<string, unknown>;
+        const email = typeof rec.email === 'string' ? normalizeEmail(rec.email) : '';
+        const password = typeof rec.password === 'string' ? rec.password : '';
+        if (!email || !password) continue;
+        const name =
+          typeof rec.name === 'string' && rec.name.trim()
+            ? rec.name.trim()
+            : email.split('@')[0] || 'Beta User';
+        const role: 'admin' | 'beta' = rec.role === 'admin' ? 'admin' : 'beta';
+        users.push({ email, name, role, password });
+      }
+      return users;
+    } catch {
+      return [];
+    }
+  }
+
+  // Shorthand: email:password[:name[:role]],email2:password2[:name2[:role2]]
+  const users: BetaUserRecord[] = [];
+  for (const part of trimmed.split(',')) {
+    const seg = part.trim();
+    if (!seg) continue;
+    const [rawEmail, rawPass, rawName, rawRole] = seg.split(':');
+    const email = normalizeEmail(rawEmail || '');
+    const password = rawPass || '';
+    if (!email || !password) continue;
+    const name = (rawName || '').trim() || email.split('@')[0] || 'Beta User';
+    const role: 'admin' | 'beta' = (rawRole || '').trim() === 'admin' ? 'admin' : 'beta';
+    users.push({ email, name, role, password });
+  }
+  return users;
+}
+
+export function isBetaAuthEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return parseBetaUsers(env.BETA_USERS).length > 0;
+}
+
+function getSessionSecret(env: NodeJS.ProcessEnv = process.env): string {
+  const explicit = (env.AUTH_SESSION_SECRET || '').trim();
+  if (explicit) return explicit;
+  // Deterministic fallback derived from BETA_USERS so sessions remain valid across
+  // Vercel serverless invocations even if AUTH_SESSION_SECRET was not separately set.
+  return createHash('sha256')
+    .update(`zuki-beta-fallback::${env.BETA_USERS || ''}`)
+    .digest('hex');
+}
+
+function sha256Buffer(value: string): Buffer {
+  return createHash('sha256').update(value, 'utf8').digest();
+}
+
+/**
+ * Constant-time password check supporting either:
+ * - `scrypt:<salt>:<hexDerivedKey>` (salted scrypt hash)
+ * - plain password strings (compared via constant-time SHA-256 digest equality)
+ */
+export function verifyPassword(inputPassword: string, storedPassword: string): boolean {
+  if (!inputPassword || !storedPassword) return false;
+
+  if (storedPassword.startsWith('scrypt:')) {
+    const parts = storedPassword.split(':');
+    if (parts.length !== 3) return false;
+    const [, salt, expectedHex] = parts;
+    if (!salt || !expectedHex) return false;
+    try {
+      const expected = Buffer.from(expectedHex, 'hex');
+      const derived = scryptSync(inputPassword, salt, expected.length);
+      return expected.length === derived.length && timingSafeEqual(expected, derived);
+    } catch {
+      return false;
+    }
+  }
+
+  return timingSafeEqual(sha256Buffer(inputPassword), sha256Buffer(storedPassword));
+}
+
+export function authenticateBetaUser(
+  email: string,
+  password: string,
+  env: NodeJS.ProcessEnv = process.env
+): BetaSessionUser | null {
+  const targetEmail = normalizeEmail(email);
+  if (!targetEmail || !password) return null;
+
+  const users = parseBetaUsers(env.BETA_USERS);
+  const found = users.find((u) => u.email === targetEmail);
+  if (!found) return null;
+
+  if (!verifyPassword(password, found.password)) return null;
+
+  return {
+    email: found.email,
+    name: found.name,
+    role: found.role,
+  };
+}
+
+function base64UrlEncode(input: string): string {
+  return Buffer.from(input, 'utf8').toString('base64url');
+}
+
+function base64UrlDecode(input: string): string {
+  return Buffer.from(input, 'base64url').toString('utf8');
+}
+
+function signTokenBody(bodyB64: string, secret: string): string {
+  return createHmac('sha256', secret).update(bodyB64).digest('base64url');
+}
+
+export function createSessionToken(
+  user: BetaSessionUser,
+  env: NodeJS.ProcessEnv = process.env,
+  nowSec: number = Math.floor(Date.now() / 1000)
+): string {
+  const payload: SessionPayload = {
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    iat: nowSec,
+    exp: nowSec + SESSION_TTL_SECONDS,
+  };
+  const body = base64UrlEncode(JSON.stringify(payload));
+  const sig = signTokenBody(body, getSessionSecret(env));
+  return `${body}.${sig}`;
+}
+
+export function verifySessionToken(
+  token: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+  nowSec: number = Math.floor(Date.now() / 1000)
+): BetaSessionUser | null {
+  if (!token) return null;
+  const dotIdx = token.indexOf('.');
+  if (dotIdx <= 0 || dotIdx === token.length - 1) return null;
+
+  const body = token.slice(0, dotIdx);
+  const providedSig = token.slice(dotIdx + 1);
+  const expectedSig = signTokenBody(body, getSessionSecret(env));
+
+  const a = Buffer.from(providedSig, 'utf8');
+  const b = Buffer.from(expectedSig, 'utf8');
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+
+  try {
+    const parsed = JSON.parse(base64UrlDecode(body)) as Partial<SessionPayload>;
+    if (
+      typeof parsed.email !== 'string' ||
+      typeof parsed.name !== 'string' ||
+      (parsed.role !== 'admin' && parsed.role !== 'beta') ||
+      typeof parsed.exp !== 'number'
+    ) {
+      return null;
+    }
+    if (parsed.exp <= nowSec) return null;
+
+    // Ensure the user still exists in BETA_USERS (allows instant revocation by removing them)
+    const activeUsers = parseBetaUsers(env.BETA_USERS);
+    if (activeUsers.length > 0 && !activeUsers.some((u) => u.email === parsed.email)) {
+      return null;
+    }
+
+    return {
+      email: parsed.email,
+      name: parsed.name,
+      role: parsed.role,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function parseCookieHeader(
+  cookieHeader: string | string[] | undefined
+): Record<string, string> {
+  const raw = Array.isArray(cookieHeader) ? cookieHeader.join('; ') : cookieHeader || '';
+  const map: Record<string, string> = {};
+  for (const pair of raw.split(';')) {
+    const eqIdx = pair.indexOf('=');
+    if (eqIdx <= 0) continue;
+    const key = pair.slice(0, eqIdx).trim();
+    const val = pair.slice(eqIdx + 1).trim();
+    if (key) map[key] = decodeURIComponent(val);
+  }
+  return map;
+}
+
+export function getSessionFromHeaders(
+  headers: Record<string, string | string[] | undefined>,
+  env: NodeJS.ProcessEnv = process.env
+): BetaSessionUser | null {
+  const cookies = parseCookieHeader(headers.cookie);
+  return verifySessionToken(cookies[SESSION_COOKIE_NAME], env);
+}
+
+export function isSecureRequest(headers: Record<string, string | string[] | undefined>): boolean {
+  const proto = headers['x-forwarded-proto'];
+  const protoVal = Array.isArray(proto) ? proto[0] : proto;
+  if (protoVal === 'https') return true;
+  if (protoVal === 'http') return false;
+  return process.env.NODE_ENV === 'production';
+}
+
+export function buildSessionCookie(token: string, secure: boolean): string {
+  const parts = [
+    `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${SESSION_TTL_SECONDS}`,
+  ];
+  if (secure) parts.push('Secure');
+  return parts.join('; ');
+}
+
+export function buildClearSessionCookie(secure: boolean): string {
+  const parts = [
+    `${SESSION_COOKIE_NAME}=`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=0',
+  ];
+  if (secure) parts.push('Secure');
+  return parts.join('; ');
+}
+
+export function checkLoginRateLimit(
+  headers: Record<string, string | string[] | undefined>
+): { allowed: boolean; retryAfterSec?: number } {
+  const ip = extractClientIp(headers);
+  const now = Date.now();
+  const existing = loginFailures.get(ip);
+  if (!existing || existing.resetAt <= now) {
+    return { allowed: true };
+  }
+  if (existing.count >= MAX_FAILED_LOGINS_PER_WINDOW) {
+    return {
+      allowed: false,
+      retryAfterSec: Math.max(1, Math.ceil((existing.resetAt - now) / 1000)),
+    };
+  }
+  return { allowed: true };
+}
+
+export function recordLoginFailure(headers: Record<string, string | string[] | undefined>): void {
+  const ip = extractClientIp(headers);
+  const now = Date.now();
+  const existing = loginFailures.get(ip);
+  if (!existing || existing.resetAt <= now) {
+    loginFailures.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+  } else {
+    existing.count += 1;
+  }
+}
+
+export function clearLoginFailures(headers: Record<string, string | string[] | undefined>): void {
+  const ip = extractClientIp(headers);
+  loginFailures.delete(ip);
+}
+
+/**
+ * Checks whether an incoming API request is authorized.
+ * When `BETA_USERS` is not configured, returns `{ authorized: true, user: null }`.
+ * When `BETA_USERS` IS configured, requires a valid signed beta session cookie.
+ */
+export function requireBetaSession(
+  headers: Record<string, string | string[] | undefined>,
+  env: NodeJS.ProcessEnv = process.env
+): { authorized: boolean; user: BetaSessionUser | null } {
+  if (!isBetaAuthEnabled(env)) {
+    return { authorized: true, user: null };
+  }
+  const user = getSessionFromHeaders(headers, env);
+  return { authorized: Boolean(user), user };
+}

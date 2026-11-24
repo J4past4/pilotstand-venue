@@ -41,6 +41,7 @@ import {
   type BuilderMode,
 } from './components/CustomAssetBuilderModal';
 import { AssetLibraryModal } from './components/AssetLibraryModal';
+import type { BetaUser } from './components/BetaAuthGate';
 import { applyAgentActions } from './agent/actionExecutor';
 import { sendStandAgentPrompt } from './agent/agentClient';
 import { findNearestAllowedPosition } from './utils/wallCollision';
@@ -77,9 +78,14 @@ const PURGED_STORAGE_KEYS = [
   'zuki_exhibition_planner_projects_v1',
 ];
 
-function loadGlobalBuiltAssets(): CustomBuiltAsset[] {
+function getScopedStorageKey(baseKey: string, userEmail?: string | null): string {
+  const clean = (userEmail || '').trim().toLowerCase();
+  return clean ? `${baseKey}:${clean}` : baseKey;
+}
+
+function loadGlobalBuiltAssets(assetLibraryKey: string): CustomBuiltAsset[] {
   try {
-    const raw = localStorage.getItem(ASSET_LIBRARY_STORAGE_KEY);
+    const raw = localStorage.getItem(assetLibraryKey);
     if (raw) {
       const parsed = JSON.parse(raw) as CustomBuiltAsset[];
       if (Array.isArray(parsed)) return parsed;
@@ -137,12 +143,12 @@ function readImageFile(file: File): Promise<BrandAsset> {
   });
 }
 
-function loadInitialProjects(): SavedProject[] {
+function loadInitialProjects(projectsStorageKey: string): SavedProject[] {
   try {
     for (const legacyKey of PURGED_STORAGE_KEYS) {
       localStorage.removeItem(legacyKey);
     }
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(projectsStorageKey);
     if (raw) {
       const parsed = JSON.parse(raw) as SavedProject[];
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -163,8 +169,18 @@ function loadInitialProjects(): SavedProject[] {
   ];
 }
 
-export function App() {
-  const [projects, setProjects] = useState<SavedProject[]>(() => loadInitialProjects());
+interface AppProps {
+  betaUser?: BetaUser | null;
+  onSignOut?: () => void;
+}
+
+function App({ betaUser, onSignOut }: AppProps) {
+  const projectsStorageKey = getScopedStorageKey(STORAGE_KEY, betaUser?.email);
+  const assetLibraryStorageKey = getScopedStorageKey(ASSET_LIBRARY_STORAGE_KEY, betaUser?.email);
+
+  const [projects, setProjects] = useState<SavedProject[]>(() =>
+    loadInitialProjects(projectsStorageKey)
+  );
   const [activeProjectId, setActiveProjectId] = useState<string>(() => projects[0]?.id || 'proj-default');
 
   const activeProj = projects.find((p) => p.id === activeProjectId) || projects[0];
@@ -174,7 +190,7 @@ export function App() {
   const [items, setItems] = useState<StandItem[]>(activeProj.items);
   const [customAssets, setCustomAssets] = useState<BrandAsset[]>(activeProj.customAssets || []);
   const [customBuiltAssets, setCustomBuiltAssets] = useState<CustomBuiltAsset[]>(() => {
-    const globalList = loadGlobalBuiltAssets();
+    const globalList = loadGlobalBuiltAssets(assetLibraryStorageKey);
     const projList = activeProj.customBuiltAssets || [];
     const merged = new Map<string, CustomBuiltAsset>();
     for (const a of [...globalList, ...projList]) merged.set(a.id, a);
@@ -183,11 +199,11 @@ export function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(ASSET_LIBRARY_STORAGE_KEY, JSON.stringify(customBuiltAssets));
+      localStorage.setItem(assetLibraryStorageKey, JSON.stringify(customBuiltAssets));
     } catch {
       // ignore storage quota errors
     }
-  }, [customBuiltAssets]);
+  }, [assetLibraryStorageKey, customBuiltAssets]);
 
   // Main Projects Dashboard, Setup Guide & Guided Walkthrough Popup state
   const [showDashboard, setShowDashboard] = useState<boolean>(true);
@@ -295,11 +311,20 @@ export function App() {
     setItems(JSON.parse(JSON.stringify(target.items)));
   }, [history, historyIdx]);
 
-  // Auto-save active project to localStorage
+  // Persist any project-list mutations (create, duplicate, rename, delete) to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(projectsStorageKey, JSON.stringify(projects));
+    } catch {
+      // storage quota exceeded if huge images uploaded; silently skip persistence
+    }
+  }, [projects, projectsStorageKey]);
+
+  // Auto-save active project edits into projects array
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setProjects((prev) => {
-        const next = prev.map((p) =>
+      setProjects((prev) =>
+        prev.map((p) =>
           p.id === activeProjectId
             ? {
                 ...p,
@@ -310,14 +335,8 @@ export function App() {
                 customAssets,
               }
             : p
-        );
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        } catch {
-          // storage quota exceeded if huge images uploaded; silently skip persistence
-        }
-        return next;
-      });
+        )
+      );
     }, 450);
     return () => window.clearTimeout(timer);
   }, [activeProjectId, projectName, config, items, customAssets]);
@@ -1424,6 +1443,8 @@ export function App() {
           currency={currency}
           canReturnToEditor={projects.length > 0}
           customAssetCount={totalCustomAssetCount}
+          betaUser={betaUser}
+          onSignOut={onSignOut}
           onReturnToEditor={() => setShowDashboard(false)}
           onOpenProject={handleOpenProject}
           onCreateBlankProject={handleCreateBlankProject}
@@ -1481,6 +1502,8 @@ export function App() {
         onOpenTemplates={() => setShowTemplatesModal(true)}
         onOpenEstimate={() => setShowEstimateModal(true)}
         onOpenExport={() => setShowExportModal(true)}
+        betaUser={betaUser}
+        onSignOut={onSignOut}
       />
 
       <main className="studio-workspace">

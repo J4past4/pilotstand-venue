@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Grid2x2,
   LayoutTemplate,
+  LogOut,
   Magnet,
   Moon,
   Palette,
@@ -21,6 +22,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { CurrencyCode, LightingPreset, StandConfig, ViewMode } from '../types/stand';
+import type { BetaUser } from './BetaAuthGate';
 import { formatMoney } from '../utils/pricing';
 import './header.css';
 
@@ -44,6 +46,8 @@ interface TopBarProps {
   onOpenTemplates: () => void;
   onOpenEstimate: () => void;
   onOpenExport: () => void;
+  betaUser?: BetaUser | null;
+  onSignOut?: () => void;
 }
 
 const LIGHTING_OPTIONS: { id: LightingPreset; label: string; icon: React.ReactNode }[] = [
@@ -72,6 +76,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenTemplates,
   onOpenEstimate,
   onOpenExport,
+  betaUser,
+  onSignOut,
 }) => {
   const estimateTotal = formatMoney(estimatedTotalGbp, currency);
   const [editingName, setEditingName] = useState(false);
@@ -171,6 +177,20 @@ export const TopBar: React.FC<TopBarProps> = ({
             <Upload size={14} />
             <span>Export brief</span>
           </button>
+          {betaUser && onSignOut && (
+            <div className="beta-user-pill" title={`Signed in as ${betaUser.email}`}>
+              <span className="beta-user-pill-name">{betaUser.name}</span>
+              <button
+                type="button"
+                className="beta-user-signout-btn"
+                onClick={onSignOut}
+                title="Sign out"
+                aria-label="Sign out"
+              >
+                <LogOut size={13} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

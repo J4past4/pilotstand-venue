@@ -30,5 +30,20 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Build
+      - name: Build (Strict TypeScript + Vite)
         run: npm run build
+
+      - name: Unit Tests
+        run: npm run test
+
+      - name: Bundle Secret Scan
+        run: npm run check:secrets
+
+      - name: Ensure Browser for E2E
+        run: |
+          if ! command -v google-chrome >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
+            npx playwright install --with-deps chromium
+          fi
+
+      - name: E2E Smoke Tests (Playwright + WebGL)
+        run: npm run test:e2e

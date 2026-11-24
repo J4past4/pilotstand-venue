@@ -193,8 +193,8 @@ export function runLocalPreviewAgent(
 
   const reply =
     notes.length > 0
-      ? `Done! I ${notes.join(', ')}. (Running in Local Preview Mode — connect GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY on Vercel for full spatial reasoning.)`
-      : `I'm running in Local Preview Mode right now. Try asking for specific changes like "Build a 6x4m island stand with an LED video wall, lounge sofa, and dark obsidian palette", or configure an API key on Vercel for full natural-language design.`;
+      ? `Done! I ${notes.join(', ')}. (Quick offline assistant mode — live AI spatial design is currently unavailable.)`
+      : `I'm running in quick offline assistant mode right now. Try specific requests like "Build a 6x4m island stand with an LED video wall, lounge sofa, and dark obsidian palette".`;
 
   return {
     reply,

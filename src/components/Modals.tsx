@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   Camera,
   Check,
@@ -19,6 +19,20 @@ import type {
 } from '../types/stand';
 import { calculateEstimate, formatMoney } from '../utils/pricing';
 
+function useEscapeKey(open: boolean, onClose: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
+}
+
 /* ===================== TEMPLATES GALLERY MODAL ===================== */
 interface TemplatesModalProps {
   open: boolean;
@@ -33,6 +47,7 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
   onApplyTemplate,
   onStartBlank,
 }) => {
+  useEscapeKey(open, onClose);
   if (!open) return null;
 
   return (
@@ -152,6 +167,7 @@ export const EstimateModal: React.FC<EstimateModalProps> = ({
   onChangePricingMode,
   onExportBrief,
 }) => {
+  useEscapeKey(open, onClose);
   if (!open) return null;
   const estimate = calculateEstimate(config, items, pricingMode);
 
@@ -278,6 +294,7 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
   onImportJson,
 }) => {
   const importRef = useRef<HTMLInputElement | null>(null);
+  useEscapeKey(open, onClose);
   if (!open) return null;
 
   return (
@@ -382,6 +399,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   onExportBrief,
   onDownloadJson,
 }) => {
+  useEscapeKey(open, onClose);
   if (!open) return null;
 
   return (

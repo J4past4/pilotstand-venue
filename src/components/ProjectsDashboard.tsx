@@ -9,6 +9,7 @@ import {
   FolderOpen,
   Layers,
   LayoutTemplate,
+  LogOut,
   Palette,
   Pencil,
   Play,
@@ -18,6 +19,7 @@ import {
   Upload,
 } from 'lucide-react';
 import type { CurrencyCode, SavedProject, StandTemplate } from '../types/stand';
+import type { BetaUser } from './BetaAuthGate';
 import { STAND_TEMPLATES } from '../data/templates';
 import { calculateEstimate, formatMoney } from '../utils/pricing';
 import './dashboard.css';
@@ -28,6 +30,8 @@ interface ProjectsDashboardProps {
   currency: CurrencyCode;
   canReturnToEditor: boolean;
   customAssetCount: number;
+  betaUser?: BetaUser | null;
+  onSignOut?: () => void;
   onReturnToEditor: () => void;
   onOpenProject: (project: SavedProject) => void;
   onCreateBlankProject: () => void;
@@ -193,6 +197,8 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
   currency,
   canReturnToEditor,
   customAssetCount,
+  betaUser,
+  onSignOut,
   onReturnToEditor,
   onOpenProject,
   onCreateBlankProject,
@@ -273,6 +279,20 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
             <Plus size={15} />
             <span>New Project</span>
           </button>
+          {betaUser && onSignOut && (
+            <div className="beta-user-pill" title={`Signed in as ${betaUser.email}`}>
+              <span className="beta-user-pill-name">{betaUser.name}</span>
+              <button
+                type="button"
+                className="beta-user-signout-btn"
+                onClick={onSignOut}
+                title="Sign out"
+                aria-label="Sign out"
+              >
+                <LogOut size={13} />
+              </button>
+            </div>
+          )}
         </div>
       </header>
 

@@ -40,3 +40,15 @@ Build for production:
 ```bash
 npm run build
 ```
+
+## Private Beta Access (Individual User Logins)
+
+Set `BETA_USERS` and `AUTH_SESSION_SECRET` in Vercel Environment Variables (see `.env.example`) to gate the app behind individual email/password logins with 7-day `HttpOnly` signed session cookies and per-user isolated saved workspaces. Removing a user from `BETA_USERS` revokes their session immediately.
+
+## QA & Verification
+
+```bash
+npm run qa          # Lint + Strict TypeScript Build + Vitest unit tests + Client bundle secret scan
+npm run test:e2e    # Playwright headless browser & WebGL smoke suite
+npm run check:dead-code  # Knip unused files/exports audit
+```

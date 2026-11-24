@@ -79,7 +79,7 @@ export async function sendStandAgentPrompt(
         return runLocalPreviewAgent(opts.message, compactState);
       }
       throw new Error(
-        'Voice audio transcription requires a configured API key on Vercel (GEMINI_API_KEY or OPENAI_API_KEY). Try Web Speech dictation or type a prompt.'
+        'Voice clip transcription is currently unavailable. Try browser speech dictation or type your prompt instead.'
       );
     }
 

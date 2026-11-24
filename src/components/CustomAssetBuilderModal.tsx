@@ -166,9 +166,17 @@ const AssetBuilderPreview3D: React.FC<Preview3DProps> = ({
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const gl = renderer.getContext();
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    const gpuStr = String(
+      (debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) || ''
+    );
+    const isSoftwareWebGL = /swiftshader|llvmpipe|software|basic render driver|mesa offscreen/i.test(
+      gpuStr
+    );
+    renderer.setPixelRatio(isSoftwareWebGL ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(width, height);
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = !isSoftwareWebGL;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
@@ -188,7 +196,7 @@ const AssetBuilderPreview3D: React.FC<Preview3DProps> = ({
 
     const dir = new THREE.DirectionalLight('#ffffff', 1.15);
     dir.position.set(4.5, 7.5, 5.0);
-    dir.castShadow = true;
+    dir.castShadow = !isSoftwareWebGL;
     dir.shadow.mapSize.set(1024, 1024);
     dir.shadow.camera.near = 0.5;
     dir.shadow.camera.far = 25;
@@ -263,8 +271,12 @@ const AssetBuilderPreview3D: React.FC<Preview3DProps> = ({
     resizeObserver.observe(container);
 
     let raf = 0;
-    const animate = () => {
+    let lastTs = 0;
+    const animate = (now: number = performance.now()) => {
       raf = requestAnimationFrame(animate);
+      if (document.hidden) return;
+      if (isSoftwareWebGL && lastTs > 0 && now - lastTs < 120) return;
+      lastTs = now;
       controls.update();
       renderer.render(scene, camera);
     };
@@ -358,6 +370,17 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
     editingAsset?.category || 'product'
   );
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
   const [primitives, setPrimitives] = useState<AssetPrimitive[]>(() =>
     editingAsset && editingAsset.primitives.length > 0
       ? editingAsset.primitives.map((p) => ({ ...p }))

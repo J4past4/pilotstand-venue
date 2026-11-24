@@ -82,6 +82,14 @@ function disposeObject3D(obj: THREE.Object3D) {
   });
 }
 
+function disposeLight(obj: THREE.Object3D) {
+  if (obj instanceof THREE.Light) {
+    const withShadow = obj as THREE.DirectionalLight;
+    withShadow.shadow?.map?.dispose();
+    obj.dispose();
+  }
+}
+
 function applyWallCollisionRedTint(meshGroup: THREE.Group, item: StandItem) {
   meshGroup.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return;
@@ -189,6 +197,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
     const [overlayLabels, setOverlayLabels] = useState<OverlayLabel[]>([]);
     const [dropHint, setDropHint] = useState<string | null>(null);
     const [wallCollision, setWallCollision] = useState<WallCollisionFeedback | null>(null);
+    const [webglContextLost, setWebglContextLost] = useState(false);
+    const lastLabelsKeyRef = useRef<string>('');
+    const isSoftwareWebGLRef = useRef<boolean>(false);
 
     // Keep latest props accessible inside pointer/animation closures
     const propsRef = useRef({
@@ -412,9 +423,18 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         preserveDrawingBuffer: true,
         powerPreference: 'high-performance',
       });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      const gl = renderer.getContext();
+      const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+      const gpuRendererStr = String(
+        (debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) || ''
+      );
+      const isSoftwareRenderer = /swiftshader|llvmpipe|software|basic render driver|mesa offscreen/i.test(
+        gpuRendererStr
+      );
+      isSoftwareWebGLRef.current = isSoftwareRenderer;
+      renderer.setPixelRatio(isSoftwareRenderer ? 1 : Math.min(window.devicePixelRatio, 2));
       renderer.setSize(width, height);
-      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.enabled = !isSoftwareRenderer;
       renderer.shadowMap.type = THREE.PCFShadowMap;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.06;
@@ -423,14 +443,17 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       container.appendChild(renderer.domElement);
       rendererRef.current = renderer;
 
-      // Studio PBR Environment IBL
-      const pmrem = new THREE.PMREMGenerator(renderer);
-      const roomEnv = new RoomEnvironment();
-      const envRT = pmrem.fromScene(roomEnv, 0.04);
-      scene.environment = envRT.texture;
-      scene.environmentIntensity = 0.55;
-      roomEnv.dispose();
-      pmrem.dispose();
+      // Studio PBR Environment IBL (skip expensive PMREM cubemap pass on software/CPU WebGL)
+      let envRT: THREE.WebGLRenderTarget | null = null;
+      if (!isSoftwareRenderer) {
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        const roomEnv = new RoomEnvironment();
+        envRT = pmrem.fromScene(roomEnv, 0.04);
+        scene.environment = envRT.texture;
+        scene.environmentIntensity = 0.55;
+        roomEnv.dispose();
+        pmrem.dispose();
+      }
 
       // Cameras
       const persp = new THREE.PerspectiveCamera(42, width / height, 0.1, 120);
@@ -745,8 +768,19 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       const onPointerUp = (ev: PointerEvent) => finishDrag(ev.pointerId);
       const onPointerCancel = (ev: PointerEvent) => finishDrag(ev.pointerId);
 
+      const onContextLost = (ev: Event) => {
+        ev.preventDefault();
+        setWebglContextLost(true);
+      };
+      const onContextRestored = () => {
+        setWebglContextLost(false);
+        setTextureTick((t) => t + 1);
+      };
+
       renderer.domElement.addEventListener('pointerdown', onPointerDown);
       renderer.domElement.addEventListener('pointermove', onPointerMove);
+      renderer.domElement.addEventListener('webglcontextlost', onContextLost);
+      renderer.domElement.addEventListener('webglcontextrestored', onContextRestored);
       window.addEventListener('pointerup', onPointerUp);
       window.addEventListener('pointercancel', onPointerCancel);
 
@@ -772,10 +806,15 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       // Render Loop + Dimension Label Projection
       let animId = 0;
       let frameCount = 0;
+      let nextSoftwareRenderTs = 0;
       const projVec = new THREE.Vector3();
 
-      const animate = () => {
+      const animate = (now: number = performance.now()) => {
         animId = requestAnimationFrame(animate);
+        if (document.hidden) return;
+        if (isSoftwareWebGLRef.current && frameCount > 0 && now < nextSoftwareRenderTs) {
+          return;
+        }
         frameCount += 1;
 
         if (cameraAnimRef.current.active && activeCamRef.current === persp) {
@@ -791,7 +830,12 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
         controls.update();
         const cam = activeCamRef.current || persp;
+        const renderStart = performance.now();
         renderer.render(scene, cam);
+        if (isSoftwareWebGLRef.current) {
+          const renderMs = performance.now() - renderStart;
+          nextSoftwareRenderTs = performance.now() + Math.max(200, renderMs * 2);
+        }
 
         // Update 2D projected dimension & aisle badges immediately on frame 1 and every 4 frames
         if ((frameCount === 1 || frameCount % 4 === 0) && propsRef.current.config.showDimensions) {
@@ -848,14 +892,18 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           for (const pt of points) {
             projVec.copy(pt.pos).project(cam);
             if (projVec.z >= -1 && projVec.z <= 1) {
-              const sx = (projVec.x * 0.5 + 0.5) * cw;
-              const sy = (-projVec.y * 0.5 + 0.5) * ch;
+              const sx = Math.round((projVec.x * 0.5 + 0.5) * cw);
+              const sy = Math.round((-projVec.y * 0.5 + 0.5) * ch);
               if (sx > 24 && sx < cw - 24 && sy > 24 && sy < ch - 24) {
                 nextLabels.push({ id: pt.id, text: pt.text, x: sx, y: sy, kind: pt.kind });
               }
             }
           }
-          setOverlayLabels(nextLabels);
+          const labelsKey = nextLabels.map((l) => `${l.id}:${l.text}:${l.x}:${l.y}`).join('|');
+          if (labelsKey !== lastLabelsKeyRef.current) {
+            lastLabelsKeyRef.current = labelsKey;
+            setOverlayLabels(nextLabels);
+          }
         }
       };
 
@@ -866,10 +914,12 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         ro.disconnect();
         renderer.domElement.removeEventListener('pointerdown', onPointerDown);
         renderer.domElement.removeEventListener('pointermove', onPointerMove);
+        renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
+        renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored);
         window.removeEventListener('pointerup', onPointerUp);
         window.removeEventListener('pointercancel', onPointerCancel);
         controls.dispose();
-        envRT.dispose();
+        envRT?.dispose();
         renderer.dispose();
       };
     }, []);
@@ -894,7 +944,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       if (!scene || !lightsGroup || !renderer) return;
 
       while (lightsGroup.children.length > 0) {
-        lightsGroup.remove(lightsGroup.children[0]);
+        const child = lightsGroup.children[0];
+        lightsGroup.remove(child);
+        disposeLight(child);
       }
 
       const preset = config.lightingPreset;
@@ -1010,10 +1062,12 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       if (selectedShellWall && config.showShellWalls) {
         const w = selectedShellWall === 'back' ? config.width : config.depth;
         const h = config.shellWallHeight;
+        const wallBox = new THREE.BoxGeometry(w, h, 0.11);
         const edge = new THREE.LineSegments(
-          new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, 0.11)),
+          new THREE.EdgesGeometry(wallBox),
           new THREE.LineBasicMaterial({ color: '#D95D39' })
         );
+        wallBox.dispose();
         if (selectedShellWall === 'back') {
           edge.position.set(0, h / 2, -config.depth / 2 - 0.04);
         } else if (selectedShellWall === 'left') {
@@ -1446,6 +1500,31 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
             <span className="wall-collision-dot" />
             <span>
               <strong>Blocked by wall:</strong> Release to snap back to nearest allowed position
+            </span>
+          </div>
+        )}
+
+        {/* WebGL Context Lost Recovery Overlay */}
+        {webglContextLost && (
+          <div className="wall-collision-banner" role="alert">
+            <span>
+              <strong>3D graphics context paused:</strong> Recovering automatically, or{' '}
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'inherit',
+                  textDecoration: 'underline',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                reload viewport
+              </button>
+              .
             </span>
           </div>
         )}

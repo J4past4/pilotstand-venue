@@ -6,6 +6,7 @@ import {
   ProviderRateLimitError,
   resolveActiveProvider,
 } from './_lib/providers.ts';
+import { requireBetaSession } from './_lib/auth.ts';
 import {
   enforceRateLimits,
   extractClientIp,
@@ -47,6 +48,11 @@ export default async function handler(req: VercelLikeRequest, res: VercelLikeRes
     return res.status(403).json({ error: 'Origin not allowed' });
   }
 
+  const session = requireBetaSession(req.headers);
+  if (!session.authorized) {
+    return res.status(401).json({ error: 'Sign in required to use Zuki AI Designer.' });
+  }
+
   const provider = resolveActiveProvider();
   if (!provider) {
     return res.status(501).json({
@@ -57,9 +63,16 @@ export default async function handler(req: VercelLikeRequest, res: VercelLikeRes
   }
 
   const cfg = getSecurityConfig();
-  const body = (typeof req.body === 'string' ? JSON.parse(req.body) : req.body) as
-    | Partial<AgentRequestPayload>
-    | undefined;
+  let body: Partial<AgentRequestPayload> | undefined;
+  if (typeof req.body === 'string') {
+    try {
+      body = JSON.parse(req.body) as Partial<AgentRequestPayload>;
+    } catch {
+      return res.status(400).json({ error: 'Invalid JSON request body.' });
+    }
+  } else {
+    body = req.body as Partial<AgentRequestPayload> | undefined;
+  }
 
   if (!body || !body.state || !body.manifest) {
     return res.status(400).json({ error: 'Missing required stand state or catalog manifest.' });

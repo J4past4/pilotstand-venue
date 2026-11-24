@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Check,
@@ -152,6 +152,17 @@ export const AssetLibraryModal: React.FC<AssetLibraryModalProps> = ({
   const [activeTab, setActiveTab] = useState<LibraryTab>('all');
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<CustomAssetCategory | 'all'>('all');
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
 
   // Inline rename state
   const [renamingId, setRenamingId] = useState<string | null>(null);

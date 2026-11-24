@@ -1,0 +1,261 @@
+.beta-auth-shell {
+  min-height: 100dvh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: radial-gradient(circle at top left, #f2efe9 0%, #e9e6de 45%, #e2dfd7 100%);
+  color: #17191d;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.beta-auth-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e2dfd7;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #475569;
+}
+
+.beta-auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: #ffffff;
+  border: 1px solid #e4e2da;
+  border-radius: 16px;
+  padding: 28px 28px 24px;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.09);
+}
+
+.beta-auth-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.beta-auth-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.beta-auth-brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: #1b365d;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.beta-auth-brand-name {
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #0f172a;
+}
+
+.beta-auth-brand-sub {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.beta-auth-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.beta-auth-title {
+  margin: 0 0 6px;
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.beta-auth-sub {
+  margin: 0 0 20px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #585c66;
+}
+
+.beta-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.beta-auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.beta-auth-field > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.beta-auth-field input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid #d5d7dc;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+  box-sizing: border-box;
+}
+
+.beta-auth-field input:focus {
+  border-color: #1b365d;
+  box-shadow: 0 0 0 3px rgba(27, 54, 93, 0.12);
+}
+
+.beta-auth-password-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.beta-auth-password-wrap input {
+  padding-right: 38px;
+}
+
+.beta-auth-eye-btn {
+  position: absolute;
+  right: 8px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.beta-auth-eye-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.beta-auth-error {
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.beta-auth-submit {
+  margin-top: 4px;
+  height: 42px;
+  border-radius: 9px;
+  border: none;
+  background: #1b365d;
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background-color 140ms ease, transform 80ms ease;
+}
+
+.beta-auth-submit:hover:not(:disabled) {
+  background: #142a4a;
+}
+
+.beta-auth-submit:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.beta-auth-submit:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.beta-auth-footer {
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid #efede7;
+  font-size: 11.5px;
+  color: #64748b;
+  text-align: center;
+}
+
+/* Signed-in user pill in Dashboard & TopBar */
+.beta-user-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px 0 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.beta-user-pill-name {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.beta-user-signout-btn {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.beta-user-signout-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
