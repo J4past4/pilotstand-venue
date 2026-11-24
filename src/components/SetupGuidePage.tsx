@@ -947,10 +947,11 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
                   <div className="setup-launch-info">
                     <Compass size={18} />
                     <div>
-                      <strong>18-Second Product Walkthrough Reel Included</strong>
+                      <strong>2:30 Guided Walkthrough Video Included</strong>
                       <span>
-                        Fast architectural cuts showcase 3D drag-and-drop, 1-click surface painting,
-                        custom 3D drops, 2D compliance, and AI Designer. Skip or scrub anytime.
+                        A step-by-step popup walkthrough shows building a stand from scratch—uploading
+                        branding, placing &amp; moving assets, switching 3D/2D/Visitor views, and
+                        exporting briefs.
                       </span>
                     </div>
                   </div>
@@ -963,7 +964,7 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
                       onClick={() => handleLaunch(true)}
                     >
                       <Play size={15} />
-                      <span>Launch Pavilion &amp; 18s Reel</span>
+                      <span>Launch Pavilion &amp; 2:30 Walkthrough</span>
                     </button>
                     <button
                       id="btn-launch-direct"

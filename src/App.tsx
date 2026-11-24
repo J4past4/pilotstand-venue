@@ -31,7 +31,7 @@ import {
 } from './components/Modals';
 import { RightInspector } from './components/RightInspector';
 import { SetupGuidePage } from './components/SetupGuidePage';
-import { StudioWalkthrough } from './components/StudioWalkthrough';
+import { StudioWalkthrough, WALKTHROUGH_DISMISSED_KEY } from './components/StudioWalkthrough';
 import { TopBar } from './components/TopBar';
 import { AgentDrawer } from './components/AgentDrawer';
 import { applyAgentActions } from './agent/actionExecutor';
@@ -149,10 +149,9 @@ export function App() {
   const [items, setItems] = useState<StandItem[]>(activeProj.items);
   const [customAssets, setCustomAssets] = useState<BrandAsset[]>(activeProj.customAssets || []);
 
-  // First-page Setup Guide & 30-second Cinematic Walkthrough state
+  // First-page Setup Guide & Guided Walkthrough Video Popup state
   const [showSetupGuide, setShowSetupGuide] = useState<boolean>(true);
   const [tourActive, setTourActive] = useState<boolean>(false);
-  const [tourPaused, setTourPaused] = useState<boolean>(false);
 
   // Sync brand fonts and browser favicon whenever config updates
   useEffect(() => {
@@ -862,12 +861,15 @@ export function App() {
   );
 
   const startWalkthrough = useCallback(() => {
-    setViewMode('3d');
-    setSelectedItemId(null);
-    setSelectedShellWall(null);
-    setPaintAssetId(null);
-    setTourPaused(false);
     setTourActive(true);
+  }, []);
+
+  const shouldAutoShowWalkthrough = useCallback(() => {
+    try {
+      return localStorage.getItem(WALKTHROUGH_DISMISSED_KEY) !== 'true';
+    } catch {
+      return true;
+    }
   }, []);
 
   const handleCompleteSetup = useCallback(
@@ -926,10 +928,10 @@ export function App() {
       setHistoryIdx(0);
       setShowSetupGuide(false);
 
+      window.setTimeout(() => viewportRef.current?.setCameraPreset('isometric', true), 80);
       if (result.startTour) {
-        window.setTimeout(() => startWalkthrough(), 80);
+        window.setTimeout(() => startWalkthrough(), 120);
       } else {
-        window.setTimeout(() => viewportRef.current?.setCameraPreset('isometric', true), 80);
         notify(`Loaded "${built.projectTitle}"`);
       }
     },
@@ -949,8 +951,11 @@ export function App() {
     setHistory([cloneSnapshot(inst.config, inst.items)]);
     setHistoryIdx(0);
     setShowSetupGuide(false);
-    window.setTimeout(() => startWalkthrough(), 80);
-  }, [startWalkthrough]);
+    window.setTimeout(() => viewportRef.current?.setCameraPreset('isometric', true), 80);
+    if (shouldAutoShowWalkthrough()) {
+      window.setTimeout(() => startWalkthrough(), 140);
+    }
+  }, [startWalkthrough, shouldAutoShowWalkthrough]);
 
   const openSidesBadge =
     config.openSides === 1
@@ -1051,8 +1056,6 @@ export function App() {
             viewMode={viewMode}
             compliance={compliance}
             paintAssetId={paintAssetId}
-            tourActive={tourActive && !tourPaused}
-            onUserInterruptTour={() => setTourPaused(true)}
             onSelectItem={(itemId, surfaceId) => {
               setSelectedItemId(itemId);
               setSelectedSurfaceId(surfaceId || null);
@@ -1068,93 +1071,76 @@ export function App() {
             onDrop3DFiles={(files, x, z) => handleUpload3DModels(files, x, z)}
           />
 
-          {/* Top-Left Floating Space & Compliance HUD (hidden while product reel plays) */}
-          {!tourActive && (
-            <div className="viewport-hud-top">
-              <div className="hud-space-pill">
-                <strong className="mono-num">
-                  {formatLength(config.width, config.unit)} × {formatLength(config.depth, config.unit)}
-                </strong>
-                <span className="hud-sep">·</span>
-                <span className="mono-num">{formatArea(compliance.areaM2, config.unit)}</span>
-                <span className="hud-sep">·</span>
-                <span>{openSidesBadge}</span>
-              </div>
-
-              <div className={`hud-compliance-pill ${compliance.isCompliant ? 'ok' : 'warn'}`}>
-                {compliance.isCompliant ? (
-                  <>
-                    <CheckCircle2 size={13} />
-                    <span>Within Bounds</span>
-                  </>
-                ) : (
-                  <>
-                    <AlertTriangle size={13} />
-                    <span>
-                      {compliance.outOfBoundsIds.length > 0
-                        ? `${compliance.outOfBoundsIds.length} Out of Bounds`
-                        : `${compliance.overHeightIds.length} Over Height Limit`}
-                    </span>
-                  </>
-                )}
-              </div>
+          {/* Top-Left Floating Space & Compliance HUD */}
+          <div className="viewport-hud-top">
+            <div className="hud-space-pill">
+              <strong className="mono-num">
+                {formatLength(config.width, config.unit)} × {formatLength(config.depth, config.unit)}
+              </strong>
+              <span className="hud-sep">·</span>
+              <span className="mono-num">{formatArea(compliance.areaM2, config.unit)}</span>
+              <span className="hud-sep">·</span>
+              <span>{openSidesBadge}</span>
             </div>
-          )}
 
-          {/* 18-Second Snappy HyperFrames Product Walkthrough Reel */}
+            <div className={`hud-compliance-pill ${compliance.isCompliant ? 'ok' : 'warn'}`}>
+              {compliance.isCompliant ? (
+                <>
+                  <CheckCircle2 size={13} />
+                  <span>Within Bounds</span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle size={13} />
+                  <span>
+                    {compliance.outOfBoundsIds.length > 0
+                      ? `${compliance.outOfBoundsIds.length} Out of Bounds`
+                      : `${compliance.overHeightIds.length} Over Height Limit`}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom-Center Floating Camera Dock */}
+          <div className="viewport-camera-dock" role="toolbar" aria-label="Camera views">
+            <button onClick={() => triggerCamera('isometric')} title="Isometric 3D overview">
+              <Compass size={14} />
+              <span>Iso</span>
+            </button>
+            <button onClick={() => triggerCamera('front')} title="Front elevation view">
+              <Maximize2 size={14} />
+              <span>Front</span>
+            </button>
+            <button onClick={() => triggerCamera('left')} title="Left angle">
+              <span>Left</span>
+            </button>
+            <button onClick={() => triggerCamera('right')} title="Right angle">
+              <span>Right</span>
+            </button>
+            <div className="dock-divider" />
+            <button onClick={startWalkthrough} title="Watch 2:30 guided walkthrough video">
+              <Play size={13} />
+              <span>Walkthrough</span>
+            </button>
+            <button onClick={handleDownloadPng} title="Download high-res PNG render" aria-label="Snapshot">
+              <Camera size={14} />
+            </button>
+            <button
+              onClick={() => viewportRef.current?.setCameraPreset(viewMode === '2d' ? 'top' : 'isometric')}
+              title="Reset camera"
+              aria-label="Reset camera"
+            >
+              <RotateCcw size={14} />
+            </button>
+          </div>
+
+          {/* 2:30 Guided Walkthrough Video Popup Modal */}
           <StudioWalkthrough
             active={tourActive}
-            paused={tourPaused}
             config={config}
-            items={items}
-            viewportRef={viewportRef}
-            onTogglePause={() => setTourPaused((p) => !p)}
-            onFinish={() => {
-              setTourActive(false);
-              setTourPaused(false);
-              notify('Product reel complete — click any element to start customizing!');
-            }}
-            onSkip={() => {
-              setTourActive(false);
-              setTourPaused(false);
-              viewportRef.current?.setCameraPreset('isometric');
-            }}
+            onClose={() => setTourActive(false)}
           />
-
-          {/* Bottom-Center Floating Camera Dock (hidden while product reel bar is active) */}
-          {!tourActive && (
-            <div className="viewport-camera-dock" role="toolbar" aria-label="Camera views">
-              <button onClick={() => triggerCamera('isometric')} title="Isometric 3D overview">
-                <Compass size={14} />
-                <span>Iso</span>
-              </button>
-              <button onClick={() => triggerCamera('front')} title="Front elevation view">
-                <Maximize2 size={14} />
-                <span>Front</span>
-              </button>
-              <button onClick={() => triggerCamera('left')} title="Left angle">
-                <span>Left</span>
-              </button>
-              <button onClick={() => triggerCamera('right')} title="Right angle">
-                <span>Right</span>
-              </button>
-              <div className="dock-divider" />
-              <button onClick={startWalkthrough} title="Replay 18-second product walkthrough reel">
-                <Play size={13} />
-                <span>Tour</span>
-              </button>
-              <button onClick={handleDownloadPng} title="Download high-res PNG render" aria-label="Snapshot">
-                <Camera size={14} />
-              </button>
-              <button
-                onClick={() => viewportRef.current?.setCameraPreset(viewMode === '2d' ? 'top' : 'isometric')}
-                title="Reset camera"
-                aria-label="Reset camera"
-              >
-                <RotateCcw size={14} />
-              </button>
-            </div>
-          )}
 
           <AgentDrawer
             open={showAgentDrawer}
