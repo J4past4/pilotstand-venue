@@ -290,7 +290,7 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
                 <h1 className="setup-title">Set up your company brand kit</h1>
                 <p className="setup-subtitle">
                   Tell us who you are and choose your typography. We will dress your flagship 8m × 6m
-                  exhibition pavilion with your identity automatically before your 30-second studio tour.
+                  exhibition pavilion with your identity automatically before your 48-second 3D showcase.
                 </p>
 
                 <div className="setup-field-grid">
@@ -886,8 +886,8 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
                 <h1 className="setup-title">Your flagship pavilion is ready</h1>
                 <p className="setup-subtitle">
                   We have prepared your extravagant 8m × 6m Grand Flagship Pavilion branded with your
-                  colours, typography, and assets. Launch now for a guided 30-second animated tour of
-                  the environment and studio tools.
+                  colours, typography, and assets. Launch now for a fast-paced 48-second interactive 3D
+                  product film of your flagship stand and Zuki Studio tools.
                 </p>
 
                 <div className="setup-summary-grid">
@@ -947,11 +947,10 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
                   <div className="setup-launch-info">
                     <Compass size={18} />
                     <div>
-                      <strong>2:30 Guided Walkthrough Video Included</strong>
+                      <strong>48-Second Interactive 3D Showcase Included</strong>
                       <span>
-                        A step-by-step popup walkthrough shows building a stand from scratch—uploading
-                        branding, placing &amp; moving assets, switching 3D/2D/Visitor views, and
-                        exporting briefs.
+                        Watch your 48 m² flagship assemble live—modular walls, custom .GLB drop,
+                        0.1m snap controls, 1-click brand wave, 2D blueprint, and AI Keynote lighting.
                       </span>
                     </div>
                   </div>
@@ -964,7 +963,7 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
                       onClick={() => handleLaunch(true)}
                     >
                       <Play size={15} />
-                      <span>Launch Pavilion &amp; 2:30 Walkthrough</span>
+                      <span>Launch Pavilion &amp; 48s Showcase</span>
                     </button>
                     <button
                       id="btn-launch-direct"

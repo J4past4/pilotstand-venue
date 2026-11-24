@@ -3947,7 +3947,7 @@ select {
   }
 }
 
-/* ==================== 2:30 ADOBE-GRADE GUIDED WALKTHROUGH POPUP MODAL ==================== */
+/* ==================== 48-SECOND ZUKI STUDIO INTERACTIVE 3D PRODUCT FILM MODAL ==================== */
 .wt-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -4142,15 +4142,90 @@ select {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Cinema Beat-Cut Flash */
+.wt-cut-flash {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  pointer-events: none;
+  z-index: 6;
+}
+
+/* Lighter Hook Opening Slate so 3D floor stays vivid underneath */
+.wt-hook-slate {
+  background: radial-gradient(circle at 50% 45%, rgba(13, 18, 29, 0.56) 0%, rgba(13, 18, 29, 0.78) 100%);
+  backdrop-filter: blur(4px);
+}
+
+.wt-hook-pills {
+  margin-top: 14px;
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.wt-hook-pills span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #f8fafc;
+}
+
+/* Live Ticking Telemetry Bar (Top-Left) */
+.wt-telemetry-bar {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(10, 14, 24, 0.82);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(241, 245, 249, 0.92);
+  font-size: 11px;
+  font-weight: 500;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  animation: wtFadeIn 0.25s ease both;
+}
+
+.wt-tel-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wt-tel-item strong {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.wt-tel-sep {
+  width: 1px;
+  height: 11px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
 /* In-Stage Simulated Studio Overlays */
 .wt-stage-badge {
   position: absolute;
   top: 12px;
   right: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 5px 10px;
-  border-radius: 6px;
-  background: rgba(13, 18, 29, 0.8);
-  backdrop-filter: blur(8px);
+  border-radius: 999px;
+  background: rgba(10, 14, 24, 0.82);
+  backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.14);
   font-size: 10px;
   font-weight: 700;
@@ -4159,22 +4234,30 @@ select {
   pointer-events: none;
 }
 
+.wt-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  box-shadow: 0 0 8px currentColor;
+}
+
 .wt-hud-float {
   position: absolute;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 7px 12px;
-  border-radius: 8px;
-  background: rgba(13, 18, 29, 0.86);
+  border-radius: 9px;
+  background: rgba(10, 14, 24, 0.86);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.16);
   color: #f8fafc;
   font-size: 11.5px;
   font-weight: 500;
   pointer-events: none;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.25);
-  animation: wtFadeIn 0.3s ease both;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+  animation: wtFadeIn 0.25s ease both;
 }
 
 .wt-hud-float.top-left {
@@ -4182,8 +4265,17 @@ select {
   left: 14px;
 }
 
+.wt-hud-float.bottom-left {
+  left: 14px;
+  bottom: 58px;
+}
+
 .wt-hud-float.accent {
-  border-color: rgba(217, 93, 57, 0.55);
+  border-color: rgba(217, 93, 57, 0.65);
+}
+
+.wt-hud-float.compliance {
+  border-color: rgba(52, 211, 153, 0.55);
 }
 
 .wt-sim-panel {
@@ -4205,11 +4297,18 @@ select {
 
 .wt-sim-panel.left {
   left: 14px;
+  top: 48px;
 }
 
 .wt-sim-panel.right {
   right: 14px;
   top: 48px;
+}
+
+.wt-sim-panel.compact {
+  width: 214px;
+  padding: 10px;
+  gap: 5px;
 }
 
 .wt-sim-panel-head {
@@ -4282,11 +4381,60 @@ select {
   background: rgba(255, 255, 255, 0.16);
   border: 1px solid rgba(255, 255, 255, 0.28);
   color: #ffffff;
+  transition: transform 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.wt-kbd.pressed {
+  background: #38bdf8;
+  border-color: #7dd3fc;
+  color: #082f49;
+  transform: scale(1.16);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.75);
+}
+
+/* Animated Studio Cursor in Chapter 04 */
+.wt-sim-cursor {
+  position: absolute;
+  transform: translate(-4px, -3px);
+  pointer-events: none;
+  z-index: 5;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
+  transition: transform 0.08s ease;
+}
+
+.wt-sim-cursor.clicking {
+  transform: translate(-4px, -3px) scale(0.92);
+}
+
+.wt-cursor-ripple {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2px solid #38bdf8;
+  animation: wtCursorRipple 0.65s ease-out infinite;
+}
+
+@keyframes wtCursorRipple {
+  from {
+    transform: scale(0.5);
+    opacity: 0.95;
+  }
+  to {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+.wt-brand-wave-pill {
+  background: rgba(10, 14, 24, 0.9);
 }
 
 .wt-view-switcher {
   position: absolute;
-  top: 12px;
+  top: 48px;
   left: 50%;
   transform: translateX(-50%);
   display: inline-flex;
@@ -4294,7 +4442,7 @@ select {
   gap: 4px;
   padding: 4px;
   border-radius: 999px;
-  background: rgba(13, 18, 29, 0.86);
+  background: rgba(10, 14, 24, 0.86);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.16);
   pointer-events: none;
@@ -4317,14 +4465,177 @@ select {
   color: #0f172a;
 }
 
+/* Zuki AI Live Prompt Floating Card */
+.wt-ai-floating-box {
+  position: absolute;
+  left: 50%;
+  bottom: 62px;
+  transform: translateX(-50%);
+  width: min(440px, calc(100% - 32px));
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(10, 14, 24, 0.88);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  animation: wtFadeIn 0.25s ease both;
+}
+
+.wt-ai-floating-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.wt-light-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+.wt-light-badge.keynote {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fde68a;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+}
+
 .wt-ai-prompt-pill {
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.45;
-  color: #e2e8f0;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 8px 10px;
-  border-radius: 7px;
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.07);
+  padding: 7px 10px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.wt-typing-caret {
+  display: inline-block;
+  width: 2px;
+  height: 12px;
+  margin-left: 2px;
+  vertical-align: -1px;
+  background: #38bdf8;
+  animation: wtBlink 0.7s steps(2, start) infinite;
+}
+
+@keyframes wtBlink {
+  to { visibility: hidden; }
+}
+
+/* Grand Hero Finale End-Slate (anchored lower-center so gleaming pavilion stays visible) */
+.wt-finale-slate {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: min(560px, calc(100% - 28px));
+  padding: 16px 20px;
+  border-radius: 14px;
+  background: rgba(9, 13, 24, 0.88);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.55);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  animation: wtFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.wt-finale-brand {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: rgba(203, 213, 225, 0.8);
+}
+
+.wt-finale-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(16px, 2vw, 21px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+.wt-finale-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+}
+
+.wt-finale-pills span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3.5px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.wt-finale-actions {
+  margin-top: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wt-finale-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 9px;
+  border: none;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transition: transform 0.14s ease, filter 0.14s ease;
+}
+
+.wt-finale-cta:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+.wt-finale-replay {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 13px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.wt-finale-replay:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 /* Subtitles / Narration Captions */

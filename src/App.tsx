@@ -1119,7 +1119,7 @@ export function App() {
               <span>Right</span>
             </button>
             <div className="dock-divider" />
-            <button onClick={startWalkthrough} title="Watch 2:30 guided walkthrough video">
+            <button onClick={startWalkthrough} title="Watch 48-second interactive 3D walkthrough">
               <Play size={13} />
               <span>Walkthrough</span>
             </button>
@@ -1135,7 +1135,7 @@ export function App() {
             </button>
           </div>
 
-          {/* 2:30 Guided Walkthrough Video Popup Modal */}
+          {/* 48-Second Interactive 3D Walkthrough Popup Modal */}
           <StudioWalkthrough
             active={tourActive}
             config={config}
