@@ -37,3 +37,22 @@ This repository (`J4past4/exhibition-stand-`) is often developed across multiple
    - If the merge queue labels a PR `needs-rebase` or `ci-failed`, fetch `origin/main`, merge `origin/main` into your branch, fix any conflicts/errors, verify `npm run lint && npm run build`, and push.
    - Pushing a new commit automatically clears the failure label and re-queues the PR.
 8. **Never leave finished work uncommitted or unpushed** inside a local chat VM.
+
+## Vercel Operations (via GitHub Actions)
+
+Vercel credentials (`VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`) are stored in GitHub Actions Secrets and exposed safely through `.github/workflows/vercel-ops.yml`:
+
+- Check Vercel project status, configured env key names (never values), and recent deployments:
+  ```bash
+  gh workflow run vercel-ops.yml -f action=status
+  ```
+- Set a **non-secret** Vercel env var (e.g., `APP_ACCESS_MODE=public`) and redeploy production:
+  ```bash
+  gh workflow run vercel-ops.yml -f action=set-env -f env_key=APP_ACCESS_MODE -f env_value=public -f targets=production,preview -f redeploy_after=true
+  ```
+- Trigger a production redeploy:
+  ```bash
+  gh workflow run vercel-ops.yml -f action=redeploy
+  ```
+- **Never** pass API keys, passwords, or tokens via workflow inputs — keep real secrets in the Vercel Dashboard only.
+

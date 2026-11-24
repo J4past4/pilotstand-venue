@@ -1,0 +1,211 @@
+name: Vercel Operations
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Operation to perform on the connected Vercel project'
+        required: true
+        default: 'status'
+        type: choice
+        options:
+          - status
+          - set-env
+          - delete-env
+          - redeploy
+      env_key:
+        description: 'Non-secret env var key (for set-env / delete-env, e.g. APP_ACCESS_MODE)'
+        required: false
+        type: string
+      env_value:
+        description: 'Non-secret env var value (for set-env, e.g. public)'
+        required: false
+        type: string
+      targets:
+        description: 'Comma-separated Vercel targets (production,preview,development)'
+        required: false
+        default: 'production,preview'
+        type: string
+      redeploy_after:
+        description: 'Trigger a production redeploy after set-env / delete-env'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vercel-ops
+  cancel-in-progress: false
+
+jobs:
+  vercel-ops:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Vercel API Operation
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          OP_ACTION: ${{ inputs.action }}
+          OP_KEY: ${{ inputs.env_key }}
+          OP_VALUE: ${{ inputs.env_value }}
+          OP_TARGETS: ${{ inputs.targets }}
+          OP_REDEPLOY_AFTER: ${{ inputs.redeploy_after }}
+        run: |
+          node - <<'EOF'
+          const token = (process.env.VERCEL_TOKEN || '').trim();
+          const projectId = (process.env.VERCEL_PROJECT_ID || '').trim();
+          const orgId = (process.env.VERCEL_ORG_ID || '').trim();
+          const action = (process.env.OP_ACTION || 'status').trim();
+
+          if (!token || !projectId) {
+            console.error('Missing VERCEL_TOKEN or VERCEL_PROJECT_ID in GitHub Actions secrets.');
+            process.exit(1);
+          }
+
+          // Pass teamId query param only when VERCEL_ORG_ID is a Vercel team ID (team_...)
+          const teamQuery = orgId.startsWith('team_') ? `teamId=${encodeURIComponent(orgId)}` : '';
+          function apiUrl(path, extraParams = '') {
+            const parts = [teamQuery, extraParams].filter(Boolean).join('&');
+            return `https://api.vercel.com${path}${parts ? `?${parts}` : ''}`;
+          }
+
+          async function vercelFetch(path, { method = 'GET', body, extraParams = '' } = {}) {
+            const resp = await fetch(apiUrl(path, extraParams), {
+              method,
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: body ? JSON.stringify(body) : undefined,
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+              console.error(`Vercel API error (${resp.status}) on ${method} ${path}:`, JSON.stringify(data));
+              process.exit(1);
+            }
+            return data;
+          }
+
+          const SECRET_KEY_RE = /(SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE|BETA_USERS)/i;
+
+          async function triggerRedeploy() {
+            const list = await vercelFetch('/v6/deployments', {
+              extraParams: `projectId=${encodeURIComponent(projectId)}&target=production&limit=1`,
+            });
+            const latest = list.deployments?.[0];
+            if (!latest) {
+              console.log('No existing production deployment found to redeploy.');
+              return;
+            }
+            const created = await vercelFetch('/v13/deployments', {
+              method: 'POST',
+              body: {
+                name: latest.name,
+                deploymentId: latest.uid,
+                target: 'production',
+              },
+            });
+            console.log(`Triggered production redeploy: ${created.id} (${created.url || 'pending'})`);
+          }
+
+          async function main() {
+            if (action === 'status') {
+              const proj = await vercelFetch(`/v9/projects/${encodeURIComponent(projectId)}`);
+              const envs = await vercelFetch(`/v9/projects/${encodeURIComponent(projectId)}/env`);
+              const deps = await vercelFetch('/v6/deployments', {
+                extraParams: `projectId=${encodeURIComponent(projectId)}&limit=5`,
+              });
+              console.log('Project:', proj.name, `(${proj.id})`);
+              console.log('Configured Env Keys (names & targets only — values never printed):');
+              for (const e of envs.envs || []) {
+                console.log(`  - ${e.key} [${(e.target || []).join(', ')}] (${e.type})`);
+              }
+              console.log('Recent Deployments:');
+              for (const d of deps.deployments || []) {
+                console.log(`  - ${d.uid} | ${d.target || 'preview'} | ${d.readyState} | ${d.url}`);
+              }
+              return;
+            }
+
+            if (action === 'set-env') {
+              const key = (process.env.OP_KEY || '').trim();
+              const value = (process.env.OP_VALUE || '').trim();
+              const targets = (process.env.OP_TARGETS || 'production,preview')
+                .split(',')
+                .map((s) => s.trim())
+                .filter((s) => ['production', 'preview', 'development'].includes(s));
+
+              if (!key || !/^[A-Z0-9_]+$/.test(key)) {
+                console.error('Invalid env_key. Use UPPER_SNAKE_CASE (e.g. APP_ACCESS_MODE).');
+                process.exit(1);
+              }
+              if (SECRET_KEY_RE.test(key)) {
+                console.error(`Refusing to set secret-like key "${key}" via workflow_dispatch input. Set secrets in Vercel Dashboard.`);
+                process.exit(1);
+              }
+              if (!value) {
+                console.error('Missing env_value.');
+                process.exit(1);
+              }
+              if (targets.length === 0) {
+                console.error('No valid targets specified.');
+                process.exit(1);
+              }
+
+              await vercelFetch(`/v10/projects/${encodeURIComponent(projectId)}/env`, {
+                method: 'POST',
+                extraParams: 'upsert=true',
+                body: {
+                  key,
+                  value,
+                  type: 'plain',
+                  target: targets,
+                },
+              });
+              console.log(`Upserted ${key}=${value} for targets: ${targets.join(', ')}`);
+
+              if (process.env.OP_REDEPLOY_AFTER === 'true') {
+                await triggerRedeploy();
+              }
+              return;
+            }
+
+            if (action === 'delete-env') {
+              const key = (process.env.OP_KEY || '').trim();
+              if (!key || SECRET_KEY_RE.test(key)) {
+                console.error('Invalid or protected env_key.');
+                process.exit(1);
+              }
+              const envs = await vercelFetch(`/v9/projects/${encodeURIComponent(projectId)}/env`);
+              const matches = (envs.envs || []).filter((e) => e.key === key);
+              for (const m of matches) {
+                await vercelFetch(`/v9/projects/${encodeURIComponent(projectId)}/env/${encodeURIComponent(m.id)}`, {
+                  method: 'DELETE',
+                });
+                console.log(`Deleted ${key} (${m.id})`);
+              }
+              if (matches.length === 0) {
+                console.log(`No env var found with key ${key}`);
+              } else if (process.env.OP_REDEPLOY_AFTER === 'true') {
+                await triggerRedeploy();
+              }
+              return;
+            }
+
+            if (action === 'redeploy') {
+              await triggerRedeploy();
+              return;
+            }
+
+            console.error(`Unknown action: ${action}`);
+            process.exit(1);
+          }
+
+          main().catch((err) => {
+            console.error(err);
+            process.exit(1);
+          });
+          EOF
