@@ -144,9 +144,9 @@ export async function enforceRateLimits(
   const hourKey = new Date().toISOString().slice(0, 13);
 
   const [globalCount, hourlyCount, dailyCount] = await Promise.all([
-    incrementCounter(`standcraft:global:${dayKey}`, 86_400),
-    incrementCounter(`standcraft:ip:h:${ip}:${hourKey}`, 3_600),
-    incrementCounter(`standcraft:ip:d:${ip}:${dayKey}`, 86_400),
+    incrementCounter(`zuki-expo:global:${dayKey}`, 86_400),
+    incrementCounter(`zuki-expo:ip:h:${ip}:${hourKey}`, 3_600),
+    incrementCounter(`zuki-expo:ip:d:${ip}:${dayKey}`, 86_400),
   ]);
 
   const remainingHourly = Math.max(0, cfg.hourlyLimitPerIp - hourlyCount);
@@ -157,7 +157,7 @@ export async function enforceRateLimits(
       allowed: false,
       statusCode: 503,
       error:
-        'AI Stand Designer has reached its daily safety budget cap. Manual 3D editing remains fully available — please try again tomorrow.',
+        'Zuki AI Designer has reached its daily safety budget cap. Manual 3D editing remains fully available — please try again tomorrow.',
       remainingHourly,
       remainingDaily,
     };

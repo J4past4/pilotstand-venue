@@ -243,7 +243,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                       className="uploaded-model-chip"
                       draggable
                       onDragStart={(e) => {
-                        e.dataTransfer.setData('application/x-standcraft-model', m.id);
+                        e.dataTransfer.setData('application/x-zuki-model', m.id);
                         e.dataTransfer.effectAllowed = 'copy';
                       }}
                       onClick={() => onPlaceCustomModel(m.id)}
@@ -303,7 +303,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     className="catalog-card"
                     draggable
                     onDragStart={(e) => {
-                      e.dataTransfer.setData('application/x-standcraft-catalog', item.id);
+                      e.dataTransfer.setData('application/x-zuki-catalog', item.id);
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
                     onClick={() => onAddCatalogItem(item.id)}
