@@ -40,7 +40,7 @@ export default async function handler(req: VercelLikeRequest, res: VercelLikeRes
     return res.status(403).json({ error: 'Origin not allowed' });
   }
 
-  const limit = checkLoginRateLimit(req.headers);
+  const limit = await checkLoginRateLimit(req.headers);
   if (!limit.allowed) {
     return res.status(429).json({
       error: `Too many attempts. Please wait ${Math.ceil((limit.retryAfterSec || 60) / 60)} minute(s) and try again.`,
@@ -67,12 +67,12 @@ export default async function handler(req: VercelLikeRequest, res: VercelLikeRes
     const result = await registerBetaUser({ name, email, password, inviteCode });
     if (!result.ok) {
       if (result.status === 403) {
-        recordLoginFailure(req.headers);
+        await recordLoginFailure(req.headers);
       }
       return res.status(result.status).json({ error: result.error });
     }
 
-    clearLoginFailures(req.headers);
+    await clearLoginFailures(req.headers);
     const token = createSessionToken(result.user);
     res.setHeader('Set-Cookie', buildSessionCookie(token, isSecureRequest(req.headers)));
 

@@ -5,13 +5,16 @@ import {
   authenticateBetaUserAsync,
   buildClearSessionCookie,
   buildSessionCookie,
+  checkLoginRateLimit,
   clearInMemoryRegisteredUsers,
+  clearLoginFailures,
   createSessionToken,
   getSessionFromHeaders,
   hashPassword,
   isBetaAuthEnabled,
   isBetaSignupEnabled,
   parseBetaUsers,
+  recordLoginFailure,
   registerBetaUser,
   requireBetaSession,
   SESSION_COOKIE_NAME,
@@ -248,5 +251,23 @@ describe('Private Beta Auth Library', () => {
       { ...signupEnv, VERCEL: '1' }
     );
     expect(vercelNoRedis).toMatchObject({ ok: false, status: 503 });
+  });
+
+  it('locks out brute-force login attempts after 10 failures and clears on success', async () => {
+    const headers = { 'x-forwarded-for': '203.0.113.42' };
+    await clearLoginFailures(headers, {});
+
+    for (let i = 0; i < 9; i++) {
+      await recordLoginFailure(headers, {});
+      expect((await checkLoginRateLimit(headers, {})).allowed).toBe(true);
+    }
+
+    await recordLoginFailure(headers, {});
+    const blocked = await checkLoginRateLimit(headers, {});
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.retryAfterSec).toBeGreaterThan(0);
+
+    await clearLoginFailures(headers, {});
+    expect((await checkLoginRateLimit(headers, {})).allowed).toBe(true);
   });
 });

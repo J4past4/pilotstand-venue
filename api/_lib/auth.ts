@@ -570,10 +570,50 @@ export function buildClearSessionCookie(secure: boolean): string {
   return parts.join('; ');
 }
 
-export function checkLoginRateLimit(
-  headers: Record<string, string | string[] | undefined>
-): { allowed: boolean; retryAfterSec?: number } {
+const LOGIN_WINDOW_SECONDS = Math.round(LOGIN_WINDOW_MS / 1000);
+
+function loginRateLimitRedisKey(ip: string): string {
+  return `zuki-expo:auth-fail:${ip}`;
+}
+
+export async function checkLoginRateLimit(
+  headers: Record<string, string | string[] | undefined>,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<{ allowed: boolean; retryAfterSec?: number }> {
   const ip = extractClientIp(headers);
+
+  if (hasDurableUserStore(env)) {
+    try {
+      const cfg = getRedisConfig(env)!;
+      const key = loginRateLimitRedisKey(ip);
+      const resp = await fetch(`${cfg.url}/pipeline`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${cfg.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify([
+          ['GET', key],
+          ['TTL', key],
+        ]),
+      });
+      if (resp.ok) {
+        const results = (await resp.json()) as Array<{ result?: string | number | null }>;
+        const count = Number(results[0]?.result ?? 0);
+        const ttl = Number(results[1]?.result ?? LOGIN_WINDOW_SECONDS);
+        if (Number.isFinite(count) && count >= MAX_FAILED_LOGINS_PER_WINDOW) {
+          return {
+            allowed: false,
+            retryAfterSec: Math.max(1, ttl > 0 ? ttl : LOGIN_WINDOW_SECONDS),
+          };
+        }
+        return { allowed: true };
+      }
+    } catch {
+      // Fall through to in-memory limiter if Redis is transiently unreachable
+    }
+  }
+
   const now = Date.now();
   const existing = loginFailures.get(ip);
   if (!existing || existing.resetAt <= now) {
@@ -588,8 +628,33 @@ export function checkLoginRateLimit(
   return { allowed: true };
 }
 
-export function recordLoginFailure(headers: Record<string, string | string[] | undefined>): void {
+export async function recordLoginFailure(
+  headers: Record<string, string | string[] | undefined>,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<void> {
   const ip = extractClientIp(headers);
+
+  if (hasDurableUserStore(env)) {
+    try {
+      const cfg = getRedisConfig(env)!;
+      const key = loginRateLimitRedisKey(ip);
+      await fetch(`${cfg.url}/pipeline`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${cfg.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify([
+          ['INCR', key],
+          ['EXPIRE', key, LOGIN_WINDOW_SECONDS, 'NX'],
+        ]),
+      });
+      return;
+    } catch {
+      // Fall through to in-memory fallback
+    }
+  }
+
   const now = Date.now();
   const existing = loginFailures.get(ip);
   if (!existing || existing.resetAt <= now) {
@@ -599,9 +664,20 @@ export function recordLoginFailure(headers: Record<string, string | string[] | u
   }
 }
 
-export function clearLoginFailures(headers: Record<string, string | string[] | undefined>): void {
+export async function clearLoginFailures(
+  headers: Record<string, string | string[] | undefined>,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<void> {
   const ip = extractClientIp(headers);
   loginFailures.delete(ip);
+
+  if (hasDurableUserStore(env)) {
+    try {
+      await redisCommand(['DEL', loginRateLimitRedisKey(ip)], env);
+    } catch {
+      // Ignore cleanup failure
+    }
+  }
 }
 
 /**

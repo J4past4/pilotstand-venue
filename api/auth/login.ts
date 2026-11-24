@@ -43,7 +43,7 @@ export default async function handler(req: VercelLikeRequest, res: VercelLikeRes
     return res.status(200).json({ ok: true, authEnabled: false, user: null });
   }
 
-  const limit = checkLoginRateLimit(req.headers);
+  const limit = await checkLoginRateLimit(req.headers);
   if (!limit.allowed) {
     return res.status(429).json({
       error: `Too many sign-in attempts. Please wait ${Math.ceil((limit.retryAfterSec || 60) / 60)} minute(s) and try again.`,
@@ -71,11 +71,11 @@ export default async function handler(req: VercelLikeRequest, res: VercelLikeRes
   try {
     const user = await authenticateBetaUserAsync(email, password);
     if (!user) {
-      recordLoginFailure(req.headers);
+      await recordLoginFailure(req.headers);
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    clearLoginFailures(req.headers);
+    await clearLoginFailures(req.headers);
     const token = createSessionToken(user);
     res.setHeader('Set-Cookie', buildSessionCookie(token, isSecureRequest(req.headers)));
 
