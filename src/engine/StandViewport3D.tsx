@@ -1051,9 +1051,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
       const types = Array.from(e.dataTransfer.types || []);
-      if (types.includes('application/x-standcraft-catalog')) {
+      if (types.includes('application/x-zuki-catalog')) {
         setDropHint('Release to place equipment onto stand floor');
-      } else if (types.includes('application/x-standcraft-model')) {
+      } else if (types.includes('application/x-zuki-model')) {
         setDropHint('Release to place 3D model onto stand floor');
       } else {
         setDropHint('Drop 3D model (.GLB, .GLTF, .STL, .OBJ) to place on stand');
@@ -1070,13 +1070,13 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       setDropHint(null);
       const pos = projectClientToFloor(e.clientX, e.clientY);
 
-      const catalogId = e.dataTransfer.getData('application/x-standcraft-catalog');
+      const catalogId = e.dataTransfer.getData('application/x-zuki-catalog');
       if (catalogId) {
         onDropCatalogItem(catalogId, pos.x, pos.z);
         return;
       }
 
-      const modelAssetId = e.dataTransfer.getData('application/x-standcraft-model');
+      const modelAssetId = e.dataTransfer.getData('application/x-zuki-model');
       if (modelAssetId) {
         onDropCustomModelAsset(modelAssetId, pos.x, pos.z);
         return;

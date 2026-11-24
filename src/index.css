@@ -99,8 +99,15 @@ select {
 .brand-lockup {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding-right: 2px;
+  gap: 8px;
+  padding: 3px 6px 3px 2px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+.brand-lockup:hover {
+  background: var(--surface-1);
 }
 
 .brand-mark {
@@ -112,15 +119,33 @@ select {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.brand-text-group {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+  gap: 2px;
 }
 
 .brand-wordmark {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 14.5px;
-  letter-spacing: -0.02em;
+  font-size: 14px;
+  letter-spacing: -0.025em;
   color: var(--brand-primary);
+}
+
+.brand-submark {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  white-space: nowrap;
 }
 
 .topbar-divider {

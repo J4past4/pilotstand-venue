@@ -74,7 +74,7 @@ export function exportProductionBriefHtml(
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>${escapeHtml(projectName)} — Exhibition Stand Production Brief</title>
+<title>${escapeHtml(projectName)} — Zuki Exhibition Planner Production Brief</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -161,7 +161,7 @@ export function exportProductionBriefHtml(
   <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
   <div class="header">
     <div>
-      <div class="brand-kicker">StandCraft Studio · Exhibition Production Brief</div>
+      <div class="brand-kicker">Zuki — Exhibition Planner · by Zuki Studio (zukistudio.co.uk)</div>
       <h1>${escapeHtml(projectName)}</h1>
     </div>
     <div class="meta">
@@ -261,6 +261,10 @@ export function exportProductionBriefHtml(
     <div class="totals-row"><span>Custom Graphic Printing (${estimate.totalPrintAreaM2.toFixed(1)} m²)</span><span class="num">${formatMoney(estimate.printGraphicsGbp, currency)}</span></div>
     <div class="totals-row"><span>Install, Power &amp; Breakdown</span><span class="num">${formatMoney(estimate.installAndPowerGbp, currency)}</span></div>
     <div class="totals-row totals-grand"><span>Estimated Total</span><span class="num">${formatMoney(estimate.grandTotalGbp, currency)}</span></div>
+  </div>
+  <div style="margin-top:34px;padding-top:12px;border-top:1px solid #E6E5E0;font-size:11px;color:#848994;display:flex;justify-content:space-between;">
+    <span>Generated with <strong>Zuki — Exhibition Planner</strong> by Zuki Studio</span>
+    <span>zukistudio.co.uk</span>
   </div>
 </body>
 </html>`;

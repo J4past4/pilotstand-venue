@@ -52,7 +52,8 @@ import type {
 import { exportProductionBriefHtml } from './utils/briefExport';
 import { calculateEstimate, evaluateCompliance, formatArea, formatLength } from './utils/pricing';
 
-const STORAGE_KEY = 'standcraft_studio_projects_v1';
+const STORAGE_KEY = 'zuki_exhibition_planner_projects_v1';
+const LEGACY_STORAGE_KEY = 'standcraft_studio_projects_v1';
 
 interface HistorySnapshot {
   config: StandConfig;
@@ -103,7 +104,7 @@ function readImageFile(file: File): Promise<BrandAsset> {
 
 function loadInitialProjects(): SavedProject[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as SavedProject[];
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -619,7 +620,7 @@ export function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.standcraft.json`;
+    a.download = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.zuki-stand.json`;
     a.click();
     URL.revokeObjectURL(url);
     notify('Exported project .JSON backup');
@@ -647,7 +648,7 @@ export function App() {
           pushHistory(imported.config, imported.items);
           notify(`Imported "${imported.name}"`);
         } catch {
-          notify('Invalid StandCraft JSON file');
+          notify('Invalid Zuki Exhibition Planner JSON file');
         }
       };
       reader.readAsText(file);
