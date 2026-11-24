@@ -5695,6 +5695,8 @@ select {
   outline-offset: 2px;
 }
 .studio-workspace {
+  position: relative;
+  overflow: hidden;
   flex-direction: row;
   isolation: isolate;
 }

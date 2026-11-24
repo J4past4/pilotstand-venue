@@ -1,8 +1,27 @@
 .right-inspector.contextual-inspector {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
   width: clamp(300px, 25vw, 394px);
   height: auto;
   background: var(--surface-0);
   color: var(--ink-primary);
+  border-left: 1px solid var(--border-subtle);
+  box-shadow: -10px 0 32px rgba(15, 23, 42, 0.12);
+  animation: inspectorSlideOver 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes inspectorSlideOver {
+  from {
+    transform: translateX(100%);
+    opacity: 0.7;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 .contextual-inspector .inspector-header {
@@ -166,6 +185,7 @@
 @media (max-width: 900px) {
   .right-inspector.contextual-inspector {
     position: absolute;
+    top: auto;
     right: 0;
     bottom: 0;
     left: 0;
@@ -175,6 +195,7 @@
     border: 1px solid var(--border-subtle);
     border-radius: 16px 16px 0 0;
     box-shadow: var(--shadow-lg);
+    animation: none;
   }
 
   .contextual-inspector .inspector-header {

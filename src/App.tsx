@@ -30,6 +30,7 @@ import {
   ProjectsModal,
   TemplatesModal,
 } from './components/Modals';
+import { ProjectsDashboard } from './components/ProjectsDashboard';
 import { RightInspector } from './components/RightInspector';
 import { SetupGuidePage } from './components/SetupGuidePage';
 import { StudioWalkthrough, WALKTHROUGH_DISMISSED_KEY } from './components/StudioWalkthrough';
@@ -150,7 +151,8 @@ export function App() {
   const [items, setItems] = useState<StandItem[]>(activeProj.items);
   const [customAssets, setCustomAssets] = useState<BrandAsset[]>(activeProj.customAssets || []);
 
-  // First-page Setup Guide & Guided Walkthrough Video Popup state
+  // Main Projects Dashboard, Setup Guide & Guided Walkthrough Popup state
+  const [showDashboard, setShowDashboard] = useState<boolean>(true);
   const [showSetupGuide, setShowSetupGuide] = useState<boolean>(false);
   const [tourActive, setTourActive] = useState<boolean>(false);
 
@@ -674,6 +676,7 @@ export function App() {
           setItems(imported.items);
           setCustomAssets(imported.customAssets || []);
           pushHistory(imported.config, imported.items);
+          setShowDashboard(false);
           notify(`Imported "${imported.name}"`);
         } catch {
           notify('Invalid Zuki Exhibition Planner JSON file');
@@ -958,11 +961,136 @@ export function App() {
     setHistory([cloneSnapshot(inst.config, inst.items)]);
     setHistoryIdx(0);
     setShowSetupGuide(false);
+    setShowDashboard(false);
     window.setTimeout(() => viewportRef.current?.setCameraPreset('isometric', true), 80);
     if (shouldAutoShowWalkthrough()) {
       window.setTimeout(() => startWalkthrough(), 140);
     }
   }, [startWalkthrough, shouldAutoShowWalkthrough]);
+
+  const handleOpenProject = useCallback(
+    (proj: SavedProject) => {
+      setActiveProjectId(proj.id);
+      setProjectName(proj.name);
+      setConfig(proj.config);
+      setItems(proj.items);
+      setCustomAssets(proj.customAssets || []);
+      setSelectedItemId(null);
+      setSelectedSurfaceId(null);
+      setSelectedShellWall(null);
+      setStandDetailsOpen(false);
+      setHistory([cloneSnapshot(proj.config, proj.items)]);
+      setHistoryIdx(0);
+      setShowDashboard(false);
+      window.setTimeout(() => viewportRef.current?.setCameraPreset('isometric', true), 80);
+      notify(`Opened "${proj.name}"`);
+    },
+    [notify]
+  );
+
+  const handleCreateBlankProject = useCallback(() => {
+    const newId = `proj-${Date.now().toString(36)}`;
+    const blankConfig: StandConfig = {
+      ...DEFAULT_STAND_CONFIG,
+      width: 4,
+      depth: 3,
+      openSides: 2,
+      showShellWalls: true,
+    };
+    const nextNum = projects.length + 1;
+    const newProj: SavedProject = {
+      id: newId,
+      name: `Untitled Stand ${nextNum}`,
+      updatedAt: Date.now(),
+      config: blankConfig,
+      items: [],
+      customAssets: [],
+    };
+    setProjects((prev) => [newProj, ...prev]);
+    handleOpenProject(newProj);
+  }, [projects.length, handleOpenProject]);
+
+  const handleCreateProjectFromTemplate = useCallback(
+    (tpl: StandTemplate) => {
+      const inst = instantiateTemplate(tpl);
+      const newId = `proj-${Date.now().toString(36)}`;
+      const newProj: SavedProject = {
+        id: newId,
+        name: `${tpl.name} (${tpl.config.width}m × ${tpl.config.depth}m)`,
+        updatedAt: Date.now(),
+        config: inst.config,
+        items: inst.items,
+        customAssets: [],
+      };
+      setProjects((prev) => [newProj, ...prev]);
+      handleOpenProject(newProj);
+    },
+    [handleOpenProject]
+  );
+
+  const handleDuplicateProject = useCallback(
+    (proj: SavedProject) => {
+      const newId = `proj-${Date.now().toString(36)}`;
+      const copy: SavedProject = {
+        id: newId,
+        name: `${proj.name} (Copy)`,
+        updatedAt: Date.now(),
+        config: JSON.parse(JSON.stringify(proj.config)),
+        items: JSON.parse(JSON.stringify(proj.items)),
+        customAssets: [...(proj.customAssets || [])],
+      };
+      setProjects((prev) => [copy, ...prev]);
+      notify(`Duplicated "${proj.name}"`);
+    },
+    [notify]
+  );
+
+  const handleRenameProject = useCallback(
+    (id: string, newName: string) => {
+      setProjects((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, name: newName, updatedAt: Date.now() } : p))
+      );
+      if (id === activeProjectId) {
+        setProjectName(newName);
+      }
+      notify(`Renamed to "${newName}"`);
+    },
+    [activeProjectId, notify]
+  );
+
+  const handleDeleteProject = useCallback(
+    (id: string) => {
+      setProjects((prev) => {
+        const next = prev.filter((p) => p.id !== id);
+        if (id === activeProjectId && next[0]) {
+          setActiveProjectId(next[0].id);
+          setProjectName(next[0].name);
+          setConfig(next[0].config);
+          setItems(next[0].items);
+          setCustomAssets(next[0].customAssets || []);
+          setHistory([cloneSnapshot(next[0].config, next[0].items)]);
+          setHistoryIdx(0);
+        }
+        return next;
+      });
+      notify('Deleted project');
+    },
+    [activeProjectId, notify]
+  );
+
+  const handleExportProjectJson = useCallback(
+    (proj: SavedProject) => {
+      const blob = new Blob([JSON.stringify(proj, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${proj.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.zuki-stand.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      notify(`Exported "${proj.name}"`);
+    },
+    [notify]
+  );
 
   const openSidesBadge =
     config.openSides === 1
@@ -979,10 +1107,39 @@ export function App() {
         initialConfig={config}
         initialAssets={customAssets}
         onComplete={(res) => {
+          setShowDashboard(false);
           void handleCompleteSetup(res);
         }}
         onBackToPlanner={() => setShowSetupGuide(false)}
         onSkipDemo={handleSkipSetup}
+      />
+    );
+  }
+
+  if (showDashboard) {
+    return (
+      <ProjectsDashboard
+        projects={projects}
+        activeProjectId={activeProjectId}
+        currency={currency}
+        canReturnToEditor={projects.length > 0}
+        onReturnToEditor={() => setShowDashboard(false)}
+        onOpenProject={handleOpenProject}
+        onCreateBlankProject={handleCreateBlankProject}
+        onCreateFromTemplate={handleCreateProjectFromTemplate}
+        onDuplicateProject={handleDuplicateProject}
+        onRenameProject={handleRenameProject}
+        onDeleteProject={handleDeleteProject}
+        onExportProjectJson={handleExportProjectJson}
+        onImportJson={handleImportJson}
+        onOpenSetupGuide={() => {
+          setShowDashboard(false);
+          setShowSetupGuide(true);
+        }}
+        onStartWalkthrough={() => {
+          setShowDashboard(false);
+          window.setTimeout(() => startWalkthrough(), 120);
+        }}
       />
     );
   }
@@ -1011,7 +1168,10 @@ export function App() {
           setTourActive(false);
           setShowSetupGuide(true);
         }}
-        onOpenProjects={() => setShowProjectsModal(true)}
+        onOpenProjects={() => {
+          setTourActive(false);
+          setShowDashboard(true);
+        }}
         onOpenTemplates={() => setShowTemplatesModal(true)}
         onOpenEstimate={() => setShowEstimateModal(true)}
         onOpenExport={() => setShowExportModal(true)}
