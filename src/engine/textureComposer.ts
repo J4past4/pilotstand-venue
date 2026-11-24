@@ -187,6 +187,33 @@ function shadeHex(hex: string, percent: number): string {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
+function recolorPresetSvgDataUrl(dataUrl: string, primary: string, accent: string): string {
+  if (!dataUrl.startsWith('data:image/svg+xml')) return dataUrl;
+  const commaIdx = dataUrl.indexOf(',');
+  if (commaIdx === -1) return dataUrl;
+  const prefix = dataUrl.slice(0, commaIdx + 1);
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(dataUrl.slice(commaIdx + 1));
+  } catch {
+    return dataUrl;
+  }
+  const darkPrimary = shadeHex(primary, -26);
+  const midPrimary = shadeHex(primary, -10);
+  const lightPrimary = shadeHex(primary, 14);
+  const replaced = decoded
+    .replace(/#1B365D/gi, primary)
+    .replace(/#1B3A63/gi, primary)
+    .replace(/#13294B/gi, midPrimary)
+    .replace(/#0E213C/gi, darkPrimary)
+    .replace(/#0E1E38/gi, darkPrimary)
+    .replace(/#203F6E/gi, lightPrimary)
+    .replace(/#254E80/gi, lightPrimary)
+    .replace(/#D95D39/gi, accent)
+    .replace(/#E86A42/gi, accent);
+  return prefix + encodeURIComponent(replaced);
+}
+
 export function getSurfaceTexture(
   artwork: SurfaceArtwork | undefined,
   role: SurfaceZoneDef['defaultRole'],
@@ -201,6 +228,13 @@ export function getSurfaceTexture(
   const ch = safeAspect >= 1 ? Math.round(maxDim / safeAspect) : maxDim;
 
   const asset = artwork?.assetId ? assetsMap.get(artwork.assetId) : undefined;
+  const effectivePrimary = artwork?.bgColor || config.primaryColor || '#1B365D';
+  const effectiveAccent = config.accentColor || '#D95D39';
+  const effectiveDataUrl =
+    asset && asset.id.startsWith('preset-') && asset.dataUrl.startsWith('data:image/svg+xml')
+      ? recolorPresetSvgDataUrl(asset.dataUrl, effectivePrimary, effectiveAccent)
+      : asset?.dataUrl;
+
   const cacheKey = JSON.stringify({
     cw,
     ch,
@@ -210,11 +244,11 @@ export function getSurfaceTexture(
     scale: artwork?.scale ?? 1,
     ox: artwork?.offsetX ?? 0,
     oy: artwork?.offsetY ?? 0,
-    bg: artwork?.bgColor || config.primaryColor,
+    bg: effectivePrimary,
     heading: artwork?.customHeading || config.brandName,
     tagline: config.brandTagline,
-    accent: config.accentColor,
-    loaded: asset ? Boolean(loadedImages.get(asset.dataUrl)) : false,
+    accent: effectiveAccent,
+    loaded: effectiveDataUrl ? Boolean(loadedImages.get(effectiveDataUrl)) : false,
   });
 
   const cached = surfaceTextureCache.get(cacheKey);
@@ -225,19 +259,26 @@ export function getSurfaceTexture(
   canvas.height = Math.max(128, ch);
   const ctx = canvas.getContext('2d')!;
 
-  if (asset) {
-    const img = loadedImages.get(asset.dataUrl);
+  if (asset && effectiveDataUrl) {
+    const img = loadedImages.get(effectiveDataUrl);
     if (img && img.complete && img.naturalWidth > 0) {
-      ctx.fillStyle = artwork?.bgColor || config.primaryColor || '#1B365D';
+      const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+      grad.addColorStop(0, effectivePrimary);
+      grad.addColorStop(1, shadeHex(effectivePrimary, -20));
+      ctx.fillStyle = grad;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      const fit = artwork?.fit || 'cover';
+      const userFit = artwork?.fit || 'cover';
       const userScale = artwork?.scale ?? 1;
       const offsetX = (artwork?.offsetX ?? 0) * canvas.width;
       const offsetY = (artwork?.offsetY ?? 0) * canvas.height;
 
       const imgAspect = img.naturalWidth / Math.max(1, img.naturalHeight);
       const canvasAspect = canvas.width / canvas.height;
+
+      // Prevent severe horizontal text cropping when a wide graphic is placed on a tall narrow panel
+      const fit =
+        userFit === 'cover' && imgAspect > 1.3 && canvasAspect < 0.72 ? 'contain' : userFit;
 
       let drawW = canvas.width;
       let drawH = canvas.height;
@@ -252,10 +293,10 @@ export function getSurfaceTexture(
         }
       } else if (fit === 'contain') {
         if (imgAspect > canvasAspect) {
-          drawW = canvas.width * 0.9;
+          drawW = canvas.width * 0.92;
           drawH = drawW / imgAspect;
         } else {
-          drawH = canvas.height * 0.9;
+          drawH = canvas.height * 0.92;
           drawW = drawH * imgAspect;
         }
       }
@@ -277,7 +318,7 @@ export function getSurfaceTexture(
         artwork?.bgColor,
         artwork?.customHeading
       );
-      preloadImage(asset.dataUrl)
+      preloadImage(effectiveDataUrl)
         .then(() => {
           onImageReady?.();
         })
@@ -411,6 +452,91 @@ export function getFloorTexture(
   }
 
   const cloned = baseTex.clone();
+  cloned.needsUpdate = true;
+  const tileSize = material === 'oak-timber' ? 1.8 : material === 'slate-tile' ? 1.2 : 1.5;
+  cloned.repeat.set(Math.max(1, widthM / tileSize), Math.max(1, depthM / tileSize));
+  return cloned;
+}
+
+const floorBumpCache = new Map<string, THREE.CanvasTexture>();
+
+export function getFloorBumpTexture(
+  material: FloorMaterial,
+  widthM: number,
+  depthM: number
+): THREE.CanvasTexture {
+  let baseBump = floorBumpCache.get(material);
+
+  if (!baseBump) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, 512, 512);
+
+    if (material === 'oak-timber') {
+      const planks = 8;
+      const plankH = 512 / planks;
+      for (let i = 0; i < planks; i++) {
+        const y = i * plankH;
+        // subtle wood grain ridges
+        ctx.strokeStyle = 'rgba(165, 165, 165, 0.35)';
+        ctx.lineWidth = 1.2;
+        for (let g = 0; g < 6; g++) {
+          ctx.beginPath();
+          const gy = y + 6 + g * (plankH / 6.5);
+          ctx.moveTo(0, gy);
+          ctx.bezierCurveTo(170, gy + 3, 340, gy - 3, 512, gy);
+          ctx.stroke();
+        }
+        // recessed plank bevel seams
+        ctx.fillStyle = '#202020';
+        ctx.fillRect(0, y + plankH - 3, 512, 3);
+        const jointX = ((i * 173 + 90) % 440) + 36;
+        ctx.fillRect(jointX, y, 3, plankH);
+      }
+    } else if (material === 'light-concrete') {
+      for (let i = 0; i < 1200; i++) {
+        const x = (i * 97) % 512;
+        const y = (i * 163) % 512;
+        const r = 4 + (i % 14);
+        ctx.fillStyle = i % 2 === 0 ? 'rgba(155,155,155,0.22)' : 'rgba(95,95,95,0.22)';
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = '#383838';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(1.5, 1.5, 509, 509);
+    } else if (material === 'slate-tile') {
+      ctx.fillStyle = '#969696';
+      ctx.fillRect(0, 0, 512, 512);
+      ctx.fillStyle = '#242424';
+      ctx.fillRect(0, 0, 512, 4);
+      ctx.fillRect(0, 254, 512, 5);
+      ctx.fillRect(0, 0, 4, 512);
+      ctx.fillRect(254, 0, 5, 512);
+    } else {
+      // Ribbed woven carpet micro-relief
+      for (let y = 0; y < 512; y += 6) {
+        ctx.fillStyle = y % 12 === 0 ? '#A8A8A8' : '#585858';
+        ctx.fillRect(0, y, 512, 3);
+      }
+      for (let x = 0; x < 512; x += 8) {
+        ctx.fillStyle = 'rgba(255,255,255,0.14)';
+        ctx.fillRect(x, 0, 2, 512);
+      }
+    }
+
+    baseBump = new THREE.CanvasTexture(canvas);
+    baseBump.wrapS = THREE.RepeatWrapping;
+    baseBump.wrapT = THREE.RepeatWrapping;
+    baseBump.anisotropy = 4;
+    floorBumpCache.set(material, baseBump);
+  }
+
+  const cloned = baseBump.clone();
   cloned.needsUpdate = true;
   const tileSize = material === 'oak-timber' ? 1.8 : material === 'slate-tile' ? 1.2 : 1.5;
   cloned.repeat.set(Math.max(1, widthM / tileSize), Math.max(1, depthM / tileSize));

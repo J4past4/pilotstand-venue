@@ -179,6 +179,42 @@ export const EquipmentThumb: React.FC<Props> = ({ catalogId }) => {
           <circle cx="31" cy="18" r="2.2" fill={accent} />
         </svg>
       );
+    case 'modular-wall':
+      return (
+        <svg viewBox="0 0 48 48" className="equip-svg" aria-hidden="true">
+          <rect x="8" y="11" width="32" height="27" rx="1.5" fill={fillSoft} stroke={stroke} strokeWidth="2" />
+          <line x1="18.5" y1="11" x2="18.5" y2="38" stroke={stroke} strokeOpacity="0.45" strokeWidth="1.5" />
+          <line x1="29.5" y1="11" x2="29.5" y2="38" stroke={stroke} strokeOpacity="0.45" strokeWidth="1.5" />
+          <rect x="12" y="16" width="24" height="5" rx="1" fill={accent} />
+        </svg>
+      );
+    case 'brand-totem':
+      return (
+        <svg viewBox="0 0 48 48" className="equip-svg" aria-hidden="true">
+          <rect x="17" y="9" width="14" height="28" rx="2" fill={fillSoft} stroke={stroke} strokeWidth="2" />
+          <rect x="20" y="14" width="8" height="16" rx="1" fill="#FFFFFF" stroke={accent} strokeWidth="1.6" />
+          <rect x="13" y="37" width="22" height="3" rx="1" fill={stroke} />
+        </svg>
+      );
+    case 'feather-flag':
+      return (
+        <svg viewBox="0 0 48 48" className="equip-svg" aria-hidden="true">
+          <path d="M18 38 V14 C18 9 29 9 31 16 L29 31 C25 32 21 31 18 29 Z" fill={fillSoft} stroke={stroke} strokeWidth="2" strokeLinejoin="round" />
+          <path d="M21 17 H27" stroke={accent} strokeWidth="2.4" strokeLinecap="round" />
+          <line x1="12" y1="38" x2="26" y2="38" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" />
+        </svg>
+      );
+    case 'brochure-stand':
+      return (
+        <svg viewBox="0 0 48 48" className="equip-svg" aria-hidden="true">
+          <line x1="18" y1="10" x2="17" y2="38" stroke={stroke} strokeWidth="2" strokeLinecap="round" />
+          <line x1="30" y1="10" x2="31" y2="38" stroke={stroke} strokeWidth="2" strokeLinecap="round" />
+          <rect x="19" y="13" width="10" height="5.5" rx="1" fill={fillSoft} stroke={accent} strokeWidth="1.4" />
+          <rect x="19" y="21" width="10" height="5.5" rx="1" fill={fillSoft} stroke={stroke} strokeWidth="1.4" />
+          <rect x="19" y="29" width="10" height="5.5" rx="1" fill={fillSoft} stroke={stroke} strokeWidth="1.4" />
+          <line x1="13" y1="38" x2="35" y2="38" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" />
+        </svg>
+      );
     default:
       return (
         <svg viewBox="0 0 48 48" className="equip-svg" aria-hidden="true">

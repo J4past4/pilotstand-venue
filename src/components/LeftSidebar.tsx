@@ -76,11 +76,11 @@ const STANDARD_SIZES: { label: string; w: number; d: number }[] = [
 
 const FLOOR_OPTIONS: { id: FloorMaterial; label: string; swatch: string }[] = [
   { id: 'oak-timber', label: 'Warm Oak', swatch: 'linear-gradient(135deg,#CFAF86,#A98359)' },
-  { id: 'charcoal-carpet', label: 'Charcoal Carpet', swatch: '#2E333B' },
-  { id: 'navy-carpet', label: 'Navy Carpet', swatch: '#1E3452' },
-  { id: 'light-concrete', label: 'Architectural Concrete', swatch: '#D8D5CE' },
-  { id: 'slate-tile', label: 'Dark Slate Tile', swatch: '#3B4047' },
-  { id: 'brand-carpet', label: 'Custom Brand Carpet', swatch: 'conic-gradient(#1B365D,#D95D39,#1F4E46,#1B365D)' },
+  { id: 'charcoal-carpet', label: 'Charcoal', swatch: '#2E333B' },
+  { id: 'navy-carpet', label: 'Navy', swatch: '#1E3452' },
+  { id: 'light-concrete', label: 'Concrete', swatch: '#D8D5CE' },
+  { id: 'slate-tile', label: 'Dark Slate', swatch: '#3B4047' },
+  { id: 'brand-carpet', label: 'Custom', swatch: 'conic-gradient(#1B365D,#D95D39,#1F4E46,#1B365D)' },
 ];
 
 export const LeftSidebar: React.FC<LeftSidebarProps> = ({
@@ -199,7 +199,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
             <div className="custom-3d-box">
               <div className="custom-3d-head">
                 <span className="custom-3d-title">
-                  <Box size={13} /> Import 3D Machine / Product
+                  <Box size={13} /> Import 3D Model
                 </span>
                 <span className="mono-num custom-3d-formats">GLB · STL · OBJ</span>
               </div>
@@ -210,7 +210,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   onClick={() => modelFileInputRef.current?.click()}
                 >
                   <Upload size={13} />
-                  <span>Upload 3D File</span>
+                  <span>Upload 3D</span>
                 </button>
                 <button
                   id="btn-sample-machine"
@@ -218,7 +218,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   onClick={onLoadSampleMachine}
                   title="Place a sample industrial CNC showcase machine onto the stand"
                 >
-                  + Sample Machine
+                  Sample CNC
                 </button>
                 <input
                   ref={modelFileInputRef}
@@ -529,7 +529,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
             </div>
 
             <div className="control-block">
-              <label className="block-label">Company Identity (Auto-Branded Surfaces)</label>
+              <label className="block-label">Company Identity</label>
               <div className="field-stack">
                 <input
                   id="brand-name-input"
@@ -642,7 +642,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
               >
                 <ImagePlus size={20} />
                 <div className="dropzone-title">Upload Logo or Wall Artwork</div>
-                <div className="dropzone-sub">PNG, JPG, SVG, WebP · Drag &amp; drop or click</div>
+                <div className="dropzone-sub">PNG, JPG, SVG · Drop or browse</div>
                 <input
                   ref={fileInputRef}
                   id="artwork-file-input"

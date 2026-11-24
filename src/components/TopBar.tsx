@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Box,
   Calculator,
+  ChevronDown,
   Download,
   Eye,
   FolderOpen,
@@ -11,6 +12,7 @@ import {
   Moon,
   Redo2,
   Ruler,
+  SlidersHorizontal,
   Sparkles,
   Sun,
   SunMedium,
@@ -41,7 +43,11 @@ interface TopBarProps {
   onOpenExport: () => void;
 }
 
-const LIGHTING_ORDER: LightingPreset[] = ['expo-hall', 'daylight', 'dramatic'];
+const LIGHTING_OPTIONS: { id: LightingPreset; label: string; icon: React.ReactNode }[] = [
+  { id: 'expo-hall', label: 'Expo Hall', icon: <SunMedium size={13} /> },
+  { id: 'daylight', label: 'Daylight', icon: <Sun size={13} /> },
+  { id: 'dramatic', label: 'Keynote', icon: <Moon size={13} /> },
+];
 
 export const TopBar: React.FC<TopBarProps> = ({
   projectName,
@@ -64,19 +70,26 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenExport,
 }) => {
   const [editingName, setEditingName] = useState(false);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const viewMenuRef = useRef<HTMLDivElement | null>(null);
 
-  const cycleLighting = () => {
-    const idx = LIGHTING_ORDER.indexOf(config.lightingPreset);
-    const next = LIGHTING_ORDER[(idx + 1) % LIGHTING_ORDER.length];
-    onUpdateConfig({ lightingPreset: next });
-  };
-
-  const lightingLabel =
-    config.lightingPreset === 'expo-hall'
-      ? 'Expo Hall'
-      : config.lightingPreset === 'daylight'
-        ? 'Daylight'
-        : 'Keynote Spot';
+  useEffect(() => {
+    if (!viewMenuOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (viewMenuRef.current && !viewMenuRef.current.contains(e.target as Node)) {
+        setViewMenuOpen(false);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setViewMenuOpen(false);
+    };
+    window.addEventListener('mousedown', handleOutside);
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      window.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [viewMenuOpen]);
 
   return (
     <header className="studio-topbar" id="studio-topbar">
@@ -120,7 +133,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             id="project-name-btn"
             className="project-name-btn"
             onClick={() => setEditingName(true)}
-            title="Click to rename stand project"
+            title={`Rename project: ${projectName}`}
           >
             <span className="project-name-text">{projectName}</span>
           </button>
@@ -180,53 +193,90 @@ export const TopBar: React.FC<TopBarProps> = ({
             onClick={() => onChangeViewMode('eye-level')}
           >
             <Eye size={14} />
-            <span>Visitor View</span>
+            <span>Visitor</span>
           </button>
         </div>
 
-        <div className="topbar-toggles">
+        <div className="topbar-view-menu-wrap" ref={viewMenuRef}>
           <button
-            id="toggle-snap"
-            className={`tool-chip ${config.snapToGrid ? 'active' : ''}`}
-            onClick={() => onUpdateConfig({ snapToGrid: !config.snapToGrid })}
-            title="Snap movement to grid"
+            id="btn-view-options"
+            type="button"
+            className={`tool-chip ${viewMenuOpen ? 'active' : ''}`}
+            onClick={() => setViewMenuOpen((v) => !v)}
+            aria-expanded={viewMenuOpen}
+            aria-haspopup="menu"
+            title="Display, snap & lighting options"
           >
-            <Magnet size={13} />
-            <span>Snap</span>
+            <SlidersHorizontal size={13} />
+            <span>View</span>
+            <ChevronDown size={12} />
           </button>
-          <button
-            id="toggle-dimensions"
-            className={`tool-chip ${config.showDimensions ? 'active' : ''}`}
-            onClick={() => onUpdateConfig({ showDimensions: !config.showDimensions })}
-            title="Show booth dimensions & aisle markers"
-          >
-            <Ruler size={13} />
-            <span>Dims</span>
-          </button>
-          <button
-            id="toggle-figures"
-            className={`tool-chip ${config.showScaleFigures ? 'active' : ''}`}
-            onClick={() => onUpdateConfig({ showScaleFigures: !config.showScaleFigures })}
-            title="Toggle 1.75m human scale visitors"
-          >
-            <Users size={13} />
-            <span>Scale</span>
-          </button>
-          <button
-            id="toggle-lighting"
-            className="tool-chip"
-            onClick={cycleLighting}
-            title="Switch exhibition hall lighting atmosphere"
-          >
-            {config.lightingPreset === 'dramatic' ? (
-              <Moon size={13} />
-            ) : config.lightingPreset === 'daylight' ? (
-              <Sun size={13} />
-            ) : (
-              <SunMedium size={13} />
-            )}
-            <span>{lightingLabel}</span>
-          </button>
+
+          {viewMenuOpen && (
+            <div className="view-options-popover" role="menu" id="view-options-popover">
+              <div className="view-popover-section">
+                <span className="view-popover-label">Canvas Helpers</span>
+                <label className="view-popover-toggle">
+                  <span className="view-popover-toggle-left">
+                    <Magnet size={13} />
+                    <span>Snap to Grid</span>
+                  </span>
+                  <input
+                    id="toggle-snap"
+                    type="checkbox"
+                    className="studio-switch"
+                    checked={config.snapToGrid}
+                    onChange={(e) => onUpdateConfig({ snapToGrid: e.target.checked })}
+                  />
+                </label>
+                <label className="view-popover-toggle">
+                  <span className="view-popover-toggle-left">
+                    <Ruler size={13} />
+                    <span>Dimensions & Aisles</span>
+                  </span>
+                  <input
+                    id="toggle-dimensions"
+                    type="checkbox"
+                    className="studio-switch"
+                    checked={config.showDimensions}
+                    onChange={(e) => onUpdateConfig({ showDimensions: e.target.checked })}
+                  />
+                </label>
+                <label className="view-popover-toggle">
+                  <span className="view-popover-toggle-left">
+                    <Users size={13} />
+                    <span>Scale Visitors</span>
+                  </span>
+                  <input
+                    id="toggle-figures"
+                    type="checkbox"
+                    className="studio-switch"
+                    checked={config.showScaleFigures}
+                    onChange={(e) => onUpdateConfig({ showScaleFigures: e.target.checked })}
+                  />
+                </label>
+              </div>
+
+              <div className="view-popover-divider" />
+
+              <div className="view-popover-section">
+                <span className="view-popover-label">Hall Lighting</span>
+                <div className="view-lighting-grid">
+                  {LIGHTING_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`view-lighting-btn ${config.lightingPreset === opt.id ? 'active' : ''}`}
+                      onClick={() => onUpdateConfig({ lightingPreset: opt.id })}
+                    >
+                      {opt.icon}
+                      <span>{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -240,15 +290,30 @@ export const TopBar: React.FC<TopBarProps> = ({
           <Sparkles size={14} />
           <span>AI Designer</span>
         </button>
-        <button id="btn-projects" className="ghost-btn" onClick={onOpenProjects}>
+        <button
+          id="btn-projects"
+          className="ghost-btn topbar-collapse-label"
+          onClick={onOpenProjects}
+          title="Saved Projects"
+        >
           <FolderOpen size={14} />
           <span>Projects</span>
         </button>
-        <button id="btn-templates" className="ghost-btn" onClick={onOpenTemplates}>
+        <button
+          id="btn-templates"
+          className="ghost-btn topbar-collapse-label"
+          onClick={onOpenTemplates}
+          title="Stand Templates"
+        >
           <LayoutTemplate size={14} />
           <span>Templates</span>
         </button>
-        <button id="btn-estimate" className="estimate-pill-btn" onClick={onOpenEstimate}>
+        <button
+          id="btn-estimate"
+          className="estimate-pill-btn"
+          onClick={onOpenEstimate}
+          title="Live Budget Estimate & BOM"
+        >
           <Calculator size={14} />
           <span className="mono-num">{formatMoney(estimatedTotalGbp, currency)}</span>
         </button>

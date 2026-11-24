@@ -222,24 +222,49 @@ export function registerSampleShowcaseMachine(): CustomModelAsset {
   base.position.y = 0.11;
   root.add(base);
 
-  // Main machine enclosure body
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.42, 1.38, 1.0), housingMat);
-  body.position.set(0, 0.91, -0.02);
-  root.add(body);
+  // Main machine enclosure body: rear wall + left/right/top/bottom surround framing an actual recessed chamber
+  const rearBody = new THREE.Mesh(new THREE.BoxGeometry(1.42, 1.38, 0.72), housingMat);
+  rearBody.position.set(0, 0.91, -0.16);
+  root.add(rearBody);
 
-  // Recessed dark interior chamber + viewing window
-  const chamber = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.72, 0.14), darkSteel);
-  chamber.position.set(-0.14, 1.06, 0.44);
-  root.add(chamber);
+  // Front surround framing recessed chamber (chamber spans x: [-0.58, 0.30], y: [0.70, 1.42], z: [0.20, 0.48])
+  const frontBottom = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.48, 0.28), housingMat);
+  frontBottom.position.set(0, 0.46, 0.34);
+  root.add(frontBottom);
 
-  const windowPane = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.68, 0.03), glassMat);
-  windowPane.position.set(-0.14, 1.06, 0.51);
+  const frontTop = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.18, 0.28), housingMat);
+  frontTop.position.set(0, 1.51, 0.34);
+  root.add(frontTop);
+
+  const frontLeft = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.72, 0.28), housingMat);
+  frontLeft.position.set(-0.645, 1.06, 0.34);
+  root.add(frontLeft);
+
+  const frontRight = new THREE.Mesh(new THREE.BoxGeometry(0.41, 0.72, 0.28), housingMat);
+  frontRight.position.set(0.505, 1.06, 0.34);
+  root.add(frontRight);
+
+  // Dark interior chamber backing + precision worktable + rotary spindle
+  const chamberBack = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.72, 0.03), darkSteel);
+  chamberBack.position.set(-0.14, 1.06, 0.215);
+  root.add(chamberBack);
+
+  const workTable = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.06, 0.22), darkSteel);
+  workTable.position.set(-0.14, 0.75, 0.34);
+  root.add(workTable);
+
+  const spindleHead = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.052, 0.26, 16), accentMat);
+  spindleHead.position.set(-0.14, 1.24, 0.34);
+  root.add(spindleHead);
+
+  const spindleBit = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.008, 0.14, 12), housingMat);
+  spindleBit.position.set(-0.14, 1.05, 0.34);
+  root.add(spindleBit);
+
+  // Flush clear viewing glass pane
+  const windowPane = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.7, 0.016), glassMat);
+  windowPane.position.set(-0.14, 1.06, 0.476);
   root.add(windowPane);
-
-  // Interior rotary spindle & precision table
-  const spindle = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.3, 16), accentMat);
-  spindle.position.set(-0.14, 1.18, 0.44);
-  root.add(spindle);
 
   // Side HMI touchscreen control console arm
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.06, 0.06), darkSteel);

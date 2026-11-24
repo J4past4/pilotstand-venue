@@ -4,8 +4,6 @@ import {
   Camera,
   CheckCircle2,
   Compass,
-  Eye,
-  Grid2x2,
   Maximize2,
   RotateCcw,
 } from 'lucide-react';
@@ -658,6 +656,33 @@ export function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showExportModal) {
+          setShowExportModal(false);
+          return;
+        }
+        if (showEstimateModal) {
+          setShowEstimateModal(false);
+          return;
+        }
+        if (showProjectsModal) {
+          setShowProjectsModal(false);
+          return;
+        }
+        if (showTemplatesModal) {
+          setShowTemplatesModal(false);
+          return;
+        }
+        if (showAgentDrawer) {
+          setShowAgentDrawer(false);
+          return;
+        }
+        setPaintAssetId(null);
+        setSelectedItemId(null);
+        setSelectedShellWall(null);
+        return;
+      }
+
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
@@ -679,15 +704,24 @@ export function App() {
         if (cur) {
           updateItem(cur.id, { rotationY: (cur.rotationY + 90) % 360 }, true);
         }
-      } else if (e.key === 'Escape') {
-        setPaintAssetId(null);
-        setSelectedItemId(null);
-        setSelectedShellWall(null);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleUndo, handleRedo, selectedItemId, duplicateItem, deleteItem, items, updateItem]);
+  }, [
+    handleUndo,
+    handleRedo,
+    selectedItemId,
+    duplicateItem,
+    deleteItem,
+    items,
+    updateItem,
+    showExportModal,
+    showEstimateModal,
+    showProjectsModal,
+    showTemplatesModal,
+    showAgentDrawer,
+  ]);
 
   const selectedItem = useMemo(
     () => items.find((i) => i.id === selectedItemId) || null,
@@ -941,18 +975,9 @@ export function App() {
             <button onClick={() => triggerCamera('right')} title="Right angle">
               <span>Right</span>
             </button>
-            <button onClick={() => triggerCamera('top')} title="2D Top-Down Floor Plan">
-              <Grid2x2 size={14} />
-              <span>Top 2D</span>
-            </button>
-            <button onClick={() => triggerCamera('eye-level')} title="Visitor eye-level view (1.65m)">
-              <Eye size={14} />
-              <span>Eye Level</span>
-            </button>
             <div className="dock-divider" />
-            <button onClick={handleDownloadPng} title="Download high-res PNG render">
+            <button onClick={handleDownloadPng} title="Download high-res PNG render" aria-label="Snapshot">
               <Camera size={14} />
-              <span>Snapshot</span>
             </button>
             <button
               onClick={() => viewportRef.current?.setCameraPreset(viewMode === '2d' ? 'top' : 'isometric')}
@@ -997,6 +1022,7 @@ export function App() {
           onUploadAssetForSurface={handleUploadAssetForSurface}
           compliance={compliance}
           onOpenBrandingTab={() => setSidebarTab('branding')}
+          onClearSelection={() => setSelectedItemId(null)}
         />
       </main>
 
