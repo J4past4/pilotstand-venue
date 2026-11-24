@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
@@ -48,6 +48,7 @@ import {
   lerp,
   playWalkthroughSound,
 } from './walkthroughScript';
+import type { AnchorMap } from './walkthroughScript';
 
 export { TOUR_DURATION_SEC, WALKTHROUGH_DISMISSED_KEY };
 
@@ -86,13 +87,20 @@ function disposeObject3D(root: THREE.Object3D): void {
 const WalkthroughViewport3D: React.FC<{
   elapsedSec: number;
   brandConfig: StandConfig;
-}> = ({ elapsedSec, brandConfig }) => {
+  appWindowRef: React.RefObject<HTMLDivElement | null>;
+  onUpdate3DAnchors: (desk: { x: number; y: number }, kiosk: { x: number; y: number }) => void;
+}> = ({ elapsedSec, brandConfig, appWindowRef, onUpdate3DAnchors }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const elapsedRef = useRef(elapsedSec);
+  const onUpdate3DAnchorsRef = useRef(onUpdate3DAnchors);
 
   useEffect(() => {
     elapsedRef.current = elapsedSec;
   }, [elapsedSec]);
+
+  useEffect(() => {
+    onUpdate3DAnchorsRef.current = onUpdate3DAnchors;
+  }, [onUpdate3DAnchors]);
 
   const primaryHex = brandConfig.primaryColor || '#1B365D';
   const accentHex = brandConfig.accentColor || '#D95D39';
@@ -383,6 +391,29 @@ const WalkthroughViewport3D: React.FC<{
       }
       camera.position.set(cam.pos[0], cam.pos[1], cam.pos[2]);
       camera.lookAt(cam.target[0], cam.target[1], cam.target[2]);
+      camera.updateMatrixWorld();
+
+      // Project live 3D floor targets (Reception Desk & Demo Kiosk) during Ch 04
+      const winEl = appWindowRef.current;
+      if (winEl && t >= 35.0 && t <= 49.5) {
+        const winRect = winEl.getBoundingClientRect();
+        const canvasRect = container.getBoundingClientRect();
+        if (winRect.width > 10 && winRect.height > 10 && canvasRect.width > 10) {
+          const projectToWindowPct = (wx: number, wy: number, wz: number) => {
+            const v = new THREE.Vector3(wx, wy, wz).project(camera);
+            const cx = canvasRect.left + (v.x * 0.5 + 0.5) * canvasRect.width;
+            const cy = canvasRect.top + (-v.y * 0.5 + 0.5) * canvasRect.height;
+            return {
+              x: ((cx - winRect.left) / winRect.width) * 100,
+              y: ((cy - winRect.top) / winRect.height) * 100,
+            };
+          };
+          onUpdate3DAnchorsRef.current(
+            projectToWindowPct(-0.55, 0.62, 0.7 + ws.deskZOffset),
+            projectToWindowPct(1.85, 0.68, 1.22)
+          );
+        }
+      }
 
       renderer.render(scene, camera);
       rafId = requestAnimationFrame(renderFrame);
@@ -397,7 +428,7 @@ const WalkthroughViewport3D: React.FC<{
       envRT.dispose();
       renderer.dispose();
     };
-  }, [accentHex, brandConfig, brandName, brandTagline, primaryHex]);
+  }, [accentHex, appWindowRef, brandConfig, brandName, brandTagline, primaryHex]);
 
   return <div ref={containerRef} className="wt-stage-canvas" />;
 };
@@ -568,13 +599,82 @@ const StudioWalkthroughModal: React.FC<{
     window.addEventListener('pointerup', onUp);
   };
 
+  const appWindowRef = useRef<HTMLDivElement | null>(null);
+  const [anchors, setAnchors] = useState<AnchorMap>({});
+
   const activeChapter =
     WALKTHROUGH_CHAPTERS.find((c) => elapsedSec >= c.startSec && elapsedSec < c.endSec) ||
     WALKTHROUGH_CHAPTERS[WALKTHROUGH_CHAPTERS.length - 1];
 
   const ws = useMemo(() => evaluateWorkspaceState(elapsedSec), [elapsedSec]);
-  const cursor = useMemo(() => evaluateCursor(elapsedSec), [elapsedSec]);
   const zoom = useMemo(() => evaluateStageZoom(elapsedSec), [elapsedSec]);
+
+  const measureDomAnchors = useCallback(() => {
+    const winEl = appWindowRef.current;
+    if (!winEl) return;
+    const winRect = winEl.getBoundingClientRect();
+    if (winRect.width < 10 || winRect.height < 10) return;
+
+    const measured: AnchorMap = {};
+    const nodes = winEl.querySelectorAll<HTMLElement>('[data-wt-target]');
+    nodes.forEach((node) => {
+      const id = node.dataset.wtTarget;
+      if (!id) return;
+      const r = node.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return;
+      measured[id] = {
+        x: ((r.left + r.width * 0.5 - winRect.left) / winRect.width) * 100,
+        y: ((r.top + r.height * 0.5 - winRect.top) / winRect.height) * 100,
+      };
+    });
+
+    setAnchors((prev) => {
+      let changed = false;
+      for (const [k, v] of Object.entries(measured)) {
+        const old = prev[k];
+        if (!old || Math.abs(old.x - v.x) > 0.15 || Math.abs(old.y - v.y) > 0.15) {
+          changed = true;
+          break;
+        }
+      }
+      return changed ? { ...prev, ...measured } : prev;
+    });
+  }, []);
+
+  const handleUpdate3DAnchors = useCallback(
+    (desk: { x: number; y: number }, kiosk: { x: number; y: number }) => {
+      setAnchors((prev) => {
+        const prevD = prev['canvas-desk'];
+        const prevK = prev['canvas-kiosk'];
+        const deskChanged =
+          !prevD || Math.abs(prevD.x - desk.x) > 0.25 || Math.abs(prevD.y - desk.y) > 0.25;
+        const kioskChanged =
+          !prevK || Math.abs(prevK.x - kiosk.x) > 0.25 || Math.abs(prevK.y - kiosk.y) > 0.25;
+        if (!deskChanged && !kioskChanged) return prev;
+        return {
+          ...prev,
+          'canvas-desk': desk,
+          'canvas-kiosk': kiosk,
+        };
+      });
+    },
+    []
+  );
+
+  // Re-measure whenever tabs change or the modal resizes so cursor tips land dead-center
+  useLayoutEffect(() => {
+    measureDomAnchors();
+  }, [measureDomAnchors, ws.railTab, ws.buildTab]);
+
+  useEffect(() => {
+    const winEl = appWindowRef.current;
+    if (!winEl) return;
+    const ro = new ResizeObserver(() => measureDomAnchors());
+    ro.observe(winEl);
+    return () => ro.disconnect();
+  }, [measureDomAnchors]);
+
+  const cursor = useMemo(() => evaluateCursor(elapsedSec, anchors), [elapsedSec, anchors]);
 
   const accent = config.accentColor || '#D95D39';
   const primary = config.primaryColor || '#1B365D';
@@ -618,6 +718,7 @@ const StudioWalkthroughModal: React.FC<{
             {/* Soft Screen Studio Framed Canvas */}
             <div className="wt-stage-frame" onClick={togglePlayPause}>
               <div
+                ref={appWindowRef}
                 className="wt-app-window"
                 style={{
                   transform: `scale(${zoom.scale.toFixed(4)})`,
@@ -639,6 +740,7 @@ const StudioWalkthroughModal: React.FC<{
                   {/* Real View Mode Switcher: 3D | Plan | Visitor */}
                   <div className="wt-app-view-seg">
                     <span
+                      data-wt-target="view-3d"
                       className={`wt-app-seg-btn ${ws.viewMode === '3d' ? 'active' : ''} ${
                         isTargetHovered('view-3d') ? 'hovered' : ''
                       } ${isTargetPressed('view-3d') ? 'pressed' : ''}`}
@@ -647,6 +749,7 @@ const StudioWalkthroughModal: React.FC<{
                       3D
                     </span>
                     <span
+                      data-wt-target="view-2d"
                       className={`wt-app-seg-btn ${ws.viewMode === '2d' ? 'active' : ''} ${
                         isTargetHovered('view-2d') ? 'hovered' : ''
                       } ${isTargetPressed('view-2d') ? 'pressed' : ''}`}
@@ -655,6 +758,7 @@ const StudioWalkthroughModal: React.FC<{
                       Plan
                     </span>
                     <span
+                      data-wt-target="view-visitor"
                       className={`wt-app-seg-btn ${ws.viewMode === 'eye-level' ? 'active' : ''} ${
                         isTargetHovered('view-visitor') ? 'hovered' : ''
                       } ${isTargetPressed('view-visitor') ? 'pressed' : ''}`}
@@ -674,6 +778,7 @@ const StudioWalkthroughModal: React.FC<{
                       <Calculator size={10} />£{ws.liveEstimate.toLocaleString('en-GB')}
                     </span>
                     <span
+                      data-wt-target="btn-export"
                       className={`wt-app-export-btn ${
                         isTargetHovered('btn-export') ? 'hovered' : ''
                       } ${isTargetPressed('btn-export') ? 'pressed' : ''}`}
@@ -694,6 +799,7 @@ const StudioWalkthroughModal: React.FC<{
                       <span>Build</span>
                     </div>
                     <div
+                      data-wt-target="rail-brand"
                       className={`wt-app-rail-btn ${ws.railTab === 'branding' ? 'active' : ''} ${
                         isTargetHovered('rail-brand') ? 'hovered' : ''
                       } ${isTargetPressed('rail-brand') ? 'pressed' : ''}`}
@@ -713,6 +819,7 @@ const StudioWalkthroughModal: React.FC<{
                       <>
                         <div className="wt-app-subtabs">
                           <span
+                            data-wt-target="tab-catalog"
                             className={`wt-app-subtab ${ws.buildTab === 'catalog' ? 'active' : ''} ${
                               isTargetHovered('tab-catalog') ? 'hovered' : ''
                             } ${isTargetPressed('tab-catalog') ? 'pressed' : ''}`}
@@ -720,6 +827,7 @@ const StudioWalkthroughModal: React.FC<{
                             Equipment
                           </span>
                           <span
+                            data-wt-target="tab-space"
                             className={`wt-app-subtab ${ws.buildTab === 'space' ? 'active' : ''} ${
                               isTargetHovered('tab-space') ? 'hovered' : ''
                             } ${isTargetPressed('tab-space') ? 'pressed' : ''}`}
@@ -742,6 +850,7 @@ const StudioWalkthroughModal: React.FC<{
                                 4×3m
                               </span>
                               <span
+                                data-wt-target="size-6x4"
                                 className={`wt-app-size-chip ${
                                   ws.boothSize === '6x4' ? 'active' : ''
                                 } ${isTargetHovered('size-6x4') ? 'hovered' : ''} ${
@@ -756,6 +865,7 @@ const StudioWalkthroughModal: React.FC<{
                             <div className="wt-app-sec-label">Floor finish</div>
                             <div className="wt-app-floor-grid">
                               <span
+                                data-wt-target="floor-oak"
                                 className={`wt-app-floor-chip ${
                                   ws.floorMaterial === 'oak-timber' ? 'active' : ''
                                 } ${isTargetHovered('floor-oak') ? 'hovered' : ''} ${
@@ -805,6 +915,7 @@ const StudioWalkthroughModal: React.FC<{
                               return (
                                 <div
                                   key={spec.id}
+                                  data-wt-target={targetId}
                                   className={`wt-app-item-card ${placed ? 'placed' : ''} ${
                                     isTargetHovered(targetId) ? 'hovered' : ''
                                   } ${isTargetPressed(targetId) ? 'pressed' : ''}`}
@@ -828,6 +939,7 @@ const StudioWalkthroughModal: React.FC<{
                       <div className="wt-app-panel-scroll">
                         <div className="wt-app-sec-label">Brand colour palette</div>
                         <div
+                          data-wt-target="palette-navy"
                           className={`wt-app-palette-card ${ws.paletteSelected ? 'active' : ''} ${
                             isTargetHovered('palette-navy') ? 'hovered' : ''
                           } ${isTargetPressed('palette-navy') ? 'pressed' : ''}`}
@@ -853,6 +965,7 @@ const StudioWalkthroughModal: React.FC<{
                         </div>
 
                         <div
+                          data-wt-target="btn-apply-brand"
                           className={`wt-app-apply-btn ${
                             isTargetHovered('btn-apply-brand') ? 'hovered' : ''
                           } ${isTargetPressed('btn-apply-brand') ? 'pressed' : ''} ${
@@ -878,7 +991,12 @@ const StudioWalkthroughModal: React.FC<{
 
                   {/* Center Live Three.js 3D Viewport */}
                   <div className="wt-app-canvas-wrap">
-                    <WalkthroughViewport3D elapsedSec={elapsedSec} brandConfig={config} />
+                    <WalkthroughViewport3D
+                      elapsedSec={elapsedSec}
+                      brandConfig={config}
+                      appWindowRef={appWindowRef}
+                      onUpdate3DAnchors={handleUpdate3DAnchors}
+                    />
 
                     {/* Subtle 2D Plan Compliance Pill */}
                     {ws.viewMode === '2d' && (

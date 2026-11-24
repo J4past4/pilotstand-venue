@@ -293,78 +293,80 @@ export function easeOutBack(x: number): number {
 
 /**
  * Mouse choreography keyframes in percentage coordinates of the miniature Zuki Workspace window.
- * Each segment travels along a slightly curved human Bezier arc, pauses on hover, then clicks.
+ * Each waypoint can bind to a live DOM/3D `target` anchor so the cursor tip always lands
+ * dead-center on the exact control regardless of viewport size, falling back to (x, y).
  */
 interface CursorWaypoint {
   t: number;
   x: number;
   y: number;
+  target?: string;
   arc?: number; // subtle perpendicular curve offset in % for organic hand motion
 }
 
+export type AnchorMap = Record<string, { x: number; y: number }>;
+
 const CURSOR_WAYPOINTS: CursorWaypoint[] = [
   // Ch 01: Space setup
-  { t: 0.0, x: 56, y: 54 },
-  { t: 1.0, x: 56, y: 54 },
-  { t: 2.0, x: 20.5, y: 15.2, arc: -4 }, // Glide to "Space" sub-tab
-  { t: 2.6, x: 20.5, y: 15.2 },
-  { t: 3.9, x: 13.5, y: 35.5, arc: 2.5 }, // Glide to "6×4m" button
-  { t: 4.9, x: 13.5, y: 35.5 },
-  { t: 7.2, x: 13.5, y: 59.0, arc: 2 }, // Glide to "Warm Oak" swatch
-  { t: 8.4, x: 13.5, y: 59.0 },
-  { t: 9.8, x: 48, y: 52, arc: -3 }, // Drift gently aside to show floor
-  { t: 11.0, x: 48, y: 52 },
+  { t: 0.0, x: 58, y: 54 },
+  { t: 1.0, x: 58, y: 54 },
+  { t: 2.0, x: 20.5, y: 15.2, target: 'tab-space', arc: -4 },
+  { t: 2.6, x: 20.5, y: 15.2, target: 'tab-space' },
+  { t: 3.9, x: 13.5, y: 35.5, target: 'size-6x4', arc: 2.5 },
+  { t: 4.9, x: 13.5, y: 35.5, target: 'size-6x4' },
+  { t: 7.2, x: 13.5, y: 59.0, target: 'floor-oak', arc: 2 },
+  { t: 8.4, x: 13.5, y: 59.0, target: 'floor-oak' },
+  { t: 9.8, x: 50, y: 52, arc: -3 },
+  { t: 11.0, x: 50, y: 52 },
 
   // Ch 02: Equipment -> LED Wall, Lightbox, Reception Desk
-  { t: 12.0, x: 12.0, y: 15.2, arc: -4 }, // Glide to "Equipment" sub-tab
-  { t: 12.6, x: 12.0, y: 15.2 },
-  { t: 13.8, x: 18.0, y: 26.5, arc: 2 }, // LED Video Wall card
-  { t: 14.9, x: 18.0, y: 26.5 },
-  { t: 17.3, x: 18.0, y: 38.0, arc: 1.5 }, // SEG Backlit Lightbox card
-  { t: 18.5, x: 18.0, y: 38.0 },
-  { t: 20.9, x: 18.0, y: 49.5, arc: 1.5 }, // Reception Desk card
-  { t: 22.1, x: 18.0, y: 49.5 },
-  { t: 23.6, x: 38.0, y: 54.0, arc: 2 },
+  { t: 12.0, x: 12.0, y: 15.2, target: 'tab-catalog', arc: -4 },
+  { t: 12.6, x: 12.0, y: 15.2, target: 'tab-catalog' },
+  { t: 13.8, x: 18.0, y: 26.5, target: 'item-led-video-wall', arc: 2 },
+  { t: 14.9, x: 18.0, y: 26.5, target: 'item-led-video-wall' },
+  { t: 17.3, x: 18.0, y: 38.0, target: 'item-seg-lightbox', arc: 1.5 },
+  { t: 18.5, x: 18.0, y: 38.0, target: 'item-seg-lightbox' },
+  { t: 20.9, x: 18.0, y: 49.5, target: 'item-reception-desk', arc: 1.5 },
+  { t: 22.1, x: 18.0, y: 49.5, target: 'item-reception-desk' },
+  { t: 23.6, x: 40.0, y: 54.0, arc: 2 },
 
   // Ch 03: Lounge Sofa, Coffee Table, Demo Kiosk
-  { t: 26.2, x: 18.0, y: 61.0, arc: -2 }, // Lounge Sofa card
-  { t: 27.5, x: 18.0, y: 61.0 },
-  { t: 29.7, x: 18.0, y: 72.5, arc: 1.5 }, // Coffee Table card
-  { t: 30.9, x: 18.0, y: 72.5 },
-  { t: 32.9, x: 18.0, y: 84.0, arc: 1.5 }, // Demo Kiosk card
-  { t: 34.1, x: 18.0, y: 84.0 },
-  { t: 35.6, x: 52.0, y: 58.0, arc: 3 },
+  { t: 26.2, x: 18.0, y: 61.0, target: 'item-lounge-sofa', arc: -2 },
+  { t: 27.5, x: 18.0, y: 61.0, target: 'item-lounge-sofa' },
+  { t: 29.7, x: 18.0, y: 72.5, target: 'item-coffee-table', arc: 1.5 },
+  { t: 30.9, x: 18.0, y: 72.5, target: 'item-coffee-table' },
+  { t: 32.9, x: 18.0, y: 84.0, target: 'item-demo-kiosk', arc: 1.5 },
+  { t: 34.1, x: 18.0, y: 84.0, target: 'item-demo-kiosk' },
+  { t: 35.6, x: 54.0, y: 58.0, arc: 3 },
 
-  // Ch 04: Drag Reception Desk + Rotate Demo Kiosk
-  { t: 37.8, x: 52.0, y: 61.5, arc: 1.5 }, // Hover Reception Desk on 3D canvas
-  { t: 39.8, x: 52.0, y: 61.5 }, // Click to select (Right Inspector slides in)
-  { t: 42.6, x: 50.5, y: 67.5, arc: 0.5 }, // Smooth drag forward +0.4m along 0.1m grid
-  { t: 43.4, x: 50.5, y: 67.5 },
-  { t: 44.8, x: 66.0, y: 65.0, arc: -2.5 }, // Move to Demo Kiosk on 3D canvas
-  { t: 48.2, x: 66.0, y: 65.0 }, // Click + press R to rotate 90°
+  // Ch 04: Drag Reception Desk + Rotate Demo Kiosk (bound to live 3D-projected anchors!)
+  { t: 37.8, x: 52.0, y: 61.5, target: 'canvas-desk', arc: 1.5 },
+  { t: 43.4, x: 51.0, y: 67.5, target: 'canvas-desk' },
+  { t: 44.8, x: 66.0, y: 65.0, target: 'canvas-kiosk', arc: -2.5 },
+  { t: 48.2, x: 66.0, y: 65.0, target: 'canvas-kiosk' },
 
   // Ch 05: Brand tab -> Navy & Coral -> Apply Brand Artwork
-  { t: 50.2, x: 3.1, y: 27.5, arc: -5 }, // Glide to Left Rail "Brand" icon
-  { t: 50.8, x: 3.1, y: 27.5 },
-  { t: 51.9, x: 18.0, y: 34.5, arc: 2 }, // Click "Deep Navy & Coral" palette
-  { t: 52.5, x: 18.0, y: 34.5 },
-  { t: 53.5, x: 18.0, y: 53.5, arc: 1.5 }, // Click "Apply Brand Artwork" CTA
-  { t: 54.4, x: 18.0, y: 53.5 },
-  { t: 56.5, x: 54.0, y: 54.0, arc: -4 }, // Move out of the way to admire branded stand
-  { t: 59.5, x: 54.0, y: 54.0 },
+  { t: 50.2, x: 3.1, y: 27.5, target: 'rail-brand', arc: -5 },
+  { t: 50.8, x: 3.1, y: 27.5, target: 'rail-brand' },
+  { t: 51.9, x: 18.0, y: 34.5, target: 'palette-navy', arc: 2 },
+  { t: 52.5, x: 18.0, y: 34.5, target: 'palette-navy' },
+  { t: 53.5, x: 18.0, y: 53.5, target: 'btn-apply-brand', arc: 1.5 },
+  { t: 54.4, x: 18.0, y: 53.5, target: 'btn-apply-brand' },
+  { t: 56.5, x: 56.0, y: 54.0, arc: -4 },
+  { t: 59.5, x: 56.0, y: 54.0 },
 
   // Ch 06: Top Bar -> Plan -> Visitor
-  { t: 60.8, x: 50.0, y: 5.4, arc: -3 }, // Top bar "Plan" tab
-  { t: 61.6, x: 50.0, y: 5.4 },
-  { t: 64.5, x: 57.0, y: 5.4, arc: -1 }, // Top bar "Visitor" tab
-  { t: 65.4, x: 57.0, y: 5.4 },
+  { t: 60.8, x: 50.0, y: 5.4, target: 'view-2d', arc: -3 },
+  { t: 61.6, x: 50.0, y: 5.4, target: 'view-2d' },
+  { t: 64.5, x: 57.0, y: 5.4, target: 'view-visitor', arc: -1 },
+  { t: 65.4, x: 57.0, y: 5.4, target: 'view-visitor' },
   { t: 68.5, x: 57.0, y: 18.0, arc: 1 },
 
   // Ch 07: Back to 3D -> Export brief
-  { t: 69.6, x: 43.8, y: 5.4, arc: -2 }, // Top bar "3D" tab
-  { t: 70.3, x: 43.8, y: 5.4 },
-  { t: 71.7, x: 90.8, y: 5.4, arc: -3 }, // Top-right "Export brief" button
-  { t: 72.6, x: 90.8, y: 5.4 },
+  { t: 69.6, x: 43.8, y: 5.4, target: 'view-3d', arc: -2 },
+  { t: 70.3, x: 43.8, y: 5.4, target: 'view-3d' },
+  { t: 71.7, x: 90.8, y: 5.4, target: 'btn-export', arc: -3 },
+  { t: 72.6, x: 90.8, y: 5.4, target: 'btn-export' },
   { t: 74.0, x: 64.0, y: 58.0, arc: 3 },
   { t: 76.0, x: 64.0, y: 58.0 },
 ];
@@ -410,37 +412,48 @@ export interface CursorState {
   rippleProgress: number | null; // 0..1 when a click ripple is expanding
 }
 
-export function evaluateCursor(t: number): CursorState {
-  let x = CURSOR_WAYPOINTS[0].x;
-  let y = CURSOR_WAYPOINTS[0].y;
+function resolveWaypointPos(wp: CursorWaypoint, anchors?: AnchorMap): { x: number; y: number } {
+  if (wp.target && anchors && anchors[wp.target]) {
+    return anchors[wp.target];
+  }
+  return { x: wp.x, y: wp.y };
+}
+
+export function evaluateCursor(t: number, anchors?: AnchorMap): CursorState {
+  const first = resolveWaypointPos(CURSOR_WAYPOINTS[0], anchors);
+  let x = first.x;
+  let y = first.y;
 
   for (let i = 0; i < CURSOR_WAYPOINTS.length - 1; i++) {
     const a = CURSOR_WAYPOINTS[i];
     const b = CURSOR_WAYPOINTS[i + 1];
     if (t >= a.t && t <= b.t) {
+      const pa = resolveWaypointPos(a, anchors);
+      const pb = resolveWaypointPos(b, anchors);
       const span = Math.max(0.0001, b.t - a.t);
       const u = easeInOutCubic((t - a.t) / span);
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
+      const dx = pb.x - pa.x;
+      const dy = pb.y - pa.y;
       const dist = Math.hypot(dx, dy);
       const arc = b.arc ?? 0;
       if (dist > 0.5 && Math.abs(arc) > 0.01) {
         const nx = -dy / dist;
         const ny = dx / dist;
-        const mx = (a.x + b.x) * 0.5 + nx * arc;
-        const my = (a.y + b.y) * 0.5 + ny * arc;
+        const mx = (pa.x + pb.x) * 0.5 + nx * arc;
+        const my = (pa.y + pb.y) * 0.5 + ny * arc;
         const inv = 1 - u;
-        x = inv * inv * a.x + 2 * inv * u * mx + u * u * b.x;
-        y = inv * inv * a.y + 2 * inv * u * my + u * u * b.y;
+        x = inv * inv * pa.x + 2 * inv * u * mx + u * u * pb.x;
+        y = inv * inv * pa.y + 2 * inv * u * my + u * u * pb.y;
       } else {
-        x = lerp(a.x, b.x, u);
-        y = lerp(a.y, b.y, u);
+        x = lerp(pa.x, pb.x, u);
+        y = lerp(pa.y, pb.y, u);
       }
       break;
     }
     if (t > b.t) {
-      x = b.x;
-      y = b.y;
+      const pb = resolveWaypointPos(b, anchors);
+      x = pb.x;
+      y = pb.y;
     }
   }
 
@@ -452,7 +465,8 @@ export function evaluateCursor(t: number): CursorState {
 
   for (const ev of CLICK_EVENTS) {
     if (ev.target === 'key-r') continue;
-    if (t >= ev.at - 0.55 && t <= ev.at + ev.duration + 0.25) {
+    // Generous, unmistakable pulse highlight window before & after click
+    if (t >= ev.at - 0.7 && t <= ev.at + ev.duration + 0.55) {
       hoveredTarget = ev.target;
     }
     if (t >= ev.at && t <= ev.at + ev.duration) {
