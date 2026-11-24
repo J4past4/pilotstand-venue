@@ -98,22 +98,22 @@ export const BUILTIN_BRAND_ASSETS: BrandAsset[] = [
         <circle cx="1320" cy="240" r="420" fill="#254E80" opacity="0.45"/>
         <circle cx="1380" cy="760" r="290" fill="#D95D39" opacity="0.24"/>
         <path d="M 960 0 L 1600 0 L 1600 1000 L 1180 1000 Z" fill="#FFFFFF" opacity="0.04"/>
-        <rect x="110" y="130" width="96" height="10" rx="5" fill="url(#accent)"/>
-        <text x="110" y="210" font-family="Plus Jakarta Sans, Inter, sans-serif" font-size="34" font-weight="700" letter-spacing="8" fill="#F29E4C">NEXUS ARCHITECTURE</text>
-        <text x="110" y="385" font-family="Plus Jakarta Sans, Inter, sans-serif" font-size="112" font-weight="800" fill="#FFFFFF">Built for</text>
-        <text x="110" y="510" font-family="Plus Jakarta Sans, Inter, sans-serif" font-size="112" font-weight="800" fill="#FFFFFF">Tomorrow's</text>
-        <text x="110" y="635" font-family="Plus Jakarta Sans, Inter, sans-serif" font-size="112" font-weight="800" fill="#F29E4C">Spaces.</text>
-        <text x="110" y="740" font-family="Inter, sans-serif" font-size="36" font-weight="400" fill="#CBD5E1">Modular precision systems · Carbon-neutral engineering · Live Demo</text>
-        <g transform="translate(110, 815)">
-          <rect width="310" height="68" rx="34" fill="#D95D39"/>
-          <text x="155" y="44" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-size="26" font-weight="700" fill="#FFFFFF">HALL 4 · STAND B18</text>
+        <rect x="210" y="135" width="92" height="10" rx="5" fill="url(#accent)"/>
+        <text x="210" y="210" font-family="Plus Jakarta Sans, Inter, sans-serif" font-size="32" font-weight="700" letter-spacing="7" fill="#F29E4C">NEXUS ARCHITECTURE</text>
+        <text x="210" y="375" font-family="Plus Jakarta Sans, Inter, sans-serif" font-size="102" font-weight="800" fill="#FFFFFF">Built for</text>
+        <text x="210" y="492" font-family="Plus Jakarta Sans, Inter, sans-serif" font-size="102" font-weight="800" fill="#FFFFFF">Tomorrow's</text>
+        <text x="210" y="608" font-family="Plus Jakarta Sans, Inter, sans-serif" font-size="102" font-weight="800" fill="#F29E4C">Spaces.</text>
+        <text x="210" y="705" font-family="Inter, sans-serif" font-size="31" font-weight="400" fill="#CBD5E1">Modular precision systems · Carbon-neutral engineering</text>
+        <g transform="translate(210, 775)">
+          <rect width="300" height="64" rx="32" fill="#D95D39"/>
+          <text x="150" y="42" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-size="24" font-weight="700" fill="#FFFFFF">HALL 4 · STAND B18</text>
         </g>
-        <g transform="translate(1130, 310)" opacity="0.9">
-          <rect x="0" y="0" width="330" height="390" rx="22" fill="#FFFFFF" fill-opacity="0.08" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="2"/>
-          <rect x="34" y="42" width="120" height="120" rx="16" fill="#D95D39"/>
-          <rect x="176" y="42" width="120" height="120" rx="16" fill="#FFFFFF" fill-opacity="0.16"/>
-          <rect x="34" y="184" width="262" height="164" rx="16" fill="#FFFFFF" fill-opacity="0.12"/>
-          <path d="M 64 295 L 122 238 L 178 268 L 260 208" fill="none" stroke="#F29E4C" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+        <g transform="translate(1040, 305)" opacity="0.9">
+          <rect x="0" y="0" width="320" height="380" rx="22" fill="#FFFFFF" fill-opacity="0.08" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="2"/>
+          <rect x="32" y="40" width="116" height="116" rx="16" fill="#D95D39"/>
+          <rect x="170" y="40" width="116" height="116" rx="16" fill="#FFFFFF" fill-opacity="0.16"/>
+          <rect x="32" y="178" width="254" height="160" rx="16" fill="#FFFFFF" fill-opacity="0.12"/>
+          <path d="M 62 288 L 118 232 L 172 262 L 252 204" fill="none" stroke="#F29E4C" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
         </g>
       </svg>
     `),

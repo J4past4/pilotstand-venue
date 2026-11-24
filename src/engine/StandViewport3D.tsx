@@ -218,7 +218,11 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       const targetLook = new THREE.Vector3(0, 1.05, 0);
 
       if (preset === 'isometric') {
-        targetPos.set(maxSpan * 1.15, maxSpan * 0.86, maxSpan * 1.28);
+        if (cfg.openSides === 1 && cfg.showShellWalls) {
+          targetPos.set(maxSpan * 0.36, maxSpan * 0.78, maxSpan * 1.56);
+        } else {
+          targetPos.set(maxSpan * 1.15, maxSpan * 0.86, maxSpan * 1.28);
+        }
       } else if (preset === 'front') {
         targetPos.set(0, 1.65, maxSpan * 1.55);
       } else if (preset === 'left') {
@@ -322,7 +326,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(width, height);
       renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.shadowMap.type = THREE.PCFShadowMap;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.06;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -749,6 +753,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       }
 
       const preset = config.lightingPreset;
+      const frustumHalf = Math.max(config.width, config.depth, 4) * 0.95;
       if (preset === 'dramatic') {
         scene.background = new THREE.Color('#1A1E26');
         scene.fog = new THREE.Fog('#1A1E26', 16, 42);
@@ -764,7 +769,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         spot1.position.set(2.8, 6.2, 3.6);
         spot1.castShadow = true;
         spot1.shadow.mapSize.set(2048, 2048);
-        spot1.shadow.bias = -0.0005;
+        spot1.shadow.bias = -0.00015;
+        spot1.shadow.normalBias = 0.025;
         lightsGroup.add(spot1);
 
         const spot2 = new THREE.SpotLight('#E2EEFF', 30, 18, Math.PI / 3.5, 0.6, 1.4);
@@ -785,11 +791,12 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         sun.position.set(6, 10, 7);
         sun.castShadow = true;
         sun.shadow.mapSize.set(2048, 2048);
-        sun.shadow.camera.left = -8;
-        sun.shadow.camera.right = 8;
-        sun.shadow.camera.top = 8;
-        sun.shadow.camera.bottom = -8;
-        sun.shadow.bias = -0.0005;
+        sun.shadow.camera.left = -frustumHalf;
+        sun.shadow.camera.right = frustumHalf;
+        sun.shadow.camera.top = frustumHalf;
+        sun.shadow.camera.bottom = -frustumHalf;
+        sun.shadow.bias = -0.00015;
+        sun.shadow.normalBias = 0.028;
         lightsGroup.add(sun);
 
         const fill = new THREE.DirectionalLight('#DCE8F7', 0.45);
@@ -811,11 +818,12 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         mainLight.position.set(5.5, 9.2, 6.2);
         mainLight.castShadow = true;
         mainLight.shadow.mapSize.set(2048, 2048);
-        mainLight.shadow.camera.left = -8;
-        mainLight.shadow.camera.right = 8;
-        mainLight.shadow.camera.top = 8;
-        mainLight.shadow.camera.bottom = -8;
-        mainLight.shadow.bias = -0.0005;
+        mainLight.shadow.camera.left = -frustumHalf;
+        mainLight.shadow.camera.right = frustumHalf;
+        mainLight.shadow.camera.top = frustumHalf;
+        mainLight.shadow.camera.bottom = -frustumHalf;
+        mainLight.shadow.bias = -0.00015;
+        mainLight.shadow.normalBias = 0.028;
         lightsGroup.add(mainLight);
 
         const rimLight = new THREE.DirectionalLight('#D9E7F8', 0.48);
@@ -827,7 +835,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         bayLight.position.set(0, 4.4, 0.5);
         lightsGroup.add(bayLight);
       }
-    }, [config.lightingPreset]);
+    }, [config.lightingPreset, config.width, config.depth]);
 
     // Rebuild Booth Shell + Scale Figures
     useEffect(() => {
@@ -848,7 +856,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
       shellGroup.add(buildBoothShell(ctx));
 
-      if (config.showScaleFigures) {
+      // Hide scale figures in 2D architectural plan view so dimension pills stay unobstructed
+      if (config.showScaleFigures && viewMode !== '2d') {
         shellGroup.add(buildScaleFigures(config));
       }
 
@@ -871,7 +880,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         }
         shellGroup.add(edge);
       }
-    }, [config, assetsMap, selectedShellWall, textureTick]);
+    }, [config, assetsMap, selectedShellWall, textureTick, viewMode]);
 
     // Rebuild Equipment Items
     useEffect(() => {
@@ -895,9 +904,52 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           item.catalogId === 'custom-3d-model'
             ? buildCustomModelMesh(item)
             : buildStandItemMesh(item, ctx);
+
+        // In 2D Plan mode, render overhead rigging/hanging signs as semi-transparent
+        // Reflected Ceiling Plan (RCP) outlines so they never obscure floor furniture below
+        if (
+          viewMode === '2d' &&
+          (item.y >= 1.8 ||
+            item.catalogId === 'hanging-cube' ||
+            item.catalogId === 'hanging-ring' ||
+            item.catalogId === 'front-arch' ||
+            item.catalogId === 'truss-rig')
+        ) {
+          meshGroup.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              const applyGhost = (m: THREE.Material) => {
+                const cloned = m.clone();
+                cloned.transparent = true;
+                cloned.opacity = 0.16;
+                cloned.depthWrite = false;
+                return cloned;
+              };
+              if (Array.isArray(child.material)) {
+                child.material = child.material.map(applyGhost);
+              } else if (child.material) {
+                child.material = applyGhost(child.material);
+              }
+              child.castShadow = false;
+            }
+          });
+          const rcpOutline = new THREE.LineSegments(
+            new THREE.EdgesGeometry(new THREE.BoxGeometry(item.dims.w, 0.02, item.dims.d)),
+            new THREE.LineDashedMaterial({
+              color: '#1B365D',
+              dashSize: 0.14,
+              gapSize: 0.09,
+              transparent: true,
+              opacity: 0.65,
+            })
+          );
+          rcpOutline.computeLineDistances();
+          rcpOutline.position.y = item.dims.h;
+          meshGroup.add(rcpOutline);
+        }
+
         itemsGroup.add(meshGroup);
       }
-    }, [items, config, assetsMap, textureTick]);
+    }, [items, config, assetsMap, textureTick, viewMode]);
 
     // Rebuild Helpers (Floor Grid, Selection Ring, Boundary Alerts, Venue Height Limit Frame)
     useEffect(() => {

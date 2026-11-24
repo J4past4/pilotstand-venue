@@ -49,6 +49,7 @@ interface RightInspectorProps {
   ) => void;
   compliance: ComplianceReport;
   onOpenBrandingTab: () => void;
+  onClearSelection: () => void;
 }
 
 const DEFAULT_ART: SurfaceArtwork = {
@@ -77,6 +78,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   onUploadAssetForSurface,
   compliance,
   onOpenBrandingTab,
+  onClearSelection,
 }) => {
   const surfaceFileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadTargetRef = useRef<
@@ -123,7 +125,9 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
         <div className="inspector-header">
           <div>
             <span className="inspector-kicker">Perimeter Shell Wall</span>
-            <h2>{selectedShellWall.toUpperCase()} Wall Graphic</h2>
+            <h2>
+              {selectedShellWall.charAt(0).toUpperCase() + selectedShellWall.slice(1)} Wall Graphic
+            </h2>
           </div>
           <button
             className="tiny-icon-btn"
@@ -249,6 +253,14 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             <span className="inspector-kicker">{def?.category || 'Equipment'}</span>
             <h2>{selectedItem.name}</h2>
           </div>
+          <button
+            className="tiny-icon-btn"
+            onClick={onClearSelection}
+            title="Deselect item (Esc)"
+            aria-label="Close item inspector"
+          >
+            <X size={15} />
+          </button>
         </div>
 
         <div className="inspector-quickbar">
@@ -528,7 +540,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 />
               </label>
               <label className="num-field">
-                <span>Elev Y</span>
+                <span>Elev Y ({config.unit})</span>
                 <input
                   type="number"
                   step={0.1}

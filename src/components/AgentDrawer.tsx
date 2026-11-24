@@ -87,17 +87,15 @@ export const AgentDrawer: React.FC<AgentDrawerProps> = ({
 
   const statusLabel = latestMeta
     ? latestMeta.provider === 'local-preview'
-      ? 'Local Preview · Zero-cost rule engine'
+      ? 'Studio Assistant · Instant Layout Engine'
       : `${latestMeta.provider.toUpperCase()} · ${latestMeta.model}${
           latestMeta.remainingHourly !== undefined
             ? ` · ${latestMeta.remainingHourly} left/hr`
             : ''
         }`
     : serverStatus?.configured && serverStatus.provider
-      ? `${serverStatus.provider.toUpperCase()} · ${serverStatus.model || 'Ready'} · Connected`
-      : serverStatus
-        ? 'Local Preview · Add GEMINI_API_KEY on Vercel for live AI'
-        : 'Chat or speak to build & refine your 3D stand';
+      ? `${serverStatus.provider.toUpperCase()} · ${serverStatus.model || 'Ready'}`
+      : 'Studio Assistant · Instant Layout Engine';
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -284,7 +282,7 @@ export const AgentDrawer: React.FC<AgentDrawerProps> = ({
 
         <div className="agent-composer-bar">
           <span className="agent-char-count mono-num">
-            {input.length}/{MAX_PROMPT_CHARS}
+            {input.length > 750 ? `${input.length}/${MAX_PROMPT_CHARS}` : ''}
           </span>
 
           <div className="agent-composer-btns">
