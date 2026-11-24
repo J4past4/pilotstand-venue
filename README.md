@@ -41,9 +41,9 @@ Build for production:
 npm run build
 ```
 
-## Private Beta Access (Individual User Logins)
+## Private Beta Access (Individual User Logins & Invite Sign-Up)
 
-Set `BETA_USERS` and `AUTH_SESSION_SECRET` in Vercel Environment Variables (see `.env.example`) to gate the app behind individual email/password logins with 7-day `HttpOnly` signed session cookies and per-user isolated saved workspaces. Removing a user from `BETA_USERS` revokes their session immediately.
+Set `BETA_INVITE_CODE` + Upstash Redis (via Vercel Storage) and `AUTH_SESSION_SECRET` in Vercel Environment Variables (see `.env.example`) so invited beta testers can create their own email/password login (passwords stored as salted `scrypt` hashes, 7-day `HttpOnly` signed session cookies, and per-user isolated saved workspaces). You can also optionally restrict sign-ups with `BETA_ALLOWED_EMAILS` / `BETA_ALLOWED_DOMAINS` and pre-seed admin accounts with `BETA_USERS`.
 
 ## QA & Verification
 

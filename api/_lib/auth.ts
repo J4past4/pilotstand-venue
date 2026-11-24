@@ -1,4 +1,4 @@
-import { createHash, createHmac, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { extractClientIp } from './security.ts';
 
 export interface BetaUserRecord {
@@ -6,6 +6,7 @@ export interface BetaUserRecord {
   name: string;
   role: 'admin' | 'beta';
   password: string;
+  createdAt?: number;
 }
 
 export interface BetaSessionUser {
@@ -23,6 +24,8 @@ export const SESSION_COOKIE_NAME = 'zuki_beta_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_FAILED_LOGINS_PER_WINDOW = 10;
+const MIN_PASSWORD_LENGTH = 8;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface LoginFailureBucket {
   count: number;
@@ -30,9 +33,121 @@ interface LoginFailureBucket {
 }
 
 const loginFailures = new Map<string, LoginFailureBucket>();
+// Local dev / unit-test fallback store when Upstash Redis / Vercel KV is not configured
+const memoryRegisteredUsers = new Map<string, BetaUserRecord>();
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+function getRedisConfig(
+  env: NodeJS.ProcessEnv = process.env
+): { url: string; token: string } | null {
+  const url = (env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL || '').trim();
+  const token = (env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN || '').trim();
+  if (!url || !token) return null;
+  return { url: url.replace(/\/$/, ''), token };
+}
+
+export function hasDurableUserStore(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(getRedisConfig(env));
+}
+
+async function redisCommand<T = unknown>(
+  args: Array<string | number>,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<T | null> {
+  const cfg = getRedisConfig(env);
+  if (!cfg) return null;
+
+  const resp = await fetch(`${cfg.url}/pipeline`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${cfg.token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify([args]),
+  });
+  if (!resp.ok) {
+    throw new Error(`User store request failed (${resp.status})`);
+  }
+  const results = (await resp.json()) as Array<{ result?: T; error?: string }>;
+  if (results[0]?.error) {
+    throw new Error(results[0].error);
+  }
+  return results[0]?.result ?? null;
+}
+
+function userRedisKey(email: string): string {
+  return `zuki-expo:beta-user:${normalizeEmail(email)}`;
+}
+
+async function getStoredRegisteredUser(
+  email: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<BetaUserRecord | null> {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+
+  if (hasDurableUserStore(env)) {
+    const raw = await redisCommand<string | null>(['GET', userRedisKey(normalized)], env);
+    if (!raw || typeof raw !== 'string') return null;
+    try {
+      const parsed = JSON.parse(raw) as Partial<BetaUserRecord>;
+      if (
+        typeof parsed.email === 'string' &&
+        typeof parsed.name === 'string' &&
+        typeof parsed.password === 'string'
+      ) {
+        return {
+          email: normalizeEmail(parsed.email),
+          name: parsed.name,
+          role: parsed.role === 'admin' ? 'admin' : 'beta',
+          password: parsed.password,
+          createdAt: typeof parsed.createdAt === 'number' ? parsed.createdAt : undefined,
+        };
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  return memoryRegisteredUsers.get(normalized) ?? null;
+}
+
+async function saveRegisteredUser(
+  record: BetaUserRecord,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<void> {
+  const normalized = normalizeEmail(record.email);
+  const toSave: BetaUserRecord = { ...record, email: normalized };
+
+  if (hasDurableUserStore(env)) {
+    const cfg = getRedisConfig(env)!;
+    const resp = await fetch(`${cfg.url}/pipeline`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${cfg.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify([
+        ['SET', userRedisKey(normalized), JSON.stringify(toSave)],
+        ['SADD', 'zuki-expo:beta-users', normalized],
+      ]),
+    });
+    if (!resp.ok) {
+      throw new Error(`Failed to persist beta user (${resp.status})`);
+    }
+    return;
+  }
+
+  memoryRegisteredUsers.set(normalized, toSave);
+}
+
+/** Test helper to reset in-memory registered users between unit tests */
+export function clearInMemoryRegisteredUsers(): void {
+  memoryRegisteredUsers.clear();
 }
 
 /**
@@ -88,22 +203,39 @@ export function parseBetaUsers(raw: string | undefined = process.env.BETA_USERS)
   return users;
 }
 
+export function parseInviteCodes(raw: string | undefined = process.env.BETA_INVITE_CODE): string[] {
+  return (raw || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+export function isBetaSignupEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return parseInviteCodes(env.BETA_INVITE_CODE).length > 0;
+}
+
 export function isBetaAuthEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return parseBetaUsers(env.BETA_USERS).length > 0;
+  return parseBetaUsers(env.BETA_USERS).length > 0 || isBetaSignupEnabled(env);
 }
 
 function getSessionSecret(env: NodeJS.ProcessEnv = process.env): string {
   const explicit = (env.AUTH_SESSION_SECRET || '').trim();
   if (explicit) return explicit;
-  // Deterministic fallback derived from BETA_USERS so sessions remain valid across
+  // Deterministic fallback derived from server auth config so sessions remain valid across
   // Vercel serverless invocations even if AUTH_SESSION_SECRET was not separately set.
   return createHash('sha256')
-    .update(`zuki-beta-fallback::${env.BETA_USERS || ''}`)
+    .update(`zuki-beta-fallback::${env.BETA_USERS || ''}::${env.BETA_INVITE_CODE || ''}`)
     .digest('hex');
 }
 
 function sha256Buffer(value: string): Buffer {
   return createHash('sha256').update(value, 'utf8').digest();
+}
+
+export function hashPassword(plainPassword: string): string {
+  const salt = randomBytes(16).toString('hex');
+  const derivedHex = scryptSync(plainPassword, salt, 32).toString('hex');
+  return `scrypt:${salt}:${derivedHex}`;
 }
 
 /**
@@ -131,6 +263,39 @@ export function verifyPassword(inputPassword: string, storedPassword: string): b
   return timingSafeEqual(sha256Buffer(inputPassword), sha256Buffer(storedPassword));
 }
 
+export function verifyInviteCode(
+  inputCode: string,
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  const normalizedInput = inputCode.trim().toLowerCase();
+  if (!normalizedInput) return false;
+  const codes = parseInviteCodes(env.BETA_INVITE_CODE);
+  if (codes.length === 0) return false;
+  const inputHash = sha256Buffer(normalizedInput);
+  return codes.some((code) => timingSafeEqual(inputHash, sha256Buffer(code.toLowerCase())));
+}
+
+export function isEmailAllowedForSignup(
+  email: string,
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  const normalized = normalizeEmail(email);
+  const allowedEmails = (env.BETA_ALLOWED_EMAILS || '')
+    .split(',')
+    .map((s) => normalizeEmail(s))
+    .filter(Boolean);
+  const allowedDomains = (env.BETA_ALLOWED_DOMAINS || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase().replace(/^@/, ''))
+    .filter(Boolean);
+
+  if (allowedEmails.length === 0 && allowedDomains.length === 0) return true;
+  if (allowedEmails.includes(normalized)) return true;
+
+  const domain = normalized.split('@')[1] || '';
+  return Boolean(domain && allowedDomains.includes(domain));
+}
+
 export function authenticateBetaUser(
   email: string,
   password: string,
@@ -149,6 +314,127 @@ export function authenticateBetaUser(
     email: found.email,
     name: found.name,
     role: found.role,
+  };
+}
+
+export async function authenticateBetaUserAsync(
+  email: string,
+  password: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<BetaSessionUser | null> {
+  const envUser = authenticateBetaUser(email, password, env);
+  if (envUser) return envUser;
+
+  const targetEmail = normalizeEmail(email);
+  if (!targetEmail || !password) return null;
+
+  const stored = await getStoredRegisteredUser(targetEmail, env);
+  if (!stored) return null;
+  if (!verifyPassword(password, stored.password)) return null;
+
+  return {
+    email: stored.email,
+    name: stored.name,
+    role: stored.role,
+  };
+}
+
+export interface SignupInput {
+  name: string;
+  email: string;
+  password: string;
+  inviteCode: string;
+}
+
+export type SignupResult =
+  | { ok: true; user: BetaSessionUser }
+  | { ok: false; status: number; error: string };
+
+export async function registerBetaUser(
+  input: SignupInput,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<SignupResult> {
+  if (!isBetaSignupEnabled(env)) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'Self-service sign-up is not enabled for this workspace.',
+    };
+  }
+
+  // On Vercel production, require Upstash Redis / Vercel KV so registered accounts survive cold starts
+  if (env.VERCEL && !hasDurableUserStore(env)) {
+    return {
+      ok: false,
+      status: 503,
+      error:
+        'Account sign-up storage is not connected yet. Connect Upstash Redis in Vercel Storage (or contact your workspace admin).',
+    };
+  }
+
+  const name = input.name.trim().replace(/\s+/g, ' ');
+  const email = normalizeEmail(input.email);
+  const password = input.password;
+  const inviteCode = input.inviteCode.trim();
+
+  if (name.length < 2 || name.length > 80) {
+    return { ok: false, status: 400, error: 'Please enter your name (2–80 characters).' };
+  }
+  if (!EMAIL_RE.test(email) || email.length > 120) {
+    return { ok: false, status: 400, error: 'Please enter a valid work email address.' };
+  }
+  if (password.length < MIN_PASSWORD_LENGTH || password.length > 128) {
+    return {
+      ok: false,
+      status: 400,
+      error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`,
+    };
+  }
+  if (!verifyInviteCode(inviteCode, env)) {
+    return { ok: false, status: 403, error: 'Invalid beta invite code.' };
+  }
+  if (!isEmailAllowedForSignup(email, env)) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'This email address is not on the private beta invite list.',
+    };
+  }
+
+  const staticUsers = parseBetaUsers(env.BETA_USERS);
+  if (staticUsers.some((u) => u.email === email)) {
+    return {
+      ok: false,
+      status: 409,
+      error: 'An account with this email already exists. Please sign in instead.',
+    };
+  }
+
+  const existing = await getStoredRegisteredUser(email, env);
+  if (existing) {
+    return {
+      ok: false,
+      status: 409,
+      error: 'An account with this email already exists. Please sign in instead.',
+    };
+  }
+
+  const record: BetaUserRecord = {
+    email,
+    name,
+    role: 'beta',
+    password: hashPassword(password),
+    createdAt: Date.now(),
+  };
+  await saveRegisteredUser(record, env);
+
+  return {
+    ok: true,
+    user: {
+      email: record.email,
+      name: record.name,
+      role: record.role,
+    },
   };
 }
 
@@ -210,10 +496,13 @@ export function verifySessionToken(
     }
     if (parsed.exp <= nowSec) return null;
 
-    // Ensure the user still exists in BETA_USERS (allows instant revocation by removing them)
-    const activeUsers = parseBetaUsers(env.BETA_USERS);
-    if (activeUsers.length > 0 && !activeUsers.some((u) => u.email === parsed.email)) {
-      return null;
+    // When only static BETA_USERS is used (no self-signup), verify the user still exists
+    // in BETA_USERS so removing them from Vercel env revokes their session immediately.
+    if (!isBetaSignupEnabled(env)) {
+      const activeUsers = parseBetaUsers(env.BETA_USERS);
+      if (activeUsers.length > 0 && !activeUsers.some((u) => u.email === parsed.email)) {
+        return null;
+      }
     }
 
     return {
@@ -317,8 +606,8 @@ export function clearLoginFailures(headers: Record<string, string | string[] | u
 
 /**
  * Checks whether an incoming API request is authorized.
- * When `BETA_USERS` is not configured, returns `{ authorized: true, user: null }`.
- * When `BETA_USERS` IS configured, requires a valid signed beta session cookie.
+ * When neither `BETA_USERS` nor `BETA_INVITE_CODE` is configured, returns `{ authorized: true, user: null }`.
+ * Otherwise requires a valid signed beta session cookie.
  */
 export function requireBetaSession(
   headers: Record<string, string | string[] | undefined>,

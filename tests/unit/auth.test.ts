@@ -1,13 +1,18 @@
 import { scryptSync } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   authenticateBetaUser,
+  authenticateBetaUserAsync,
   buildClearSessionCookie,
   buildSessionCookie,
+  clearInMemoryRegisteredUsers,
   createSessionToken,
   getSessionFromHeaders,
+  hashPassword,
   isBetaAuthEnabled,
+  isBetaSignupEnabled,
   parseBetaUsers,
+  registerBetaUser,
   requireBetaSession,
   SESSION_COOKIE_NAME,
   verifyPassword,
@@ -15,6 +20,10 @@ import {
 } from '../../api/_lib/auth.ts';
 
 describe('Private Beta Auth Library', () => {
+  beforeEach(() => {
+    clearInMemoryRegisteredUsers();
+  });
+
   const sampleUsersJson = JSON.stringify([
     {
       email: 'founder@zukistudio.co.uk',
@@ -69,6 +78,11 @@ describe('Private Beta Auth Library', () => {
     expect(verifyPassword('WrongPass', hashed)).toBe(false);
     expect(verifyPassword('PlainPass', 'PlainPass')).toBe(true);
     expect(verifyPassword('plainpass', 'PlainPass')).toBe(false);
+
+    const autoHashed = hashPassword('BrandNewPassword!9');
+    expect(autoHashed.startsWith('scrypt:')).toBe(true);
+    expect(verifyPassword('BrandNewPassword!9', autoHashed)).toBe(true);
+    expect(verifyPassword('NotIt', autoHashed)).toBe(false);
   });
 
   it('authenticates each user independently (case-insensitive email) and rejects wrong credentials', () => {
@@ -145,5 +159,94 @@ describe('Private Beta Auth Library', () => {
     expect(authCheck).toEqual({ authorized: true, user });
 
     expect(buildClearSessionCookie(true)).toContain('Max-Age=0');
+  });
+
+  it('supports invite-only self-signup, domain allowlists, duplicate protection, and login afterwards', async () => {
+    const signupEnv: NodeJS.ProcessEnv = {
+      BETA_INVITE_CODE: 'ZUKI-BETA-2026',
+      BETA_ALLOWED_DOMAINS: 'company.com',
+      AUTH_SESSION_SECRET: 'test-super-secret-key-32-chars-minimum',
+    };
+
+    expect(isBetaSignupEnabled(signupEnv)).toBe(true);
+    expect(isBetaAuthEnabled(signupEnv)).toBe(true);
+
+    // Wrong invite code rejected
+    const badCode = await registerBetaUser(
+      {
+        name: 'Alex Marketing',
+        email: 'alex@company.com',
+        password: 'MyStrongPassword!1',
+        inviteCode: 'WRONG-CODE',
+      },
+      signupEnv
+    );
+    expect(badCode).toMatchObject({ ok: false, status: 403 });
+
+    // Non-allowed domain rejected
+    const badDomain = await registerBetaUser(
+      {
+        name: 'Outsider',
+        email: 'stranger@other.org',
+        password: 'MyStrongPassword!1',
+        inviteCode: 'ZUKI-BETA-2026',
+      },
+      signupEnv
+    );
+    expect(badDomain).toMatchObject({ ok: false, status: 403 });
+
+    // Valid signup succeeds (case-insensitive invite code)
+    const created = await registerBetaUser(
+      {
+        name: 'Alex Marketing',
+        email: 'Alex@Company.com',
+        password: 'MyStrongPassword!1',
+        inviteCode: 'zuki-beta-2026',
+      },
+      signupEnv
+    );
+    expect(created).toEqual({
+      ok: true,
+      user: { email: 'alex@company.com', name: 'Alex Marketing', role: 'beta' },
+    });
+
+    // Duplicate email rejected with 409
+    const dup = await registerBetaUser(
+      {
+        name: 'Alex Again',
+        email: 'alex@company.com',
+        password: 'AnotherPassword!2',
+        inviteCode: 'ZUKI-BETA-2026',
+      },
+      signupEnv
+    );
+    expect(dup).toMatchObject({ ok: false, status: 409 });
+
+    // Newly registered user can sign in with their own password
+    const authed = await authenticateBetaUserAsync(
+      'alex@company.com',
+      'MyStrongPassword!1',
+      signupEnv
+    );
+    expect(authed).toEqual({ email: 'alex@company.com', name: 'Alex Marketing', role: 'beta' });
+    expect(
+      await authenticateBetaUserAsync('alex@company.com', 'WrongPassword!', signupEnv)
+    ).toBeNull();
+
+    // Token remains valid for self-registered users
+    const token = createSessionToken(authed!, signupEnv);
+    expect(verifySessionToken(token, signupEnv)).toEqual(authed);
+
+    // Guard prevents ephemeral signups on Vercel without Redis/KV attached
+    const vercelNoRedis = await registerBetaUser(
+      {
+        name: 'Sam',
+        email: 'sam@company.com',
+        password: 'MyStrongPassword!1',
+        inviteCode: 'ZUKI-BETA-2026',
+      },
+      { ...signupEnv, VERCEL: '1' }
+    );
+    expect(vercelNoRedis).toMatchObject({ ok: false, status: 503 });
   });
 });

@@ -1,5 +1,5 @@
 import {
-  authenticateBetaUser,
+  authenticateBetaUserAsync,
   buildSessionCookie,
   checkLoginRateLimit,
   clearLoginFailures,
@@ -27,7 +27,7 @@ interface LoginBody {
   password?: unknown;
 }
 
-export default function handler(req: VercelLikeRequest, res: VercelLikeResponse) {
+export default async function handler(req: VercelLikeRequest, res: VercelLikeResponse) {
   res.setHeader('Cache-Control', 'no-store');
 
   if (req.method !== 'POST') {
@@ -68,19 +68,26 @@ export default function handler(req: VercelLikeRequest, res: VercelLikeResponse)
     return res.status(400).json({ error: 'Please enter both your email address and password.' });
   }
 
-  const user = authenticateBetaUser(email, password);
-  if (!user) {
-    recordLoginFailure(req.headers);
-    return res.status(401).json({ error: 'Invalid email or password.' });
+  try {
+    const user = await authenticateBetaUserAsync(email, password);
+    if (!user) {
+      recordLoginFailure(req.headers);
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    clearLoginFailures(req.headers);
+    const token = createSessionToken(user);
+    res.setHeader('Set-Cookie', buildSessionCookie(token, isSecureRequest(req.headers)));
+
+    return res.status(200).json({
+      ok: true,
+      authEnabled: true,
+      user,
+    });
+  } catch (err) {
+    console.error('[auth/login] error:', err);
+    return res.status(503).json({
+      error: 'Authentication storage is temporarily unavailable. Please try again shortly.',
+    });
   }
-
-  clearLoginFailures(req.headers);
-  const token = createSessionToken(user);
-  res.setHeader('Set-Cookie', buildSessionCookie(token, isSecureRequest(req.headers)));
-
-  return res.status(200).json({
-    ok: true,
-    authEnabled: true,
-    user,
-  });
 }

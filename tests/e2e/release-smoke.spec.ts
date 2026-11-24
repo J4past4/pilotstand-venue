@@ -96,6 +96,106 @@ test.describe('Zuki Exhibition Planner — Private Beta Release QA', () => {
     errors.assertZeroErrors();
   });
 
+  test('1b. Invite-link self-signup pre-fills invite code, creates account, signs in, and supports sign-out/re-login', async ({
+    page,
+  }) => {
+    const errors = attachStrictErrorCollectors(page);
+    const users = new Map<string, { name: string; email: string; password: string }>();
+    let loggedInUser: { email: string; name: string; role: 'beta' } | null = null;
+
+    await page.route('**/api/auth/session', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          authEnabled: true,
+          signupEnabled: true,
+          signupReady: true,
+          authenticated: Boolean(loggedInUser),
+          user: loggedInUser,
+        }),
+      });
+    });
+
+    await page.route('**/api/auth/signup', async (route) => {
+      const body = route.request().postDataJSON() as {
+        name: string;
+        email: string;
+        password: string;
+        inviteCode: string;
+      };
+      if (body.inviteCode !== 'ZUKI-BETA-2026') {
+        await route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Invalid beta invite code.' }),
+        });
+        return;
+      }
+      const key = body.email.toLowerCase();
+      users.set(key, { name: body.name, email: key, password: body.password });
+      loggedInUser = { email: key, name: body.name, role: 'beta' };
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, authEnabled: true, user: loggedInUser }),
+      });
+    });
+
+    await page.route('**/api/auth/login', async (route) => {
+      const body = route.request().postDataJSON() as { email: string; password: string };
+      const rec = users.get(body.email.toLowerCase());
+      if (rec && rec.password === body.password) {
+        loggedInUser = { email: rec.email, name: rec.name, role: 'beta' };
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: true, authEnabled: true, user: loggedInUser }),
+        });
+      } else {
+        await route.fulfill({
+          status: 401,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Invalid email or password.' }),
+        });
+      }
+    });
+
+    await page.route('**/api/auth/logout', async (route) => {
+      loggedInUser = null;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true }),
+      });
+    });
+
+    // Opening with ?invite=CODE auto-selects Create account and pre-fills the invite code
+    await page.goto('/?invite=ZUKI-BETA-2026');
+    await expect(page.getByRole('heading', { name: /Create your beta account/i })).toBeVisible();
+    await expect(page.getByLabel('Invite Code')).toHaveValue('ZUKI-BETA-2026');
+
+    await page.getByLabel('Full Name').fill('Sam Marketer');
+    await page.getByLabel('Work Email').fill('sam@company.com');
+    await page.getByLabel('Create Password').fill('MyOwnSecurePass!26');
+    await page.getByRole('button', { name: 'Create account' }).click();
+
+    // Immediately logged into Dashboard with clean URL (invite param removed)
+    await expect(page.getByRole('heading', { name: /Your Stand Projects/i })).toBeVisible();
+    await expect(page.locator('.beta-user-pill')).toContainText('Sam Marketer');
+    expect(page.url()).not.toContain('invite=');
+
+    // Sign out and sign back in with the newly created credentials
+    await page.getByRole('button', { name: 'Sign out' }).click();
+    await expect(page.getByRole('heading', { name: /Sign in to your workspace/i })).toBeVisible();
+    await page.getByLabel('Work Email').fill('sam@company.com');
+    await page.getByLabel('Password', { exact: true }).fill('MyOwnSecurePass!26');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.locator('.beta-user-pill')).toContainText('Sam Marketer');
+
+    errors.assertZeroErrors();
+  });
+
 async function mockAuthDisabled(page: Page) {
   await page.route('**/api/auth/session', async (route) => {
     await route.fulfill({

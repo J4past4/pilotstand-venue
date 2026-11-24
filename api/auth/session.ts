@@ -1,4 +1,9 @@
-import { getSessionFromHeaders, isBetaAuthEnabled } from '../_lib/auth.ts';
+import {
+  getSessionFromHeaders,
+  hasDurableUserStore,
+  isBetaAuthEnabled,
+  isBetaSignupEnabled,
+} from '../_lib/auth.ts';
 
 interface VercelLikeRequest {
   method?: string;
@@ -20,9 +25,14 @@ export default function handler(req: VercelLikeRequest, res: VercelLikeResponse)
   }
 
   const authEnabled = isBetaAuthEnabled();
+  const signupEnabled = isBetaSignupEnabled();
+  const signupReady = signupEnabled && (hasDurableUserStore() || !process.env.VERCEL);
+
   if (!authEnabled) {
     return res.status(200).json({
       authEnabled: false,
+      signupEnabled: false,
+      signupReady: false,
       authenticated: true,
       user: null,
     });
@@ -31,6 +41,8 @@ export default function handler(req: VercelLikeRequest, res: VercelLikeResponse)
   const user = getSessionFromHeaders(req.headers);
   return res.status(200).json({
     authEnabled: true,
+    signupEnabled,
+    signupReady,
     authenticated: Boolean(user),
     user,
   });

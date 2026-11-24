@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "check:dead-code": "knip --no-exit-code",
-    "check:secrets": "node -e \"const fs=require('fs'),path=require('path');const bad=['GEMINI_API_KEY','ANTHROPIC_API_KEY','OPENAI_API_KEY','UPSTASH_REDIS_REST_TOKEN','BETA_USERS','AUTH_SESSION_SECRET'];const walk=d=>fs.readdirSync(d,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(path.join(d,e.name)):[path.join(d,e.name)]);const hits=[];for(const f of walk('dist')){const s=fs.readFileSync(f,'utf8');for(const k of bad){if(s.includes(k))hits.push(f+':'+k);}}if(hits.length){console.error('Secret token name leaked in client bundle:',hits);process.exit(1);}console.log('Bundle secret scan clean.');\"",
+    "check:secrets": "node -e \"const fs=require('fs'),path=require('path');const bad=['GEMINI_API_KEY','ANTHROPIC_API_KEY','OPENAI_API_KEY','UPSTASH_REDIS_REST_TOKEN','KV_REST_API_TOKEN','BETA_USERS','BETA_INVITE_CODE','AUTH_SESSION_SECRET'];const walk=d=>fs.readdirSync(d,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(path.join(d,e.name)):[path.join(d,e.name)]);const hits=[];for(const f of walk('dist')){const s=fs.readFileSync(f,'utf8');for(const k of bad){if(s.includes(k))hits.push(f+':'+k);}}if(hits.length){console.error('Secret token name leaked in client bundle:',hits);process.exit(1);}console.log('Bundle secret scan clean.');\"",
     "qa": "npm run lint && npm run build && npm run test && npm run check:secrets"
   },
   "dependencies": {
