@@ -79,6 +79,13 @@ function disposeObject3D(obj: THREE.Object3D) {
   });
 }
 
+// Keep the stand in frame as the canvas narrows or switches to portrait.
+function resizePerspectiveCamera(camera: THREE.PerspectiveCamera, aspect: number) {
+  camera.aspect = aspect;
+  camera.zoom = Math.min(1, aspect / 1.18);
+  camera.updateProjectionMatrix();
+}
+
 export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProps>(
   function StandViewport3D(
     {
@@ -300,8 +307,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           renderer.setPixelRatio(1);
           renderer.setSize(width, height, false);
           if (cam instanceof THREE.PerspectiveCamera) {
-            cam.aspect = width / height;
-            cam.updateProjectionMatrix();
+            resizePerspectiveCamera(cam, width / height);
           }
           renderer.render(scene, cam);
           const dataUrl = renderer.domElement.toDataURL('image/png');
@@ -311,8 +317,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           renderer.setPixelRatio(prevPR);
           renderer.setSize(prevSize.x, prevSize.y, false);
           if (cam instanceof THREE.PerspectiveCamera) {
-            cam.aspect = prevSize.x / Math.max(1, prevSize.y);
-            cam.updateProjectionMatrix();
+            resizePerspectiveCamera(cam, prevSize.x / Math.max(1, prevSize.y));
           }
           renderer.render(scene, cam);
           return dataUrl;
@@ -330,8 +335,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       const height = container.clientHeight || 640;
 
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color('#E8EAEF');
-      scene.fog = new THREE.Fog('#E8EAEF', 18, 48);
+      scene.background = new THREE.Color('#EDE9E2');
+      scene.fog = new THREE.Fog('#EDE9E2', 18, 48);
       sceneRef.current = scene;
 
       const renderer = new THREE.WebGLRenderer({
@@ -396,9 +401,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       hallCanvas.width = 512;
       hallCanvas.height = 512;
       const hCtx = hallCanvas.getContext('2d')!;
-      hCtx.fillStyle = '#DFE2E7';
+      hCtx.fillStyle = '#E4DFD6';
       hCtx.fillRect(0, 0, 512, 512);
-      hCtx.strokeStyle = 'rgba(130, 140, 155, 0.22)';
+      hCtx.strokeStyle = 'rgba(116, 112, 103, 0.29)';
       hCtx.lineWidth = 2;
       hCtx.strokeRect(1, 1, 510, 510);
       const hallTex = new THREE.CanvasTexture(hallCanvas);
@@ -630,11 +635,13 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         const w = container.clientWidth || 1;
         const h = container.clientHeight || 1;
         renderer.setSize(w, h);
-        persp.aspect = w / h;
-        persp.updateProjectionMatrix();
-
         const a = w / h;
-        const halfH = (ortho.top - ortho.bottom) / 2;
+        resizePerspectiveCamera(persp, a);
+
+        const cfg = propsRef.current.config;
+        const halfH = Math.max(cfg.depth, cfg.width / a) * 0.78 + 0.9;
+        ortho.top = halfH;
+        ortho.bottom = -halfH;
         ortho.left = -halfH * a;
         ortho.right = halfH * a;
         ortho.updateProjectionMatrix();
@@ -820,12 +827,12 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         lightsGroup.add(fill);
       } else {
         // Default: Crisp Bright Exhibition Hall
-        scene.background = new THREE.Color('#E6E9EF');
-        scene.fog = new THREE.Fog('#E6E9EF', 20, 50);
+        scene.background = new THREE.Color('#EDE9E2');
+        scene.fog = new THREE.Fog('#EDE9E2', 20, 50);
         scene.environmentIntensity = 0.58;
         renderer.toneMappingExposure = 1.06;
         if (hallFloor) {
-          (hallFloor.material as THREE.MeshStandardMaterial).color.set('#F5F6F8');
+          (hallFloor.material as THREE.MeshStandardMaterial).color.set('#FAF8F4');
         }
         const hemi = new THREE.HemisphereLight('#F8FAFF', '#C5C9D1', 0.78);
         lightsGroup.add(hemi);

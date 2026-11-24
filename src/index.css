@@ -5445,3 +5445,101 @@ select {
   box-shadow: inset 0 -10px 10px -10px rgba(15, 23, 42, 0.14);
 }
 
+
+/* Canvas workspace */
+.studio-app-shell {
+  height: 100dvh;
+  --surface-0: #fffdfa;
+  --surface-1: #f6f3ee;
+  --ink-primary: #182838;
+  --ink-secondary: #495663;
+  --ink-muted: #626e78;
+  --border-subtle: #e1dcd4;
+  --bg-canvas: #ece8e1;
+}
+.studio-app-shell :focus-visible {
+  outline: 3px solid #2a729c;
+  outline-offset: 2px;
+}
+.studio-workspace {
+  flex-direction: row;
+  isolation: isolate;
+}
+.viewport-stage .viewport-canvas-wrap {
+  height: calc(100% - 48px);
+}
+.viewport-stage .viewport-hud-top {
+  inset: auto 0 0;
+  min-height: 48px;
+  padding: 5px 16px;
+  background: var(--surface-0);
+  border-top: 1px solid var(--border-subtle);
+  gap: 12px;
+  flex-wrap: wrap;
+  pointer-events: auto;
+}
+.viewport-hud-top .hud-space-pill,
+.viewport-hud-top .hud-compliance-pill {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  font-size: 13px;
+}
+.viewport-hud-top .hud-space-pill { backdrop-filter: none; }
+.stand-details-toggle {
+  order: 1;
+  margin-left: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-0);
+  padding: 6px 9px;
+  color: var(--ink-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.stand-details-toggle:hover { background: var(--surface-1); }
+.viewport-stage .viewport-camera-dock {
+  bottom: 62px;
+  border-radius: 9px;
+  padding: 4px;
+  max-width: calc(100% - 16px);
+  scrollbar-width: thin;
+}
+.viewport-camera-dock button {
+  min-height: 34px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+.viewport-stage .agent-drawer { top: 12px; bottom: 58px; }
+.viewport-stage .studio-toast { bottom: 114px; }
+@media (max-width: 700px) {
+  .viewport-stage .viewport-hud-top { padding: 6px 8px; gap: 6px; }
+  .viewport-hud-top .hud-space-pill { display: none; }
+  .viewport-hud-top .hud-compliance-pill { font-size: 12px; }
+  .viewport-stage .viewport-camera-dock { left: 8px; transform: none; }
+}
+@media (max-width: 720px) {
+  .studio-workspace { flex-direction: column; }
+}
+.camera-preset-select { display: none; }
+@media (max-width: 700px) {
+  .viewport-stage .viewport-camera-dock {
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+  }
+  .viewport-camera-dock .camera-preset-button { display: none; }
+  .viewport-camera-dock .camera-preset-select {
+    display: block;
+    min-height: 38px;
+    border: 0;
+    background: transparent;
+    color: var(--ink-primary);
+    font-size: 13px;
+  }
+  .viewport-camera-dock button { min-width: 34px; min-height: 38px; }
+}

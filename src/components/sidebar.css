@@ -1,0 +1,247 @@
+aside.left-studio-rail {
+  --tool-rail-width: clamp(100px, 9.45vw, 150px);
+  position: relative;
+  flex: 0 0 var(--tool-rail-width);
+  width: var(--tool-rail-width);
+  height: auto;
+  background: #eeebe8;
+  border-right: 1px solid #e5e0db;
+  border-bottom: 0;
+}
+
+.left-studio-rail .rail-icon-strip {
+  width: 100%;
+  padding: 24px 9px 12px 0;
+  gap: 4px;
+  background: transparent;
+  border: 0;
+}
+
+.left-studio-rail .rail-tab-btn {
+  min-height: 48px;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 8px 0 14px;
+  border-left: 3px solid transparent;
+  border-radius: 0 8px 8px 0;
+  color: #152335;
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.left-studio-rail .rail-tab-btn:hover {
+  background: #e7e2dd;
+}
+
+.left-studio-rail .rail-tab-btn.active {
+  border-color: #b85129;
+  background: #f0d4c6;
+  color: #752d15;
+}
+
+.left-studio-rail .rail-tab-btn svg {
+  flex: none;
+}
+
+.rail-panel {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 100%;
+  width: min(328px, calc(100vw - var(--tool-rail-width)));
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-0);
+  border-right: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-md);
+}
+
+.rail-panel[hidden] {
+  display: none;
+}
+
+.rail-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.rail-panel-heading h2,
+.rail-panel .panel-header h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.rail-panel-heading h2 {
+  font-size: 18px;
+}
+
+.rail-panel .panel-header h3 {
+  font-size: 14px;
+}
+
+.rail-panel-close,
+.rail-build-nav button {
+  border: 0;
+  background: transparent;
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+
+.rail-panel-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+}
+
+.rail-panel-close:hover,
+.rail-build-nav button:hover {
+  background: var(--surface-hover);
+  color: var(--ink-primary);
+}
+
+.rail-build-nav {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.rail-build-nav button {
+  min-height: 40px;
+  padding: 0 4px;
+  border-bottom: 2px solid transparent;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rail-build-nav button.active {
+  border-color: #b85129;
+  color: #752d15;
+}
+
+.rail-panel .rail-panel-body {
+  min-height: 0;
+  padding: 16px;
+  overscroll-behavior: contain;
+}
+
+.rail-panel .catalog-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.rail-panel .upload-dropzone {
+  width: 100%;
+}
+
+.rail-panel .rail-layer-select {
+  flex: 1;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.left-studio-rail button:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: -2px;
+}
+
+@media (max-width: 1040px) {
+  aside.left-studio-rail {
+    --tool-rail-width: 70px;
+  }
+
+  .left-studio-rail .rail-tab-btn {
+    flex-direction: column;
+    justify-content: center;
+    padding: 7px 4px;
+    gap: 5px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 720px) {
+  aside.left-studio-rail {
+    flex: 0 0 48px;
+    width: 100%;
+    height: 48px;
+    border-right: 0;
+    border-bottom: 1px solid #e5e0db;
+  }
+
+  .left-studio-rail .rail-icon-strip {
+    flex-direction: row;
+    align-items: stretch;
+    padding: 0 8px;
+  }
+
+  .left-studio-rail .rail-tab-btn {
+    flex-direction: row;
+    padding: 0 10px;
+    min-height: 0;
+    gap: 6px;
+    font-size: 13px;
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 6px 6px 0 0;
+  }
+
+  .rail-panel {
+    inset: 100% auto auto 0;
+    width: min(328px, 100vw);
+    max-height: min(65dvh, 580px);
+  }
+}
+
+.rail-panel .layer-row .layer-actions button:nth-child(n + 3) {
+  display: inline-flex;
+}
+
+.rail-panel .panel-header p,
+.rail-panel .catalog-card-title,
+.rail-panel .slider-header,
+.rail-panel .layer-name,
+.rail-panel .palette-name,
+.rail-panel .template-mini-card p {
+  font-size: 13px;
+}
+
+.rail-panel .catalog-card-sub,
+.rail-panel .cat-pill,
+.rail-panel .block-label,
+.rail-panel .control-label-row label,
+.rail-panel .size-preset-btn,
+.rail-panel .floor-option-card,
+.rail-panel .swatch-picker span,
+.rail-panel .side-card-sub,
+.rail-panel .toggle-sub,
+.rail-panel .dropzone-sub,
+.rail-panel .asset-assign-btn,
+.rail-panel .asset-name,
+.rail-panel .custom-3d-upload-btn,
+.rail-panel .custom-3d-sample-btn {
+  font-size: 12px;
+}
+
+.rail-panel .text-input,
+.rail-panel .search-input-wrap input {
+  height: 38px;
+  font-size: 14px;
+}
+
+.rail-panel .cat-pill,
+.rail-panel .size-preset-btn,
+.rail-panel .floor-option-card,
+.rail-panel .swatch-picker {
+  min-height: 30px;
+}

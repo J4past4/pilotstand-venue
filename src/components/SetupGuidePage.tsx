@@ -18,6 +18,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { COLOR_PALETTES } from '../data/palettes';
+import './header.css';
 import type {
   BrandAsset,
   BrandKitSetupResult,
@@ -37,6 +38,7 @@ interface SetupGuidePageProps {
   initialConfig: StandConfig;
   initialAssets: BrandAsset[];
   onComplete: (result: BrandKitSetupResult) => void;
+  onBackToPlanner: () => void;
   onSkipDemo: () => void;
 }
 
@@ -66,6 +68,7 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
   initialConfig,
   initialAssets,
   onComplete,
+  onBackToPlanner,
   onSkipDemo,
 }) => {
   const [step, setStep] = useState<number>(0);
@@ -230,23 +233,13 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
       <header className="setup-header">
         <div className="setup-brand">
           <div className="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="17" height="17" fill="none">
-              <path
-                d="M4 17.5V7.5L12 3.5L20 7.5V17.5L12 21L4 17.5Z"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M12 11.5L20 7.5M12 11.5L4 7.5M12 11.5V21"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinejoin="round"
-              />
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+              <path d="M2 2h11l8 10h-11L2 2Z" />
+              <path d="M10 12h11l-8 10H2l8-10Z" opacity=".8" />
             </svg>
           </div>
           <div>
-            <span className="setup-brand-name">StandCraft Studio</span>
+            <span className="setup-brand-name">Zuki</span>
             <span className="setup-brand-sub">Exhibition Setup Guide</span>
           </div>
         </div>
@@ -261,6 +254,7 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
                 key={s.num}
                 id={`setup-step-btn-${idx}`}
                 className={`setup-step-pill ${active ? 'active' : ''} ${done ? 'done' : ''}`}
+                aria-current={active ? 'step' : undefined}
                 onClick={() => setStep(idx)}
               >
                 <span className="setup-step-num mono-num">
@@ -273,10 +267,16 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
           })}
         </nav>
 
-        <button id="btn-skip-setup" className="setup-skip-btn" onClick={onSkipDemo}>
-          <span>Skip &amp; Explore Demo</span>
-          <ArrowRight size={14} />
-        </button>
+        <div className="setup-header-actions">
+          <button id="btn-back-to-planner" type="button" className="setup-skip-btn" onClick={onBackToPlanner}>
+            <ArrowLeft size={14} />
+            <span>Back to planner</span>
+          </button>
+          <button id="btn-skip-setup" type="button" className="setup-skip-btn" onClick={onSkipDemo}>
+            <span>Explore demo</span>
+            <ArrowRight size={14} />
+          </button>
+        </div>
       </header>
 
       {/* Main Split Editorial Workspace */}
@@ -1042,7 +1042,7 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
                     style={{ background: primaryColor }}
                   />
                 )}
-                <span>{effectiveBrand} — StandCraft Studio</span>
+                <span>{effectiveBrand} — Zuki</span>
               </div>
             </div>
 

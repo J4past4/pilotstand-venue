@@ -7,6 +7,7 @@ import {
   Maximize2,
   Play,
   RotateCcw,
+  Settings2,
 } from 'lucide-react';
 import { CATALOG_MAP } from './data/catalog';
 import { BUILTIN_BRAND_ASSETS } from './data/palettes';
@@ -150,7 +151,7 @@ export function App() {
   const [customAssets, setCustomAssets] = useState<BrandAsset[]>(activeProj.customAssets || []);
 
   // First-page Setup Guide & Guided Walkthrough Video Popup state
-  const [showSetupGuide, setShowSetupGuide] = useState<boolean>(true);
+  const [showSetupGuide, setShowSetupGuide] = useState<boolean>(false);
   const [tourActive, setTourActive] = useState<boolean>(false);
 
   // Sync brand fonts and browser favicon whenever config updates
@@ -167,6 +168,8 @@ export function App() {
 
   // UI & selection state
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('catalog');
+  const [railPanelOpen, setRailPanelOpen] = useState(false);
+  const [standDetailsOpen, setStandDetailsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('3d');
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [selectedSurfaceId, setSelectedSurfaceId] = useState<string | null>(null);
@@ -310,6 +313,7 @@ export function App() {
       };
       const nextItems = [...items, newItem];
       setItems(nextItems);
+      setRailPanelOpen(false);
       setSelectedItemId(newItem.id);
       setSelectedSurfaceId(def.surfaces[0]?.id || null);
       setSelectedShellWall(null);
@@ -341,6 +345,7 @@ export function App() {
       };
       const nextItems = [...items, newItem];
       setItems(nextItems);
+      setRailPanelOpen(false);
       setSelectedItemId(newItem.id);
       setSelectedSurfaceId(null);
       setSelectedShellWall(null);
@@ -703,6 +708,8 @@ export function App() {
           setShowAgentDrawer(false);
           return;
         }
+        setRailPanelOpen(false);
+        setStandDetailsOpen(false);
         setPaintAssetId(null);
         setSelectedItemId(null);
         setSelectedShellWall(null);
@@ -974,6 +981,7 @@ export function App() {
         onComplete={(res) => {
           void handleCompleteSetup(res);
         }}
+        onBackToPlanner={() => setShowSetupGuide(false)}
         onSkipDemo={handleSkipSetup}
       />
     );
@@ -1012,12 +1020,19 @@ export function App() {
       <main className="studio-workspace">
         <LeftSidebar
           activeTab={sidebarTab}
-          onChangeTab={setSidebarTab}
+          panelOpen={railPanelOpen}
+          onClosePanel={() => setRailPanelOpen(false)}
+          onChangeTab={(tab) => {
+            setSidebarTab(tab);
+            setRailPanelOpen(true);
+            setStandDetailsOpen(false);
+          }}
           config={config}
           onUpdateConfig={updateConfig}
           items={items}
           selectedItemId={selectedItemId}
           onSelectItem={(id) => {
+            setRailPanelOpen(false);
             setSelectedItemId(id);
             setSelectedShellWall(null);
           }}
@@ -1057,6 +1072,8 @@ export function App() {
             compliance={compliance}
             paintAssetId={paintAssetId}
             onSelectItem={(itemId, surfaceId) => {
+              setRailPanelOpen(false);
+              setStandDetailsOpen(false);
               setSelectedItemId(itemId);
               setSelectedSurfaceId(surfaceId || null);
             }}
@@ -1073,6 +1090,12 @@ export function App() {
 
           {/* Top-Left Floating Space & Compliance HUD */}
           <div className="viewport-hud-top">
+            <button className="stand-details-toggle" onClick={() => {
+              setSelectedItemId(null);
+              setSelectedShellWall(null);
+              setRailPanelOpen(false);
+              setStandDetailsOpen((open) => !open);
+            }} aria-expanded={standDetailsOpen}><Settings2 size={16} />Stand details</button>
             <div className="hud-space-pill">
               <strong className="mono-num">
                 {formatLength(config.width, config.unit)} × {formatLength(config.depth, config.unit)}
@@ -1104,18 +1127,30 @@ export function App() {
 
           {/* Bottom-Center Floating Camera Dock */}
           <div className="viewport-camera-dock" role="toolbar" aria-label="Camera views">
-            <button onClick={() => triggerCamera('isometric')} title="Isometric 3D overview">
+            <select
+              className="camera-preset-select"
+              aria-label="Camera angle"
+              value=""
+              onChange={(event) => triggerCamera(event.target.value as CameraPreset)}
+            >
+              <option value="" disabled>Camera angle</option>
+              <option value="isometric">Isometric</option>
+              <option value="front">Front</option>
+              <option value="left">Left</option>
+              <option value="right">Right</option>
+            </select>
+            <button className="camera-preset-button" onClick={() => triggerCamera('isometric')} title="Isometric 3D overview">
               <Compass size={14} />
               <span>Iso</span>
             </button>
-            <button onClick={() => triggerCamera('front')} title="Front elevation view">
+            <button className="camera-preset-button" onClick={() => triggerCamera('front')} title="Front elevation view">
               <Maximize2 size={14} />
               <span>Front</span>
             </button>
-            <button onClick={() => triggerCamera('left')} title="Left angle">
+            <button className="camera-preset-button" onClick={() => triggerCamera('left')} title="Left angle">
               <span>Left</span>
             </button>
-            <button onClick={() => triggerCamera('right')} title="Right angle">
+            <button className="camera-preset-button" onClick={() => triggerCamera('right')} title="Right angle">
               <span>Right</span>
             </button>
             <div className="dock-divider" />
@@ -1157,10 +1192,10 @@ export function App() {
             onClearChat={() => setAgentMessages([])}
           />
 
-          {toast && <div className="studio-toast">{toast}</div>}
+          {toast && <div role="status" className="studio-toast">{toast}</div>}
         </section>
 
-        <RightInspector
+        {(selectedItem || selectedShellWall || standDetailsOpen) && <RightInspector
           config={config}
           onUpdateConfig={updateConfig}
           selectedItem={selectedItem}
@@ -1175,9 +1210,17 @@ export function App() {
           assets={allAssets}
           onUploadAssetForSurface={handleUploadAssetForSurface}
           compliance={compliance}
-          onOpenBrandingTab={() => setSidebarTab('branding')}
-          onClearSelection={() => setSelectedItemId(null)}
-        />
+          onOpenBrandingTab={() => {
+            setSidebarTab('branding');
+            setRailPanelOpen(true);
+          }}
+          onClose={() => {
+            setSelectedItemId(null);
+            setSelectedSurfaceId(null);
+            setSelectedShellWall(null);
+            setStandDetailsOpen(false);
+          }}
+        />}
       </main>
 
       <TemplatesModal

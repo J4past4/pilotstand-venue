@@ -1,0 +1,204 @@
+.right-inspector.contextual-inspector {
+  width: clamp(300px, 25vw, 394px);
+  height: auto;
+  background: var(--surface-0);
+  color: var(--ink-primary);
+}
+
+.contextual-inspector .inspector-header {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 18px 18px 14px;
+  border-bottom: 0;
+}
+
+.contextual-inspector .inspector-heading-icon {
+  flex-shrink: 0;
+}
+
+.contextual-inspector .inspector-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.contextual-inspector .inspector-header h2 {
+  font-size: 18px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.contextual-inspector .inspector-kicker {
+  margin: 3px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink-secondary);
+}
+
+.inspector-close {
+  display: grid;
+  flex: 0 0 38px;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.inspector-close:hover {
+  background: var(--surface-hover);
+}
+
+.contextual-inspector .inspector-quickbar {
+  gap: 6px;
+  padding: 0 18px 12px;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.contextual-inspector .quick-action-btn {
+  height: 34px;
+}
+
+.contextual-inspector .quick-action-btn.danger {
+  flex-basis: 36px;
+}
+
+.inspector-sections {
+  display: flex;
+  margin: 0 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.inspector-sections button {
+  flex: 1 1 auto;
+  padding: 10px 4px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-primary);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.inspector-sections button:hover {
+  border-bottom-color: var(--brand-accent);
+  background: var(--surface-hover);
+}
+
+.contextual-inspector :is(button, input):focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+.contextual-inspector .inspector-body {
+  min-height: 0;
+  gap: 0;
+  padding: 4px 18px 18px;
+  overscroll-behavior: contain;
+}
+
+.contextual-inspector .inspector-body > * {
+  flex-shrink: 0;
+}
+
+.contextual-inspector .inspector-body > :not(.inspector-section) {
+  margin-top: 12px;
+}
+
+.inspector-section {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.inspector-section:last-child {
+  border-bottom: 0;
+}
+
+.inspector-section-title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+.inspector-section .control-label-row .inspector-section-title {
+  margin-bottom: 0;
+}
+
+.inspector-dimensions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.inspector-dimensions dt {
+  margin-bottom: 4px;
+  color: var(--ink-secondary);
+  font-size: 12px;
+}
+
+.inspector-dimensions dd {
+  margin: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.inspector-dimensions + .control-block {
+  margin-top: 12px;
+}
+
+.contextual-inspector .mini-asset-chip {
+  background: var(--surface-1);
+  color: var(--ink-primary);
+}
+
+@media (max-width: 900px) {
+  .right-inspector.contextual-inspector {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: min(60%, 480px);
+    min-height: min(230px, 68%);
+    border: 1px solid var(--border-subtle);
+    border-radius: 16px 16px 0 0;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .contextual-inspector .inspector-header {
+    padding-top: 12px;
+    padding-bottom: 8px;
+  }
+
+  .contextual-inspector .inspector-close,
+  .contextual-inspector .quick-action-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .contextual-inspector .inspector-quickbar {
+    padding-bottom: 6px;
+  }
+
+  .contextual-inspector .inspector-sections button,
+  .contextual-inspector :is(.fit-btn, .upload-inline-btn, .secondary-btn) {
+    min-height: 40px;
+  }
+
+  .contextual-inspector .num-field input {
+    min-height: 40px;
+    font-size: 16px;
+  }
+}

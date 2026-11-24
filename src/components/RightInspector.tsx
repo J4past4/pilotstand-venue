@@ -1,9 +1,11 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   AlertTriangle,
+  Box,
   CheckCircle2,
   Copy,
   ImagePlus,
+  LayoutPanelTop,
   Lightbulb,
   Lock,
   RotateCw,
@@ -23,6 +25,7 @@ import type {
   SurfaceArtwork,
 } from '../types/stand';
 import { formatArea, formatLength } from '../utils/pricing';
+import './inspector.css';
 
 interface RightInspectorProps {
   config: StandConfig;
@@ -49,7 +52,7 @@ interface RightInspectorProps {
   ) => void;
   compliance: ComplianceReport;
   onOpenBrandingTab: () => void;
-  onClearSelection: () => void;
+  onClose: () => void;
 }
 
 const DEFAULT_ART: SurfaceArtwork = {
@@ -78,9 +81,18 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   onUploadAssetForSurface,
   compliance,
   onOpenBrandingTab,
-  onClearSelection,
+  onClose,
 }) => {
   const surfaceFileInputRef = useRef<HTMLInputElement | null>(null);
+  const inspectorBodyRef = useRef<HTMLDivElement>(null);
+
+  const scrollToSection = (id: string) => {
+    inspectorBodyRef.current?.querySelector(`#${id}`)?.scrollIntoView({ block: 'start' });
+  };
+
+  useEffect(() => {
+    inspectorBodyRef.current?.scrollTo({ top: 0 });
+  }, [selectedItem?.id]);
   const uploadTargetRef = useRef<
     | { kind: 'item'; itemId: string; surfaceId: string }
     | { kind: 'shell'; side: ShellWallSide }
@@ -114,7 +126,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
     };
 
     return (
-      <aside className="right-inspector" aria-label="Shell wall inspector">
+      <aside className="right-inspector contextual-inspector" aria-label="Shell wall inspector">
         <input
           ref={surfaceFileInputRef}
           type="file"
@@ -123,18 +135,20 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
           onChange={handleZoneFileChange}
         />
         <div className="inspector-header">
-          <div>
-            <span className="inspector-kicker">Perimeter Shell Wall</span>
+          <LayoutPanelTop className="inspector-heading-icon" size={24} aria-hidden="true" />
+          <div className="inspector-heading">
             <h2>
-              {selectedShellWall.charAt(0).toUpperCase() + selectedShellWall.slice(1)} Wall Graphic
+              {selectedShellWall.charAt(0).toUpperCase() + selectedShellWall.slice(1)} wall graphic
             </h2>
+            <p className="inspector-kicker">Perimeter shell wall</p>
           </div>
           <button
-            className="tiny-icon-btn"
-            onClick={() => onSelectShellWall(null)}
-            title="Close wall inspector"
+            type="button"
+            className="inspector-close"
+            onClick={onClose}
+            aria-label="Close wall inspector"
           >
-            <X size={15} />
+            <X size={19} aria-hidden="true" />
           </button>
         </div>
 
@@ -239,7 +253,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
     const isOverHeight = compliance.overHeightIds.includes(selectedItem.id);
 
     return (
-      <aside className="right-inspector" id="item-inspector" aria-label="Selected item inspector">
+      <aside className="right-inspector contextual-inspector" id="item-inspector" aria-label="Selected item inspector">
         <input
           ref={surfaceFileInputRef}
           type="file"
@@ -249,17 +263,19 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
         />
 
         <div className="inspector-header">
-          <div>
-            <span className="inspector-kicker">{def?.category || 'Equipment'}</span>
+          <Box className="inspector-heading-icon" size={24} aria-hidden="true" />
+          <div className="inspector-heading">
             <h2>{selectedItem.name}</h2>
+            <p className="inspector-kicker">{def?.category || 'Equipment'} · Selected</p>
           </div>
           <button
-            className="tiny-icon-btn"
-            onClick={onClearSelection}
+            type="button"
+            className="inspector-close"
+            onClick={onClose}
             title="Deselect item (Esc)"
             aria-label="Close item inspector"
           >
-            <X size={15} />
+            <X size={19} aria-hidden="true" />
           </button>
         </div>
 
@@ -292,6 +308,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             className={`quick-action-btn ${selectedItem.locked ? 'active' : ''}`}
             onClick={() => onUpdateItem(selectedItem.id, { locked: !selectedItem.locked }, true)}
             title={selectedItem.locked ? 'Unlock position' : 'Lock position'}
+            aria-pressed={Boolean(selectedItem.locked)}
           >
             {selectedItem.locked ? <Lock size={14} /> : <Unlock size={14} />}
             <span>{selectedItem.locked ? 'Locked' : 'Lock'}</span>
@@ -301,12 +318,22 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             className="quick-action-btn danger"
             onClick={() => onDeleteItem(selectedItem.id)}
             title="Delete item (Del)"
+            aria-label="Delete item"
           >
             <Trash2 size={14} />
           </button>
         </div>
 
-        <div className="inspector-body">
+        <nav className="inspector-sections" aria-label="Item properties">
+          <button type="button" onClick={() => scrollToSection('item-size')}>Size</button>
+          <button type="button" onClick={() => scrollToSection('item-finish')}>Finish</button>
+          {def && def.surfaces.length > 0 && (
+            <button type="button" onClick={() => scrollToSection('item-artwork')}>Artwork</button>
+          )}
+          <button type="button" onClick={() => scrollToSection('item-position')}>Position</button>
+        </nav>
+
+        <div className="inspector-body" ref={inspectorBodyRef}>
           {(isOutOfBounds || isOverHeight) && (
             <div className="inspector-alert">
               <AlertTriangle size={15} />
@@ -321,13 +348,284 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             </div>
           )}
 
-          {/* BRANDABLE ARTWORK ZONES — Put front and center when item has graphic surfaces */}
+          <section id="item-size" className="inspector-section">
+            <h3 className="inspector-section-title">Size</h3>
+            <dl className="inspector-dimensions">
+              <div><dt>Width</dt><dd>{formatLength(selectedItem.dims.w, config.unit)}</dd></div>
+              <div><dt>Depth</dt><dd>{formatLength(selectedItem.dims.d, config.unit)}</dd></div>
+              <div><dt>Height</dt><dd>{formatLength(selectedItem.dims.h, config.unit)}</dd></div>
+            </dl>
+            {selectedItem.catalogId === 'custom-3d-model' && (
+              <div className="control-block branding-zones-block">
+                <div className="control-label-row">
+                  <label className="block-label" style={{ marginBottom: 0 }}>
+                    3D Showcase Model Scale &amp; CAD Fix
+                  </label>
+                </div>
+
+                <div className="toggle-row compact" style={{ marginTop: 0, marginBottom: 8 }}>
+                  <span>Lock Proportions</span>
+                  <input
+                    type="checkbox"
+                    className="studio-switch"
+                    checked={selectedItem.lockAspect !== false}
+                    onChange={(e) =>
+                      onUpdateItem(selectedItem.id, { lockAspect: e.target.checked }, true)
+                    }
+                  />
+                </div>
+
+                <div className="slider-row">
+                  <div className="slider-header">
+                    <span>Width</span>
+                    <span className="mono-num">{formatLength(selectedItem.dims.w, config.unit)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={6}
+                    step={0.05}
+                    value={selectedItem.dims.w}
+                    onChange={(e) => {
+                      const nw = parseFloat(e.target.value);
+                      if (selectedItem.lockAspect !== false) {
+                        const ratio = nw / Math.max(0.05, selectedItem.dims.w);
+                        onUpdateItem(
+                          selectedItem.id,
+                          {
+                            dims: {
+                              w: nw,
+                              h: Number((selectedItem.dims.h * ratio).toFixed(2)),
+                              d: Number((selectedItem.dims.d * ratio).toFixed(2)),
+                            },
+                          },
+                          false
+                        );
+                      } else {
+                        onUpdateItem(
+                          selectedItem.id,
+                          { dims: { ...selectedItem.dims, w: nw } },
+                          false
+                        );
+                      }
+                    }}
+                  />
+                </div>
+
+                <div className="slider-row">
+                  <div className="slider-header">
+                    <span>Height</span>
+                    <span className="mono-num">{formatLength(selectedItem.dims.h, config.unit)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={4.8}
+                    step={0.05}
+                    value={selectedItem.dims.h}
+                    onChange={(e) => {
+                      const nh = parseFloat(e.target.value);
+                      if (selectedItem.lockAspect !== false) {
+                        const ratio = nh / Math.max(0.05, selectedItem.dims.h);
+                        onUpdateItem(
+                          selectedItem.id,
+                          {
+                            dims: {
+                              w: Number((selectedItem.dims.w * ratio).toFixed(2)),
+                              h: nh,
+                              d: Number((selectedItem.dims.d * ratio).toFixed(2)),
+                            },
+                          },
+                          false
+                        );
+                      } else {
+                        onUpdateItem(
+                          selectedItem.id,
+                          { dims: { ...selectedItem.dims, h: nh } },
+                          false
+                        );
+                      }
+                    }}
+                  />
+                </div>
+
+                <div className="slider-row">
+                  <div className="slider-header">
+                    <span>Depth</span>
+                    <span className="mono-num">{formatLength(selectedItem.dims.d, config.unit)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={6}
+                    step={0.05}
+                    value={selectedItem.dims.d}
+                    onChange={(e) => {
+                      const nd = parseFloat(e.target.value);
+                      if (selectedItem.lockAspect !== false) {
+                        const ratio = nd / Math.max(0.05, selectedItem.dims.d);
+                        onUpdateItem(
+                          selectedItem.id,
+                          {
+                            dims: {
+                              w: Number((selectedItem.dims.w * ratio).toFixed(2)),
+                              h: Number((selectedItem.dims.h * ratio).toFixed(2)),
+                              d: nd,
+                            },
+                          },
+                          false
+                        );
+                      } else {
+                        onUpdateItem(
+                          selectedItem.id,
+                          { dims: { ...selectedItem.dims, d: nd } },
+                          false
+                        );
+                      }
+                    }}
+                  />
+                </div>
+
+                <div className="toggle-row compact" style={{ marginTop: 10 }}>
+                  <span>CAD Z-Up → Y-Up Fix</span>
+                  <input
+                    id="toggle-cad-zup"
+                    type="checkbox"
+                    className="studio-switch"
+                    checked={Boolean(selectedItem.zUpFix)}
+                    onChange={(e) => {
+                      const nextZ = e.target.checked;
+                      onUpdateItem(
+                        selectedItem.id,
+                        {
+                          zUpFix: nextZ,
+                          dims: {
+                            w: selectedItem.dims.w,
+                            h: selectedItem.dims.d,
+                            d: selectedItem.dims.h,
+                          },
+                        },
+                        true
+                      );
+                    }}
+                  />
+                </div>
+
+                <div className="color-inline-row" style={{ marginTop: 8 }}>
+                  <span>CAD Mesh Tint</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {selectedItem.modelTintColor && (
+                      <button
+                        className="fit-btn"
+                        style={{ padding: '2px 6px' }}
+                        onClick={() =>
+                          onUpdateItem(selectedItem.id, { modelTintColor: undefined }, true)
+                        }
+                      >
+                        Reset
+                      </button>
+                    )}
+                    <input
+                      type="color"
+                      value={selectedItem.modelTintColor || '#D4DBE3'}
+                      onChange={(e) =>
+                        onUpdateItem(selectedItem.id, { modelTintColor: e.target.value }, true)
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+
+            {def?.resizable && (
+              <div className="control-block">
+                <label className="block-label">Equipment Dimensions</label>
+                <div className="slider-row">
+                  <div className="slider-header">
+                    <span>Width</span>
+                    <span className="mono-num">{formatLength(selectedItem.dims.w, config.unit)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={def.minDims.w}
+                    max={def.maxDims.w}
+                    step={0.05}
+                    value={selectedItem.dims.w}
+                    onChange={(e) =>
+                      onUpdateItem(
+                        selectedItem.id,
+                        { dims: { ...selectedItem.dims, w: parseFloat(e.target.value) } },
+                        false
+                      )
+                    }
+                  />
+                </div>
+                <div className="slider-row">
+                  <div className="slider-header">
+                    <span>Height</span>
+                    <span className="mono-num">{formatLength(selectedItem.dims.h, config.unit)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={def.minDims.h}
+                    max={def.maxDims.h}
+                    step={0.05}
+                    value={selectedItem.dims.h}
+                    onChange={(e) =>
+                      onUpdateItem(
+                        selectedItem.id,
+                        { dims: { ...selectedItem.dims, h: parseFloat(e.target.value) } },
+                        false
+                      )
+                    }
+                  />
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section id="item-finish" className="inspector-section">
+            <h3 className="inspector-section-title">Finish</h3>
+            <div className="fit-btn-row" style={{ marginBottom: 10 }}>
+              {(['matte', 'oak', 'metal'] as const).map((fin) => (
+                <button
+                  key={fin}
+                  className={`fit-btn ${(selectedItem.finish || 'matte') === fin ? 'active' : ''}`}
+                  onClick={() => onUpdateItem(selectedItem.id, { finish: fin }, true)}
+                >
+                  {fin === 'matte' ? 'Matte White' : fin === 'oak' ? 'Warm Oak' : 'Anodized'}
+                </button>
+              ))}
+            </div>
+            <div className="custom-swatches-row">
+              <label className="swatch-picker">
+                <input
+                  type="color"
+                  value={selectedItem.primaryColor || config.primaryColor}
+                  onChange={(e) =>
+                    onUpdateItem(selectedItem.id, { primaryColor: e.target.value }, true)
+                  }
+                />
+                <span>Body</span>
+              </label>
+              <label className="swatch-picker">
+                <input
+                  type="color"
+                  value={selectedItem.accentColor || config.accentColor}
+                  onChange={(e) =>
+                    onUpdateItem(selectedItem.id, { accentColor: e.target.value }, true)
+                  }
+                />
+                <span>Accent</span>
+              </label>
+            </div>
+          </section>
+
           {def && def.surfaces.length > 0 && (
-            <div className="control-block branding-zones-block">
+            <section id="item-artwork" className="inspector-section">
               <div className="control-label-row">
-                <label className="block-label" style={{ marginBottom: 0 }}>
-                  Custom Branding &amp; Artwork Zones
-                </label>
+                <h3 className="inspector-section-title">Artwork</h3>
                 <Sparkles size={13} className="accent-icon" />
               </div>
 
@@ -510,12 +808,11 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   </div>
                 );
               })}
-            </div>
+            </section>
           )}
 
-          {/* POSITION & ROTATION */}
-          <div className="control-block">
-            <label className="block-label">Position &amp; Orientation</label>
+          <section id="item-position" className="inspector-section">
+            <h3 className="inspector-section-title">Position &amp; orientation</h3>
             <div className="coord-grid">
               <label className="num-field">
                 <span>X ({config.unit})</span>
@@ -572,280 +869,12 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 onChange={(e) =>
                   onUpdateItem(selectedItem.id, { rotationY: parseFloat(e.target.value) }, false)
                 }
-                onMouseUp={() =>
+                onPointerUp={() =>
                   onUpdateItem(selectedItem.id, { rotationY: selectedItem.rotationY }, true)
                 }
               />
             </div>
-          </div>
-
-          {/* CUSTOM 3D SHOWCASE MODEL CONTROLS */}
-          {selectedItem.catalogId === 'custom-3d-model' && (
-            <div className="control-block branding-zones-block">
-              <div className="control-label-row">
-                <label className="block-label" style={{ marginBottom: 0 }}>
-                  3D Showcase Model Scale &amp; CAD Fix
-                </label>
-              </div>
-
-              <div className="toggle-row compact" style={{ marginTop: 0, marginBottom: 8 }}>
-                <span>Lock Proportions</span>
-                <input
-                  type="checkbox"
-                  className="studio-switch"
-                  checked={selectedItem.lockAspect !== false}
-                  onChange={(e) =>
-                    onUpdateItem(selectedItem.id, { lockAspect: e.target.checked }, true)
-                  }
-                />
-              </div>
-
-              <div className="slider-row">
-                <div className="slider-header">
-                  <span>Width</span>
-                  <span className="mono-num">{formatLength(selectedItem.dims.w, config.unit)}</span>
-                </div>
-                <input
-                  type="range"
-                  min={0.2}
-                  max={6}
-                  step={0.05}
-                  value={selectedItem.dims.w}
-                  onChange={(e) => {
-                    const nw = parseFloat(e.target.value);
-                    if (selectedItem.lockAspect !== false) {
-                      const ratio = nw / Math.max(0.05, selectedItem.dims.w);
-                      onUpdateItem(
-                        selectedItem.id,
-                        {
-                          dims: {
-                            w: nw,
-                            h: Number((selectedItem.dims.h * ratio).toFixed(2)),
-                            d: Number((selectedItem.dims.d * ratio).toFixed(2)),
-                          },
-                        },
-                        false
-                      );
-                    } else {
-                      onUpdateItem(
-                        selectedItem.id,
-                        { dims: { ...selectedItem.dims, w: nw } },
-                        false
-                      );
-                    }
-                  }}
-                />
-              </div>
-
-              <div className="slider-row">
-                <div className="slider-header">
-                  <span>Height</span>
-                  <span className="mono-num">{formatLength(selectedItem.dims.h, config.unit)}</span>
-                </div>
-                <input
-                  type="range"
-                  min={0.2}
-                  max={4.8}
-                  step={0.05}
-                  value={selectedItem.dims.h}
-                  onChange={(e) => {
-                    const nh = parseFloat(e.target.value);
-                    if (selectedItem.lockAspect !== false) {
-                      const ratio = nh / Math.max(0.05, selectedItem.dims.h);
-                      onUpdateItem(
-                        selectedItem.id,
-                        {
-                          dims: {
-                            w: Number((selectedItem.dims.w * ratio).toFixed(2)),
-                            h: nh,
-                            d: Number((selectedItem.dims.d * ratio).toFixed(2)),
-                          },
-                        },
-                        false
-                      );
-                    } else {
-                      onUpdateItem(
-                        selectedItem.id,
-                        { dims: { ...selectedItem.dims, h: nh } },
-                        false
-                      );
-                    }
-                  }}
-                />
-              </div>
-
-              <div className="slider-row">
-                <div className="slider-header">
-                  <span>Depth</span>
-                  <span className="mono-num">{formatLength(selectedItem.dims.d, config.unit)}</span>
-                </div>
-                <input
-                  type="range"
-                  min={0.2}
-                  max={6}
-                  step={0.05}
-                  value={selectedItem.dims.d}
-                  onChange={(e) => {
-                    const nd = parseFloat(e.target.value);
-                    if (selectedItem.lockAspect !== false) {
-                      const ratio = nd / Math.max(0.05, selectedItem.dims.d);
-                      onUpdateItem(
-                        selectedItem.id,
-                        {
-                          dims: {
-                            w: Number((selectedItem.dims.w * ratio).toFixed(2)),
-                            h: Number((selectedItem.dims.h * ratio).toFixed(2)),
-                            d: nd,
-                          },
-                        },
-                        false
-                      );
-                    } else {
-                      onUpdateItem(
-                        selectedItem.id,
-                        { dims: { ...selectedItem.dims, d: nd } },
-                        false
-                      );
-                    }
-                  }}
-                />
-              </div>
-
-              <div className="toggle-row compact" style={{ marginTop: 10 }}>
-                <span>CAD Z-Up → Y-Up Fix</span>
-                <input
-                  id="toggle-cad-zup"
-                  type="checkbox"
-                  className="studio-switch"
-                  checked={Boolean(selectedItem.zUpFix)}
-                  onChange={(e) => {
-                    const nextZ = e.target.checked;
-                    onUpdateItem(
-                      selectedItem.id,
-                      {
-                        zUpFix: nextZ,
-                        dims: {
-                          w: selectedItem.dims.w,
-                          h: selectedItem.dims.d,
-                          d: selectedItem.dims.h,
-                        },
-                      },
-                      true
-                    );
-                  }}
-                />
-              </div>
-
-              <div className="color-inline-row" style={{ marginTop: 8 }}>
-                <span>CAD Mesh Tint</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {selectedItem.modelTintColor && (
-                    <button
-                      className="fit-btn"
-                      style={{ padding: '2px 6px' }}
-                      onClick={() =>
-                        onUpdateItem(selectedItem.id, { modelTintColor: undefined }, true)
-                      }
-                    >
-                      Reset
-                    </button>
-                  )}
-                  <input
-                    type="color"
-                    value={selectedItem.modelTintColor || '#D4DBE3'}
-                    onChange={(e) =>
-                      onUpdateItem(selectedItem.id, { modelTintColor: e.target.value }, true)
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* DIMENSIONS */}
-          {def?.resizable && (
-            <div className="control-block">
-              <label className="block-label">Equipment Dimensions</label>
-              <div className="slider-row">
-                <div className="slider-header">
-                  <span>Width</span>
-                  <span className="mono-num">{formatLength(selectedItem.dims.w, config.unit)}</span>
-                </div>
-                <input
-                  type="range"
-                  min={def.minDims.w}
-                  max={def.maxDims.w}
-                  step={0.05}
-                  value={selectedItem.dims.w}
-                  onChange={(e) =>
-                    onUpdateItem(
-                      selectedItem.id,
-                      { dims: { ...selectedItem.dims, w: parseFloat(e.target.value) } },
-                      false
-                    )
-                  }
-                />
-              </div>
-              <div className="slider-row">
-                <div className="slider-header">
-                  <span>Height</span>
-                  <span className="mono-num">{formatLength(selectedItem.dims.h, config.unit)}</span>
-                </div>
-                <input
-                  type="range"
-                  min={def.minDims.h}
-                  max={def.maxDims.h}
-                  step={0.05}
-                  value={selectedItem.dims.h}
-                  onChange={(e) =>
-                    onUpdateItem(
-                      selectedItem.id,
-                      { dims: { ...selectedItem.dims, h: parseFloat(e.target.value) } },
-                      false
-                    )
-                  }
-                />
-              </div>
-            </div>
-          )}
-
-          {/* MATERIAL & COLOUR OVERRIDES */}
-          <div className="control-block">
-            <label className="block-label">Material &amp; Finish</label>
-            <div className="fit-btn-row" style={{ marginBottom: 10 }}>
-              {(['matte', 'oak', 'metal'] as const).map((fin) => (
-                <button
-                  key={fin}
-                  className={`fit-btn ${(selectedItem.finish || 'matte') === fin ? 'active' : ''}`}
-                  onClick={() => onUpdateItem(selectedItem.id, { finish: fin }, true)}
-                >
-                  {fin === 'matte' ? 'Matte White' : fin === 'oak' ? 'Warm Oak' : 'Anodized'}
-                </button>
-              ))}
-            </div>
-            <div className="custom-swatches-row">
-              <label className="swatch-picker">
-                <input
-                  type="color"
-                  value={selectedItem.primaryColor || config.primaryColor}
-                  onChange={(e) =>
-                    onUpdateItem(selectedItem.id, { primaryColor: e.target.value }, true)
-                  }
-                />
-                <span>Body</span>
-              </label>
-              <label className="swatch-picker">
-                <input
-                  type="color"
-                  value={selectedItem.accentColor || config.accentColor}
-                  onChange={(e) =>
-                    onUpdateItem(selectedItem.id, { accentColor: e.target.value }, true)
-                  }
-                />
-                <span>Accent</span>
-              </label>
-            </div>
-          </div>
+          </section>
         </div>
       </aside>
     );
@@ -853,15 +882,24 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
 
   // ==================== DEFAULT STAND OVERVIEW INSPECTOR ====================
   return (
-    <aside className="right-inspector" aria-label="Stand space overview">
+    <aside className="right-inspector contextual-inspector" aria-label="Stand space overview">
       <div className="inspector-header">
-        <div>
-          <span className="inspector-kicker">Space &amp; Brand Overview</span>
+        <Box className="inspector-heading-icon" size={24} aria-hidden="true" />
+        <div className="inspector-heading">
           <h2>
             {formatLength(config.width, config.unit)} × {formatLength(config.depth, config.unit)}{' '}
-            Stand
+            stand
           </h2>
+          <p className="inspector-kicker">Space &amp; brand overview</p>
         </div>
+        <button
+          type="button"
+          className="inspector-close"
+          onClick={onClose}
+          aria-label="Close stand overview"
+        >
+          <X size={19} aria-hidden="true" />
+        </button>
       </div>
 
       <div className="inspector-body">
@@ -975,10 +1013,6 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
           </button>
         </div>
 
-        <div className="tip-card">
-          <strong>Pro Tip:</strong> Click any counter, pop-up wall, screen, or banner in the 3D
-          viewport to drag it into position or upload custom artwork directly to its print zone.
-        </div>
       </div>
     </aside>
   );
