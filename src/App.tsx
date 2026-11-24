@@ -1060,48 +1060,51 @@ export function App() {
             onDrop3DFiles={(files, x, z) => handleUpload3DModels(files, x, z)}
           />
 
-          {/* Top-Left Floating Space & Compliance HUD */}
-          <div className="viewport-hud-top">
-            <div className="hud-space-pill">
-              <strong className="mono-num">
-                {formatLength(config.width, config.unit)} × {formatLength(config.depth, config.unit)}
-              </strong>
-              <span className="hud-sep">·</span>
-              <span className="mono-num">{formatArea(compliance.areaM2, config.unit)}</span>
-              <span className="hud-sep">·</span>
-              <span>{openSidesBadge}</span>
-            </div>
+          {/* Top-Left Floating Space & Compliance HUD (hidden while product reel plays) */}
+          {!tourActive && (
+            <div className="viewport-hud-top">
+              <div className="hud-space-pill">
+                <strong className="mono-num">
+                  {formatLength(config.width, config.unit)} × {formatLength(config.depth, config.unit)}
+                </strong>
+                <span className="hud-sep">·</span>
+                <span className="mono-num">{formatArea(compliance.areaM2, config.unit)}</span>
+                <span className="hud-sep">·</span>
+                <span>{openSidesBadge}</span>
+              </div>
 
-            <div className={`hud-compliance-pill ${compliance.isCompliant ? 'ok' : 'warn'}`}>
-              {compliance.isCompliant ? (
-                <>
-                  <CheckCircle2 size={13} />
-                  <span>Within Bounds</span>
-                </>
-              ) : (
-                <>
-                  <AlertTriangle size={13} />
-                  <span>
-                    {compliance.outOfBoundsIds.length > 0
-                      ? `${compliance.outOfBoundsIds.length} Out of Bounds`
-                      : `${compliance.overHeightIds.length} Over Height Limit`}
-                  </span>
-                </>
-              )}
+              <div className={`hud-compliance-pill ${compliance.isCompliant ? 'ok' : 'warn'}`}>
+                {compliance.isCompliant ? (
+                  <>
+                    <CheckCircle2 size={13} />
+                    <span>Within Bounds</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle size={13} />
+                    <span>
+                      {compliance.outOfBoundsIds.length > 0
+                        ? `${compliance.outOfBoundsIds.length} Out of Bounds`
+                        : `${compliance.overHeightIds.length} Over Height Limit`}
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* 30-Second HyperFrames-Styled Cinematic Walkthrough */}
+          {/* 18-Second Snappy HyperFrames Product Walkthrough Reel */}
           <StudioWalkthrough
             active={tourActive}
             paused={tourPaused}
             config={config}
+            items={items}
             viewportRef={viewportRef}
             onTogglePause={() => setTourPaused((p) => !p)}
             onFinish={() => {
               setTourActive(false);
               setTourPaused(false);
-              notify('Walkthrough complete — click any element to start customizing!');
+              notify('Product reel complete — click any element to start customizing!');
             }}
             onSkip={() => {
               setTourActive(false);
@@ -1110,7 +1113,7 @@ export function App() {
             }}
           />
 
-          {/* Bottom-Center Floating Camera Dock (hidden while 30s timeline bar is active) */}
+          {/* Bottom-Center Floating Camera Dock (hidden while product reel bar is active) */}
           {!tourActive && (
             <div className="viewport-camera-dock" role="toolbar" aria-label="Camera views">
               <button onClick={() => triggerCamera('isometric')} title="Isometric 3D overview">
@@ -1128,7 +1131,7 @@ export function App() {
                 <span>Right</span>
               </button>
               <div className="dock-divider" />
-              <button onClick={startWalkthrough} title="Replay 30-second animated walkthrough">
+              <button onClick={startWalkthrough} title="Replay 18-second product walkthrough reel">
                 <Play size={13} />
                 <span>Tour</span>
               </button>
