@@ -59,8 +59,11 @@ import {
 import { exportProductionBriefHtml } from './utils/briefExport';
 import { calculateEstimate, evaluateCompliance, formatArea, formatLength } from './utils/pricing';
 
-const STORAGE_KEY = 'zuki_exhibition_planner_projects_v1';
-const LEGACY_STORAGE_KEY = 'standcraft_studio_projects_v1';
+const STORAGE_KEY = 'zuki_exhibition_planner_projects_v2';
+const PURGED_STORAGE_KEYS = [
+  'standcraft_studio_projects_v1',
+  'zuki_exhibition_planner_projects_v1',
+];
 
 interface HistorySnapshot {
   config: StandConfig;
@@ -111,7 +114,10 @@ function readImageFile(file: File): Promise<BrandAsset> {
 
 function loadInitialProjects(): SavedProject[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
+    for (const legacyKey of PURGED_STORAGE_KEYS) {
+      localStorage.removeItem(legacyKey);
+    }
+    const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as SavedProject[];
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -935,9 +941,11 @@ export function App() {
     setProjectName('Grand Flagship Pavilion (8m × 6m)');
     setConfig(inst.config);
     setItems(inst.items);
+    setCustomAssets([]);
     setSelectedItemId(null);
     setSelectedSurfaceId(null);
     setSelectedShellWall(null);
+    setPaintAssetId(null);
     setHistory([cloneSnapshot(inst.config, inst.items)]);
     setHistoryIdx(0);
     setShowSetupGuide(false);
