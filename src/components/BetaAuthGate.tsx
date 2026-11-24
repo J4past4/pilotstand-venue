@@ -1,14 +1,25 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Eye, EyeOff, KeyRound, Lock, LogIn, ShieldCheck, UserPlus } from 'lucide-react';
+import { PublicLaunchModal } from './PublicLaunchModal';
+import { SupplierPartnerModal } from './SupplierPartnerModal';
 import './authGate.css';
 
 export interface BetaUser {
   email: string;
   name: string;
   role: 'admin' | 'beta';
+  company?: string;
+}
+
+export interface PublicAuthPromptOptions {
+  mode?: 'signup' | 'signin';
+  reason?: string;
+  onSuccess?: () => void;
 }
 
 interface SessionResponse {
+  accessMode?: 'public' | 'beta' | 'open';
+  publicLaunch?: boolean;
   authEnabled: boolean;
   signupEnabled?: boolean;
   signupReady?: boolean;
@@ -20,7 +31,10 @@ interface BetaAuthGateProps {
   children: (session: {
     user: BetaUser | null;
     authEnabled: boolean;
+    publicLaunch: boolean;
     onSignOut: () => Promise<void>;
+    onOpenPublicAuth: (opts?: PublicAuthPromptOptions) => void;
+    onOpenSupplierModal: () => void;
   }) => React.ReactNode;
 }
 
@@ -38,8 +52,15 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
 
   const [status, setStatus] = useState<'checking' | 'ready' | 'login' | 'error'>('checking');
   const [authEnabled, setAuthEnabled] = useState(false);
+  const [publicLaunch, setPublicLaunch] = useState(false);
   const [signupEnabled, setSignupEnabled] = useState(false);
   const [user, setUser] = useState<BetaUser | null>(null);
+
+  const [publicAuthOpen, setPublicAuthOpen] = useState(false);
+  const [publicAuthMode, setPublicAuthMode] = useState<'signup' | 'signin'>('signup');
+  const [publicAuthReason, setPublicAuthReason] = useState<string | null>(null);
+  const [pendingAuthSuccess, setPendingAuthSuccess] = useState<(() => void) | null>(null);
+  const [supplierModalOpen, setSupplierModalOpen] = useState(false);
 
   const [mode, setMode] = useState<'signin' | 'signup'>(initialInvite ? 'signup' : 'signin');
   const [name, setName] = useState('');
@@ -64,6 +85,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
         return {
           kind: 'ready' as const,
           authEnabled: false,
+          publicLaunch: false,
           signupEnabled: false,
           user: null,
           error: null,
@@ -74,18 +96,23 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
         return {
           kind: 'error' as const,
           authEnabled: true,
+          publicLaunch: false,
           signupEnabled: false,
           user: null,
-          error: 'Unable to verify beta access right now. Please try again.',
+          error: 'Unable to verify access right now. Please try again.',
         };
       }
 
       const data = (await resp.json()) as SessionResponse;
-      const canSignup = Boolean(data.signupEnabled);
-      if (!data.authEnabled || (data.authenticated && data.user)) {
+      const isPublic = Boolean(data.publicLaunch || data.accessMode === 'public');
+      const canSignup = Boolean(data.signupEnabled || isPublic);
+
+      // In Public Launch mode, let visitors straight into the 3D sandbox even when anonymous
+      if (isPublic || !data.authEnabled || (data.authenticated && data.user)) {
         return {
           kind: 'ready' as const,
           authEnabled: Boolean(data.authEnabled),
+          publicLaunch: isPublic,
           signupEnabled: canSignup,
           user: data.user || null,
           error: null,
@@ -94,6 +121,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
       return {
         kind: 'login' as const,
         authEnabled: true,
+        publicLaunch: false,
         signupEnabled: canSignup,
         user: null,
         error: null,
@@ -102,6 +130,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
       return {
         kind: 'error' as const,
         authEnabled: true,
+        publicLaunch: false,
         signupEnabled: false,
         user: null,
         error: 'Could not connect to the authentication service. Please check your connection.',
@@ -114,6 +143,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
     setErrorMsg(null);
     const res = await fetchSessionState();
     setAuthEnabled(res.authEnabled);
+    setPublicLaunch(res.publicLaunch);
     setSignupEnabled(res.signupEnabled);
     setUser(res.user);
     setErrorMsg(res.error);
@@ -126,6 +156,7 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
     void fetchSessionState().then((res) => {
       if (cancelled) return;
       setAuthEnabled(res.authEnabled);
+      setPublicLaunch(res.publicLaunch);
       setSignupEnabled(res.signupEnabled);
       setUser(res.user);
       setErrorMsg(res.error);
@@ -136,6 +167,17 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
       cancelled = true;
     };
   }, [fetchSessionState]);
+
+  const handleOpenPublicAuth = useCallback((opts?: PublicAuthPromptOptions) => {
+    setPublicAuthMode(opts?.mode || 'signup');
+    setPublicAuthReason(opts?.reason || null);
+    setPendingAuthSuccess(() => opts?.onSuccess || null);
+    setPublicAuthOpen(true);
+  }, []);
+
+  const handleOpenSupplierModal = useCallback(() => {
+    setSupplierModalOpen(true);
+  }, []);
 
   const clearInviteQueryParam = () => {
     try {
@@ -469,5 +511,43 @@ export const BetaAuthGate: React.FC<BetaAuthGateProps> = ({ children }) => {
     );
   }
 
-  return <>{children({ user, authEnabled, onSignOut: handleSignOut })}</>;
+  return (
+    <>
+      {children({
+        user,
+        authEnabled,
+        publicLaunch,
+        onSignOut: handleSignOut,
+        onOpenPublicAuth: handleOpenPublicAuth,
+        onOpenSupplierModal: handleOpenSupplierModal,
+      })}
+
+      <PublicLaunchModal
+        open={publicAuthOpen}
+        initialMode={publicAuthMode}
+        contextMessage={publicAuthReason}
+        onClose={() => {
+          setPublicAuthOpen(false);
+          setPendingAuthSuccess(null);
+        }}
+        onAuthenticated={(authedUser) => {
+          setUser(authedUser);
+          setAuthEnabled(true);
+          setPublicAuthOpen(false);
+          const cb = pendingAuthSuccess;
+          setPendingAuthSuccess(null);
+          if (cb) cb();
+        }}
+        onOpenSupplierModal={() => setSupplierModalOpen(true)}
+      />
+
+      <SupplierPartnerModal
+        open={supplierModalOpen}
+        onClose={() => setSupplierModalOpen(false)}
+        defaultName={user?.name || ''}
+        defaultEmail={user?.email || ''}
+        defaultCompany={user?.company || ''}
+      />
+    </>
+  );
 };

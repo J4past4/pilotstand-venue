@@ -41,7 +41,9 @@ import {
   type BuilderMode,
 } from './components/CustomAssetBuilderModal';
 import { AssetLibraryModal } from './components/AssetLibraryModal';
-import type { BetaUser } from './components/BetaAuthGate';
+import type { BetaUser, PublicAuthPromptOptions } from './components/BetaAuthGate';
+import { QuoteRequestModal } from './components/QuoteRequestModal';
+import { LaunchAdminModal } from './components/LaunchAdminModal';
 import { applyAgentActions } from './agent/actionExecutor';
 import { sendStandAgentPrompt } from './agent/agentClient';
 import { findNearestAllowedPosition } from './utils/wallCollision';
@@ -70,6 +72,7 @@ import {
 } from './utils/brandKit';
 import { exportProductionBriefHtml } from './utils/briefExport';
 import { calculateEstimate, evaluateCompliance, formatArea, formatLength } from './utils/pricing';
+import { trackLaunchMetric } from './utils/launchMetrics';
 
 const STORAGE_KEY = 'zuki_exhibition_planner_projects_v2';
 const ASSET_LIBRARY_STORAGE_KEY = 'zuki_custom_asset_library_v1';
@@ -171,10 +174,19 @@ function loadInitialProjects(projectsStorageKey: string): SavedProject[] {
 
 interface AppProps {
   betaUser?: BetaUser | null;
+  publicLaunch?: boolean;
   onSignOut?: () => void;
+  onOpenPublicAuth?: (opts?: PublicAuthPromptOptions) => void;
+  onOpenSupplierModal?: () => void;
 }
 
-function App({ betaUser, onSignOut }: AppProps) {
+function App({
+  betaUser,
+  publicLaunch = false,
+  onSignOut,
+  onOpenPublicAuth,
+  onOpenSupplierModal,
+}: AppProps) {
   const projectsStorageKey = getScopedStorageKey(STORAGE_KEY, betaUser?.email);
   const assetLibraryStorageKey = getScopedStorageKey(ASSET_LIBRARY_STORAGE_KEY, betaUser?.email);
 
@@ -239,6 +251,8 @@ function App({ betaUser, onSignOut }: AppProps) {
   const [showEstimateModal, setShowEstimateModal] = useState(false);
   const [showProjectsModal, setShowProjectsModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showQuoteRequestModal, setShowQuoteRequestModal] = useState(false);
+  const [showAdminInsightsModal, setShowAdminInsightsModal] = useState(false);
   const [showAssetLibrary, setShowAssetLibrary] = useState(false);
   const [showAssetBuilder, setShowAssetBuilder] = useState(false);
   const [assetBuilderMode, setAssetBuilderMode] = useState<BuilderMode>('shapes');
@@ -830,50 +844,90 @@ function App({ betaUser, onSignOut }: AppProps) {
     [pushHistory, notify]
   );
 
+  const requirePublicAccountOrRun = useCallback(
+    (reason: string, action: () => void) => {
+      if (publicLaunch && !betaUser && onOpenPublicAuth) {
+        onOpenPublicAuth({ mode: 'signup', reason, onSuccess: action });
+        return;
+      }
+      action();
+    },
+    [publicLaunch, betaUser, onOpenPublicAuth]
+  );
+
   // Export Actions
   const handleDownloadPng = useCallback(() => {
-    const dataUrl = viewportRef.current?.captureSnapshot(1600, 1000);
-    if (!dataUrl) return;
-    const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-3d-render.png`;
-    a.click();
-    notify('Saved 1600×1000 studio PNG snapshot');
-  }, [projectName, notify]);
+    requirePublicAccountOrRun(
+      'Create a free account to download high-resolution 3D studio renders.',
+      () => {
+        const dataUrl = viewportRef.current?.captureSnapshot(1600, 1000);
+        if (!dataUrl) return;
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-3d-render.png`;
+        a.click();
+        trackLaunchMetric({
+          event: 'png_exported',
+          standAreaM2: Math.round(config.width * config.depth),
+        });
+        notify('Saved 1600×1000 studio PNG snapshot');
+      }
+    );
+  }, [requirePublicAccountOrRun, projectName, config.width, config.depth, notify]);
 
   const handleExportBrief = useCallback(() => {
-    const snap = viewportRef.current?.captureSnapshot(1400, 840) || null;
-    exportProductionBriefHtml(
-      projectName,
-      config,
-      items,
-      assetsMap,
-      snap,
-      currency,
-      pricingMode
+    requirePublicAccountOrRun(
+      'Create a free account to export print-ready PDF production briefs & BOM schedules.',
+      () => {
+        const snap = viewportRef.current?.captureSnapshot(1400, 840) || null;
+        const est = calculateEstimate(config, items, pricingMode);
+        exportProductionBriefHtml(
+          projectName,
+          config,
+          items,
+          assetsMap,
+          snap,
+          currency,
+          pricingMode
+        );
+        trackLaunchMetric({
+          event: 'brief_exported',
+          estimatedTotalGbp: Math.round(est.grandTotalGbp),
+          standAreaM2: Math.round(config.width * config.depth),
+          categories: Array.from(
+            new Set(items.map((it) => CATALOG_MAP[it.catalogId]?.category).filter(Boolean) as string[])
+          ),
+        });
+        notify('Opened print-ready Exhibition Production Brief');
+      }
     );
-    notify('Opened print-ready Exhibition Production Brief');
-  }, [projectName, config, items, assetsMap, currency, pricingMode, notify]);
+  }, [requirePublicAccountOrRun, projectName, config, items, assetsMap, currency, pricingMode, notify]);
 
   const handleDownloadJson = useCallback(() => {
-    const payload: SavedProject = {
-      id: activeProjectId,
-      name: projectName,
-      updatedAt: Date.now(),
-      config,
-      items,
-      customAssets,
-      customBuiltAssets,
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.zuki-stand.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    notify('Exported project .JSON backup');
-  }, [activeProjectId, projectName, config, items, customAssets, customBuiltAssets, notify]);
+    requirePublicAccountOrRun(
+      'Create a free account to export and share project backup files.',
+      () => {
+        const payload: SavedProject = {
+          id: activeProjectId,
+          name: projectName,
+          updatedAt: Date.now(),
+          config,
+          items,
+          customAssets,
+          customBuiltAssets,
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.zuki-stand.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        trackLaunchMetric({ event: 'json_exported' });
+        notify('Exported project .JSON backup');
+      }
+    );
+  }, [requirePublicAccountOrRun, activeProjectId, projectName, config, items, customAssets, customBuiltAssets, notify]);
 
   const handleImportJson = useCallback(
     (file: File) => {
@@ -1444,7 +1498,13 @@ function App({ betaUser, onSignOut }: AppProps) {
           canReturnToEditor={projects.length > 0}
           customAssetCount={totalCustomAssetCount}
           betaUser={betaUser}
+          publicLaunch={publicLaunch}
           onSignOut={onSignOut}
+          onOpenPublicAuth={
+            onOpenPublicAuth ? () => onOpenPublicAuth({ mode: 'signup' }) : undefined
+          }
+          onOpenSupplierModal={onOpenSupplierModal}
+          onOpenAdminInsights={() => setShowAdminInsightsModal(true)}
           onReturnToEditor={() => setShowDashboard(false)}
           onOpenProject={handleOpenProject}
           onCreateBlankProject={handleCreateBlankProject}
@@ -1466,6 +1526,10 @@ function App({ betaUser, onSignOut }: AppProps) {
           onOpenAssetCreator={(mode) => handleOpenAssetBuilder(mode, 'dashboard')}
         />
         {assetModals}
+        <LaunchAdminModal
+          open={showAdminInsightsModal}
+          onClose={() => setShowAdminInsightsModal(false)}
+        />
         {toast && <div role="status" className="studio-toast">{toast}</div>}
       </>
     );
@@ -1500,10 +1564,28 @@ function App({ betaUser, onSignOut }: AppProps) {
           setShowDashboard(true);
         }}
         onOpenTemplates={() => setShowTemplatesModal(true)}
-        onOpenEstimate={() => setShowEstimateModal(true)}
+        onOpenEstimate={() => {
+          trackLaunchMetric({
+            event: 'estimate_viewed',
+            estimatedTotalGbp: Math.round(estimate.grandTotalGbp),
+            standAreaM2: Math.round(config.width * config.depth),
+            categories: Array.from(
+              new Set(
+                items.map((it) => CATALOG_MAP[it.catalogId]?.category).filter(Boolean) as string[]
+              )
+            ),
+          });
+          setShowEstimateModal(true);
+        }}
         onOpenExport={() => setShowExportModal(true)}
         betaUser={betaUser}
+        publicLaunch={publicLaunch}
         onSignOut={onSignOut}
+        onOpenPublicAuth={
+          onOpenPublicAuth ? () => onOpenPublicAuth({ mode: 'signup' }) : undefined
+        }
+        onOpenSupplierModal={onOpenSupplierModal}
+        onOpenAdminInsights={() => setShowAdminInsightsModal(true)}
       />
 
       <main className="studio-workspace">
@@ -1746,6 +1828,24 @@ function App({ betaUser, onSignOut }: AppProps) {
         pricingMode={pricingMode}
         onChangePricingMode={setPricingMode}
         onExportBrief={handleExportBrief}
+        onRequestQuotes={() => setShowQuoteRequestModal(true)}
+      />
+
+      <QuoteRequestModal
+        open={showQuoteRequestModal}
+        onClose={() => setShowQuoteRequestModal(false)}
+        config={config}
+        items={items}
+        currency={currency}
+        pricingMode={pricingMode}
+        defaultName={betaUser?.name || ''}
+        defaultEmail={betaUser?.email || ''}
+        defaultCompany={betaUser?.company || config.brandName || ''}
+      />
+
+      <LaunchAdminModal
+        open={showAdminInsightsModal}
+        onClose={() => setShowAdminInsightsModal(false)}
       />
 
       <ProjectsModal

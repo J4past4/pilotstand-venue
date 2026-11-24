@@ -1,8 +1,10 @@
 import {
+  getAppAccessMode,
   getSessionFromHeaders,
   hasDurableUserStore,
   isBetaAuthEnabled,
   isBetaSignupEnabled,
+  isPublicLaunchMode,
 } from '../_lib/auth.ts';
 
 interface VercelLikeRequest {
@@ -24,12 +26,16 @@ export default function handler(req: VercelLikeRequest, res: VercelLikeResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const accessMode = getAppAccessMode();
+  const publicLaunch = isPublicLaunchMode();
   const authEnabled = isBetaAuthEnabled();
   const signupEnabled = isBetaSignupEnabled();
   const signupReady = signupEnabled && (hasDurableUserStore() || !process.env.VERCEL);
 
   if (!authEnabled) {
     return res.status(200).json({
+      accessMode,
+      publicLaunch: false,
       authEnabled: false,
       signupEnabled: false,
       signupReady: false,
@@ -40,6 +46,8 @@ export default function handler(req: VercelLikeRequest, res: VercelLikeResponse)
 
   const user = getSessionFromHeaders(req.headers);
   return res.status(200).json({
+    accessMode,
+    publicLaunch,
     authEnabled: true,
     signupEnabled,
     signupReady,

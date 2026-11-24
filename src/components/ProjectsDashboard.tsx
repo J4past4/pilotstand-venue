@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
+  BarChart3,
   Box,
   Copy,
   Download,
@@ -15,8 +16,10 @@ import {
   Play,
   Plus,
   Search,
+  Store,
   Trash2,
   Upload,
+  UserPlus,
 } from 'lucide-react';
 import type { CurrencyCode, SavedProject, StandTemplate } from '../types/stand';
 import type { BetaUser } from './BetaAuthGate';
@@ -31,7 +34,11 @@ interface ProjectsDashboardProps {
   canReturnToEditor: boolean;
   customAssetCount: number;
   betaUser?: BetaUser | null;
+  publicLaunch?: boolean;
   onSignOut?: () => void;
+  onOpenPublicAuth?: () => void;
+  onOpenSupplierModal?: () => void;
+  onOpenAdminInsights?: () => void;
   onReturnToEditor: () => void;
   onOpenProject: (project: SavedProject) => void;
   onCreateBlankProject: () => void;
@@ -198,7 +205,11 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
   canReturnToEditor,
   customAssetCount,
   betaUser,
+  publicLaunch,
   onSignOut,
+  onOpenPublicAuth,
+  onOpenSupplierModal,
+  onOpenAdminInsights,
   onReturnToEditor,
   onOpenProject,
   onCreateBlankProject,
@@ -275,10 +286,43 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
             <Palette size={14} />
             <span>Brand Setup</span>
           </button>
+          {onOpenSupplierModal && (
+            <button
+              type="button"
+              className="dash-ghost-btn"
+              onClick={onOpenSupplierModal}
+              title="List your 3D exhibition products in the planner"
+            >
+              <Store size={14} />
+              <span>For Suppliers</span>
+            </button>
+          )}
+          {betaUser?.role === 'admin' && onOpenAdminInsights && (
+            <button
+              type="button"
+              className="dash-ghost-btn"
+              onClick={onOpenAdminInsights}
+              title="View public launch signups, supplier inquiries, and BOM traction"
+            >
+              <BarChart3 size={14} />
+              <span>Insights</span>
+            </button>
+          )}
           <button type="button" className="dash-primary-btn" onClick={onCreateBlankProject}>
             <Plus size={15} />
             <span>New Project</span>
           </button>
+          {publicLaunch && !betaUser && onOpenPublicAuth && (
+            <button
+              type="button"
+              className="topbar-free-signup-btn"
+              onClick={onOpenPublicAuth}
+              title="Create a free account or sign in to save & export"
+            >
+              <UserPlus size={13} />
+              <span>Free Account</span>
+            </button>
+          )}
           {betaUser && onSignOut && (
             <div className="beta-user-pill" title={`Signed in as ${betaUser.email}`}>
               <span className="beta-user-pill-name">{betaUser.name}</span>

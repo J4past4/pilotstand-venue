@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  BarChart3,
   Box,
   Calculator,
   ChevronDown,
@@ -15,10 +16,12 @@ import {
   Ruler,
   SlidersHorizontal,
   Sparkles,
+  Store,
   Sun,
   SunMedium,
   Undo2,
   Upload,
+  UserPlus,
   Users,
 } from 'lucide-react';
 import type { CurrencyCode, LightingPreset, StandConfig, ViewMode } from '../types/stand';
@@ -47,7 +50,11 @@ interface TopBarProps {
   onOpenEstimate: () => void;
   onOpenExport: () => void;
   betaUser?: BetaUser | null;
+  publicLaunch?: boolean;
   onSignOut?: () => void;
+  onOpenPublicAuth?: () => void;
+  onOpenSupplierModal?: () => void;
+  onOpenAdminInsights?: () => void;
 }
 
 const LIGHTING_OPTIONS: { id: LightingPreset; label: string; icon: React.ReactNode }[] = [
@@ -77,7 +84,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenEstimate,
   onOpenExport,
   betaUser,
+  publicLaunch,
   onSignOut,
+  onOpenPublicAuth,
+  onOpenSupplierModal,
+  onOpenAdminInsights,
 }) => {
   const estimateTotal = formatMoney(estimatedTotalGbp, currency);
   const [editingName, setEditingName] = useState(false);
@@ -177,6 +188,42 @@ export const TopBar: React.FC<TopBarProps> = ({
             <Upload size={14} />
             <span>Export brief</span>
           </button>
+          {onOpenSupplierModal && (
+            <button
+              id="btn-for-suppliers"
+              type="button"
+              className="topbar-supplier-btn topbar-collapse-label"
+              onClick={onOpenSupplierModal}
+              title="List your 3D exhibition products in the planner"
+            >
+              <Store size={13} />
+              <span>For Suppliers</span>
+            </button>
+          )}
+          {betaUser?.role === 'admin' && onOpenAdminInsights && (
+            <button
+              id="btn-launch-insights"
+              type="button"
+              className="topbar-supplier-btn topbar-collapse-label"
+              onClick={onOpenAdminInsights}
+              title="View public launch signups, supplier inquiries, and BOM traction"
+            >
+              <BarChart3 size={13} />
+              <span>Insights</span>
+            </button>
+          )}
+          {publicLaunch && !betaUser && onOpenPublicAuth && (
+            <button
+              id="btn-free-account"
+              type="button"
+              className="topbar-free-signup-btn"
+              onClick={onOpenPublicAuth}
+              title="Create a free account or sign in to save & export"
+            >
+              <UserPlus size={13} />
+              <span>Free Account</span>
+            </button>
+          )}
           {betaUser && onSignOut && (
             <div className="beta-user-pill" title={`Signed in as ${betaUser.email}`}>
               <span className="beta-user-pill-name">{betaUser.name}</span>

@@ -41,9 +41,18 @@ Build for production:
 npm run build
 ```
 
-## Private Beta Access (Individual User Logins & Invite Sign-Up)
+## Public Launch & Supplier Monetisation Mode
 
-Set `BETA_INVITE_CODE` + Upstash Redis (via Vercel Storage) and `AUTH_SESSION_SECRET` in Vercel Environment Variables (see `.env.example`) so invited beta testers can create their own email/password login (passwords stored as salted `scrypt` hashes, 7-day `HttpOnly` signed session cookies, and per-user isolated saved workspaces). You can also optionally restrict sign-ups with `BETA_ALLOWED_EMAILS` / `BETA_ALLOWED_DOMAINS` and pre-seed admin accounts with `BETA_USERS`.
+Set `APP_ACCESS_MODE=public` + Upstash Redis (via Vercel Storage) + `AUTH_SESSION_SECRET` in Vercel Environment Variables (see `.env.example`) to run as a free-to-use public exhibition planner:
+
+- **Open 3D Sandbox + Free Public Account Form**: Visitors can immediately build stands in 3D/2D, and create a free account (capturing name, work email, company, role, upcoming event, stand size, and optional updates opt-in) when saving/exporting production briefs, PNG renders, or JSON backups.
+- **Supplier Catalog Hosting Intake (`For Suppliers`)**: Built-in application form (`/api/supplier-inquiry`) for exhibition equipment, AV, furniture, and print suppliers to apply for the Founding Supplier Pilot, Verified 3D Catalog Hosting, or White-Label Website Embed.
+- **GDPR-Consented BOM Quote Requests**: Exhibitors can click **Request Supplier Quotes** on their Estimate/BOM modal (`/api/quote-request`) to submit their dimensioned stand spec for supplier pricing.
+- **Founder Launch Insights**: Sign in with an admin account (`BETA_USERS` with `"role":"admin"`) to view live registered users, supplier applications, quote requests, total specified BOM volume, and 1-click CSV exports.
+
+## Private Beta Access (Invite-Only Mode)
+
+Omit `APP_ACCESS_MODE=public` (or set `APP_ACCESS_MODE=beta`) and configure `BETA_INVITE_CODE` / `BETA_USERS` + Upstash Redis to require invite-only login before entering the workspace.
 
 ## QA & Verification
 

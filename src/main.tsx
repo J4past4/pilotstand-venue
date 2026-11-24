@@ -9,11 +9,14 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <BetaAuthGate>
-        {({ user, authEnabled, onSignOut }) => (
+        {({ user, authEnabled, publicLaunch, onSignOut, onOpenPublicAuth, onOpenSupplierModal }) => (
           <App
-            key={user?.email || 'anon'}
+            key={publicLaunch ? 'public-studio' : user?.email || 'anon'}
             betaUser={user}
+            publicLaunch={publicLaunch}
             onSignOut={authEnabled ? onSignOut : undefined}
+            onOpenPublicAuth={onOpenPublicAuth}
+            onOpenSupplierModal={onOpenSupplierModal}
           />
         )}
       </BetaAuthGate>

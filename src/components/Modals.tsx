@@ -154,6 +154,7 @@ interface EstimateModalProps {
   pricingMode: 'hire' | 'buy';
   onChangePricingMode: (m: 'hire' | 'buy') => void;
   onExportBrief: () => void;
+  onRequestQuotes?: () => void;
 }
 
 export const EstimateModal: React.FC<EstimateModalProps> = ({
@@ -166,6 +167,7 @@ export const EstimateModal: React.FC<EstimateModalProps> = ({
   pricingMode,
   onChangePricingMode,
   onExportBrief,
+  onRequestQuotes,
 }) => {
   useEscapeKey(open, onClose);
   if (!open) return null;
@@ -261,10 +263,24 @@ export const EstimateModal: React.FC<EstimateModalProps> = ({
           <button className="secondary-btn" onClick={onClose}>
             Back to Studio
           </button>
-          <button className="primary-btn" onClick={onExportBrief}>
-            <FileText size={14} />
-            <span>Generate Production Brief &amp; PDF</span>
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {onRequestQuotes && (
+              <button
+                id="btn-request-supplier-quotes"
+                className="secondary-btn"
+                onClick={() => {
+                  onClose();
+                  onRequestQuotes();
+                }}
+              >
+                <span>Request Supplier Quotes</span>
+              </button>
+            )}
+            <button className="primary-btn" onClick={onExportBrief}>
+              <FileText size={14} />
+              <span>Generate Production Brief &amp; PDF</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

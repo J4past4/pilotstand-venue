@@ -1,18 +1,42 @@
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { extractClientIp } from './security.ts';
 
+export type AppAccessMode = 'public' | 'beta' | 'open';
+
+export type PublicUserType = 'exhibitor' | 'agency' | 'builder' | 'supplier' | 'other';
+
 export interface BetaUserRecord {
   email: string;
   name: string;
   role: 'admin' | 'beta';
   password: string;
   createdAt?: number;
+  company?: string;
+  userType?: PublicUserType;
+  upcomingEvent?: string;
+  standSize?: string;
+  marketingOptIn?: boolean;
+  source?: 'public-launch' | 'private-beta';
+}
+
+export interface PublicUserSummary {
+  email: string;
+  name: string;
+  role: 'admin' | 'beta';
+  createdAt?: number;
+  company?: string;
+  userType?: PublicUserType;
+  upcomingEvent?: string;
+  standSize?: string;
+  marketingOptIn?: boolean;
+  source?: 'public-launch' | 'private-beta';
 }
 
 export interface BetaSessionUser {
   email: string;
   name: string;
   role: 'admin' | 'beta';
+  company?: string;
 }
 
 interface SessionPayload extends BetaSessionUser {
@@ -53,10 +77,10 @@ export function hasDurableUserStore(env: NodeJS.ProcessEnv = process.env): boole
   return Boolean(getRedisConfig(env));
 }
 
-async function redisCommand<T = unknown>(
-  args: Array<string | number>,
+export async function redisPipeline(
+  commands: Array<Array<string | number>>,
   env: NodeJS.ProcessEnv = process.env
-): Promise<T | null> {
+): Promise<Array<{ result?: unknown; error?: string }> | null> {
   const cfg = getRedisConfig(env);
   if (!cfg) return null;
 
@@ -66,20 +90,79 @@ async function redisCommand<T = unknown>(
       Authorization: `Bearer ${cfg.token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify([args]),
+    body: JSON.stringify(commands),
   });
   if (!resp.ok) {
     throw new Error(`User store request failed (${resp.status})`);
   }
-  const results = (await resp.json()) as Array<{ result?: T; error?: string }>;
+  return (await resp.json()) as Array<{ result?: unknown; error?: string }>;
+}
+
+async function redisCommand<T = unknown>(
+  args: Array<string | number>,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<T | null> {
+  const results = await redisPipeline([args], env);
+  if (!results) return null;
   if (results[0]?.error) {
     throw new Error(results[0].error);
   }
-  return results[0]?.result ?? null;
+  return (results[0]?.result as T | undefined) ?? null;
 }
 
 function userRedisKey(email: string): string {
   return `zuki-expo:beta-user:${normalizeEmail(email)}`;
+}
+
+const VALID_USER_TYPES = new Set<PublicUserType>([
+  'exhibitor',
+  'agency',
+  'builder',
+  'supplier',
+  'other',
+]);
+
+function sanitizeUserType(raw: unknown): PublicUserType | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const cleaned = raw.trim().toLowerCase() as PublicUserType;
+  return VALID_USER_TYPES.has(cleaned) ? cleaned : undefined;
+}
+
+function parseStoredUserRecord(raw: string): BetaUserRecord | null {
+  try {
+    const parsed = JSON.parse(raw) as Partial<BetaUserRecord>;
+    if (
+      typeof parsed.email === 'string' &&
+      typeof parsed.name === 'string' &&
+      typeof parsed.password === 'string'
+    ) {
+      return {
+        email: normalizeEmail(parsed.email),
+        name: parsed.name,
+        role: parsed.role === 'admin' ? 'admin' : 'beta',
+        password: parsed.password,
+        createdAt: typeof parsed.createdAt === 'number' ? parsed.createdAt : undefined,
+        company: typeof parsed.company === 'string' && parsed.company.trim() ? parsed.company.trim() : undefined,
+        userType: sanitizeUserType(parsed.userType),
+        upcomingEvent:
+          typeof parsed.upcomingEvent === 'string' && parsed.upcomingEvent.trim()
+            ? parsed.upcomingEvent.trim()
+            : undefined,
+        standSize:
+          typeof parsed.standSize === 'string' && parsed.standSize.trim()
+            ? parsed.standSize.trim()
+            : undefined,
+        marketingOptIn: typeof parsed.marketingOptIn === 'boolean' ? parsed.marketingOptIn : undefined,
+        source:
+          parsed.source === 'public-launch' || parsed.source === 'private-beta'
+            ? parsed.source
+            : undefined,
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 async function getStoredRegisteredUser(
@@ -92,25 +175,7 @@ async function getStoredRegisteredUser(
   if (hasDurableUserStore(env)) {
     const raw = await redisCommand<string | null>(['GET', userRedisKey(normalized)], env);
     if (!raw || typeof raw !== 'string') return null;
-    try {
-      const parsed = JSON.parse(raw) as Partial<BetaUserRecord>;
-      if (
-        typeof parsed.email === 'string' &&
-        typeof parsed.name === 'string' &&
-        typeof parsed.password === 'string'
-      ) {
-        return {
-          email: normalizeEmail(parsed.email),
-          name: parsed.name,
-          role: parsed.role === 'admin' ? 'admin' : 'beta',
-          password: parsed.password,
-          createdAt: typeof parsed.createdAt === 'number' ? parsed.createdAt : undefined,
-        };
-      }
-    } catch {
-      return null;
-    }
-    return null;
+    return parseStoredUserRecord(raw);
   }
 
   return memoryRegisteredUsers.get(normalized) ?? null;
@@ -124,25 +189,60 @@ async function saveRegisteredUser(
   const toSave: BetaUserRecord = { ...record, email: normalized };
 
   if (hasDurableUserStore(env)) {
-    const cfg = getRedisConfig(env)!;
-    const resp = await fetch(`${cfg.url}/pipeline`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${cfg.token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify([
-        ['SET', userRedisKey(normalized), JSON.stringify(toSave)],
-        ['SADD', 'zuki-expo:beta-users', normalized],
-      ]),
-    });
-    if (!resp.ok) {
-      throw new Error(`Failed to persist beta user (${resp.status})`);
+    const cmds: Array<Array<string | number>> = [
+      ['SET', userRedisKey(normalized), JSON.stringify(toSave)],
+      ['SADD', 'zuki-expo:beta-users', normalized],
+    ];
+    if (toSave.source === 'public-launch') {
+      cmds.push(['SADD', 'zuki-expo:public-users', normalized]);
+    }
+    const results = await redisPipeline(cmds, env);
+    if (!results) {
+      throw new Error('Failed to persist user record');
     }
     return;
   }
 
   memoryRegisteredUsers.set(normalized, toSave);
+}
+
+/** Returns all registered user summaries (without password hashes), newest first. */
+export async function listRegisteredUsers(
+  env: NodeJS.ProcessEnv = process.env,
+  limit = 200
+): Promise<PublicUserSummary[]> {
+  const summaries: PublicUserSummary[] = [];
+
+  if (hasDurableUserStore(env)) {
+    const emails = await redisCommand<string[] | null>(['SMEMBERS', 'zuki-expo:beta-users'], env);
+    if (Array.isArray(emails) && emails.length > 0) {
+      const slice = emails.slice(0, limit);
+      const results = await redisPipeline(
+        slice.map((em) => ['GET', userRedisKey(em)]),
+        env
+      );
+      if (results) {
+        for (const r of results) {
+          if (typeof r.result === 'string') {
+            const parsed = parseStoredUserRecord(r.result);
+            if (parsed) {
+              const { password: _pw, ...safe } = parsed;
+              void _pw;
+              summaries.push(safe);
+            }
+          }
+        }
+      }
+    }
+  } else {
+    for (const rec of memoryRegisteredUsers.values()) {
+      const { password: _pw, ...safe } = rec;
+      void _pw;
+      summaries.push(safe);
+    }
+  }
+
+  return summaries.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, limit);
 }
 
 /** Test helper to reset in-memory registered users between unit tests */
@@ -210,12 +310,32 @@ export function parseInviteCodes(raw: string | undefined = process.env.BETA_INVI
     .filter(Boolean);
 }
 
+export function getAppAccessMode(env: NodeJS.ProcessEnv = process.env): AppAccessMode {
+  const explicit = (env.APP_ACCESS_MODE || '').trim().toLowerCase();
+  if (explicit === 'public') return 'public';
+  if (explicit === 'beta') return 'beta';
+  if (explicit === 'open') return 'open';
+  if ((env.PUBLIC_LAUNCH_ENABLED || '').trim().toLowerCase() === 'true') return 'public';
+  if (parseBetaUsers(env.BETA_USERS).length > 0 || parseInviteCodes(env.BETA_INVITE_CODE).length > 0) {
+    return 'beta';
+  }
+  return 'open';
+}
+
+export function isPublicLaunchMode(env: NodeJS.ProcessEnv = process.env): boolean {
+  return getAppAccessMode(env) === 'public';
+}
+
 export function isBetaSignupEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return parseInviteCodes(env.BETA_INVITE_CODE).length > 0;
+  return isPublicLaunchMode(env) || parseInviteCodes(env.BETA_INVITE_CODE).length > 0;
 }
 
 export function isBetaAuthEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return parseBetaUsers(env.BETA_USERS).length > 0 || isBetaSignupEnabled(env);
+  return (
+    isPublicLaunchMode(env) ||
+    parseBetaUsers(env.BETA_USERS).length > 0 ||
+    parseInviteCodes(env.BETA_INVITE_CODE).length > 0
+  );
 }
 
 function getSessionSecret(env: NodeJS.ProcessEnv = process.env): string {
@@ -224,7 +344,9 @@ function getSessionSecret(env: NodeJS.ProcessEnv = process.env): string {
   // Deterministic fallback derived from server auth config so sessions remain valid across
   // Vercel serverless invocations even if AUTH_SESSION_SECRET was not separately set.
   return createHash('sha256')
-    .update(`zuki-beta-fallback::${env.BETA_USERS || ''}::${env.BETA_INVITE_CODE || ''}`)
+    .update(
+      `zuki-beta-fallback::${env.APP_ACCESS_MODE || ''}::${env.BETA_USERS || ''}::${env.BETA_INVITE_CODE || ''}`
+    )
     .digest('hex');
 }
 
@@ -336,6 +458,7 @@ export async function authenticateBetaUserAsync(
     email: stored.email,
     name: stored.name,
     role: stored.role,
+    ...(stored.company ? { company: stored.company } : {}),
   };
 }
 
@@ -343,17 +466,31 @@ export interface SignupInput {
   name: string;
   email: string;
   password: string;
-  inviteCode: string;
+  inviteCode?: string;
+  company?: string;
+  userType?: string;
+  upcomingEvent?: string;
+  standSize?: string;
+  marketingOptIn?: boolean;
 }
 
 export type SignupResult =
   | { ok: true; user: BetaSessionUser }
   | { ok: false; status: number; error: string };
 
+function sanitizeShortText(value: unknown, maxLen: number): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const cleaned = value.trim().replace(/\s+/g, ' ');
+  if (!cleaned) return undefined;
+  return cleaned.slice(0, maxLen);
+}
+
 export async function registerBetaUser(
   input: SignupInput,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<SignupResult> {
+  const publicMode = isPublicLaunchMode(env);
+
   if (!isBetaSignupEnabled(env)) {
     return {
       ok: false,
@@ -375,7 +512,7 @@ export async function registerBetaUser(
   const name = input.name.trim().replace(/\s+/g, ' ');
   const email = normalizeEmail(input.email);
   const password = input.password;
-  const inviteCode = input.inviteCode.trim();
+  const inviteCode = (input.inviteCode || '').trim();
 
   if (name.length < 2 || name.length > 80) {
     return { ok: false, status: 400, error: 'Please enter your name (2–80 characters).' };
@@ -390,10 +527,10 @@ export async function registerBetaUser(
       error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`,
     };
   }
-  if (!verifyInviteCode(inviteCode, env)) {
+  if (!publicMode && !verifyInviteCode(inviteCode, env)) {
     return { ok: false, status: 403, error: 'Invalid beta invite code.' };
   }
-  if (!isEmailAllowedForSignup(email, env)) {
+  if (!publicMode && !isEmailAllowedForSignup(email, env)) {
     return {
       ok: false,
       status: 403,
@@ -419,12 +556,24 @@ export async function registerBetaUser(
     };
   }
 
+  const company = sanitizeShortText(input.company, 100);
+  const userType = sanitizeUserType(input.userType);
+  const upcomingEvent = sanitizeShortText(input.upcomingEvent, 120);
+  const standSize = sanitizeShortText(input.standSize, 40);
+  const marketingOptIn = typeof input.marketingOptIn === 'boolean' ? input.marketingOptIn : undefined;
+
   const record: BetaUserRecord = {
     email,
     name,
     role: 'beta',
     password: hashPassword(password),
     createdAt: Date.now(),
+    source: publicMode ? 'public-launch' : 'private-beta',
+    ...(company ? { company } : {}),
+    ...(userType ? { userType } : {}),
+    ...(upcomingEvent ? { upcomingEvent } : {}),
+    ...(standSize ? { standSize } : {}),
+    ...(marketingOptIn !== undefined ? { marketingOptIn } : {}),
   };
   await saveRegisteredUser(record, env);
 
@@ -434,6 +583,7 @@ export async function registerBetaUser(
       email: record.email,
       name: record.name,
       role: record.role,
+      ...(record.company ? { company: record.company } : {}),
     },
   };
 }
@@ -459,6 +609,7 @@ export function createSessionToken(
     email: user.email,
     name: user.name,
     role: user.role,
+    ...(user.company ? { company: user.company } : {}),
     iat: nowSec,
     exp: nowSec + SESSION_TTL_SECONDS,
   };
@@ -509,6 +660,7 @@ export function verifySessionToken(
       email: parsed.email,
       name: parsed.name,
       role: parsed.role,
+      ...(typeof parsed.company === 'string' && parsed.company ? { company: parsed.company } : {}),
     };
   } catch {
     return null;
@@ -694,4 +846,18 @@ export function requireBetaSession(
   }
   const user = getSessionFromHeaders(headers, env);
   return { authorized: Boolean(user), user };
+}
+
+/**
+ * Checks whether an incoming API request belongs to an authenticated admin user.
+ */
+export function requireAdminSession(
+  headers: Record<string, string | string[] | undefined>,
+  env: NodeJS.ProcessEnv = process.env
+): { authorized: boolean; user: BetaSessionUser | null } {
+  const user = getSessionFromHeaders(headers, env);
+  if (!user || user.role !== 'admin') {
+    return { authorized: false, user: null };
+  }
+  return { authorized: true, user };
 }

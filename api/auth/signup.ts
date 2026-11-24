@@ -26,6 +26,11 @@ interface SignupBody {
   email?: unknown;
   password?: unknown;
   inviteCode?: unknown;
+  company?: unknown;
+  userType?: unknown;
+  upcomingEvent?: unknown;
+  standSize?: unknown;
+  marketingOptIn?: unknown;
 }
 
 export default async function handler(req: VercelLikeRequest, res: VercelLikeResponse) {
@@ -62,9 +67,24 @@ export default async function handler(req: VercelLikeRequest, res: VercelLikeRes
   const email = typeof body?.email === 'string' ? body.email : '';
   const password = typeof body?.password === 'string' ? body.password : '';
   const inviteCode = typeof body?.inviteCode === 'string' ? body.inviteCode : '';
+  const company = typeof body?.company === 'string' ? body.company : undefined;
+  const userType = typeof body?.userType === 'string' ? body.userType : undefined;
+  const upcomingEvent = typeof body?.upcomingEvent === 'string' ? body.upcomingEvent : undefined;
+  const standSize = typeof body?.standSize === 'string' ? body.standSize : undefined;
+  const marketingOptIn = typeof body?.marketingOptIn === 'boolean' ? body.marketingOptIn : undefined;
 
   try {
-    const result = await registerBetaUser({ name, email, password, inviteCode });
+    const result = await registerBetaUser({
+      name,
+      email,
+      password,
+      inviteCode,
+      company,
+      userType,
+      upcomingEvent,
+      standSize,
+      marketingOptIn,
+    });
     if (!result.ok) {
       if (result.status === 403) {
         await recordLoginFailure(req.headers);
