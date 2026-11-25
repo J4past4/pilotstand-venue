@@ -41,6 +41,7 @@ interface SetupGuidePageProps {
   onComplete: (result: BrandKitSetupResult) => void;
   onBackToPlanner: () => void;
   onSkipDemo: () => void;
+  onGoToDashboard?: () => void;
 }
 
 const FLOOR_OPTIONS: { id: FloorMaterial; label: string; color: string }[] = [
@@ -71,6 +72,7 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
   onComplete,
   onBackToPlanner,
   onSkipDemo,
+  onGoToDashboard,
 }) => {
   const [step, setStep] = useState<number>(0);
 
@@ -232,7 +234,14 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
     <div className="setup-page" id="setup-guide-page">
       {/* Top Editorial Navigation Rail */}
       <header className="setup-header">
-        <div className="setup-brand">
+        <button
+          type="button"
+          className="setup-brand"
+          onClick={onGoToDashboard || onBackToPlanner}
+          title="PilotStand — Back to main dashboard"
+          aria-label="PilotStand — Back to main dashboard"
+          style={{ border: 0, background: 'transparent', cursor: 'pointer', textAlign: 'left', padding: 0 }}
+        >
           <div className="brand-mark" aria-hidden="true">
             <BrandMark size={24} />
           </div>
@@ -240,7 +249,7 @@ export const SetupGuidePage: React.FC<SetupGuidePageProps> = ({
             <span className="setup-brand-name">PilotStand</span>
             <span className="setup-brand-sub">Exhibition Setup Guide</span>
           </div>
-        </div>
+        </button>
 
         <nav className="setup-stepper" aria-label="Setup steps">
           {STEPS.map((s, idx) => {

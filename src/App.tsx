@@ -1564,6 +1564,10 @@ function App({
         }}
         onBackToPlanner={() => setShowSetupGuide(false)}
         onSkipDemo={handleSkipSetup}
+        onGoToDashboard={() => {
+          setShowSetupGuide(false);
+          setShowDashboard(true);
+        }}
       />
     );
   }
@@ -1719,6 +1723,15 @@ function App({
       <TopBar
         projectName={projectName}
         onChangeProjectName={setProjectName}
+        projects={projects}
+        activeProjectId={activeProjectId}
+        onSelectProject={handleOpenProject}
+        onNewProject={handleCreateBlankProject}
+        onOpenLoadModal={() => setShowProjectsModal(true)}
+        onGoToDashboard={() => {
+          setTourActive(false);
+          setShowDashboard(true);
+        }}
         viewMode={viewMode}
         onChangeViewMode={(mode) => {
           if (tourActive) setTourActive(false);

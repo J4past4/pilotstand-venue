@@ -4,6 +4,7 @@ import {
   BarChart3,
   Box,
   Calculator,
+  Check,
   ChevronDown,
   ClipboardPaste,
   Copy,
@@ -17,6 +18,8 @@ import {
   Moon,
   MoreHorizontal,
   Palette,
+  Pencil,
+  Plus,
   Redo2,
   Ruler,
   Scissors,
@@ -30,7 +33,7 @@ import {
   UserPlus,
   Users,
 } from 'lucide-react';
-import type { CurrencyCode, LightingPreset, StandConfig, ViewMode } from '../types/stand';
+import type { CurrencyCode, LightingPreset, SavedProject, StandConfig, ViewMode } from '../types/stand';
 import type { BetaUser } from './BetaAuthGate';
 import { formatMoney } from '../utils/pricing';
 import './header.css';
@@ -38,6 +41,12 @@ import './header.css';
 interface TopBarProps {
   projectName: string;
   onChangeProjectName: (name: string) => void;
+  projects?: SavedProject[];
+  activeProjectId?: string;
+  onSelectProject?: (project: SavedProject) => void;
+  onNewProject?: () => void;
+  onOpenLoadModal?: () => void;
+  onGoToDashboard?: () => void;
   viewMode: ViewMode;
   onChangeViewMode: (mode: ViewMode) => void;
   config: StandConfig;
@@ -78,6 +87,12 @@ const LIGHTING_OPTIONS: { id: LightingPreset; label: string; icon: React.ReactNo
 export const TopBar: React.FC<TopBarProps> = ({
   projectName,
   onChangeProjectName,
+  projects = [],
+  activeProjectId,
+  onSelectProject,
+  onNewProject,
+  onOpenLoadModal,
+  onGoToDashboard,
   viewMode,
   onChangeViewMode,
   config,
@@ -110,14 +125,19 @@ export const TopBar: React.FC<TopBarProps> = ({
 }) => {
   const estimateTotal = formatMoney(estimatedTotalGbp, currency);
   const [editingName, setEditingName] = useState(false);
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const viewMenuRef = useRef<HTMLDivElement | null>(null);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!viewMenuOpen && !moreMenuOpen) return;
+    if (!viewMenuOpen && !moreMenuOpen && !projectMenuOpen) return;
     const handleOutside = (e: MouseEvent) => {
+      if (projectMenuOpen && projectMenuRef.current && !projectMenuRef.current.contains(e.target as Node)) {
+        setProjectMenuOpen(false);
+      }
       if (viewMenuOpen && viewMenuRef.current && !viewMenuRef.current.contains(e.target as Node)) {
         setViewMenuOpen(false);
       }
@@ -127,6 +147,7 @@ export const TopBar: React.FC<TopBarProps> = ({
     };
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        setProjectMenuOpen(false);
         setViewMenuOpen(false);
         setMoreMenuOpen(false);
       }
@@ -137,17 +158,20 @@ export const TopBar: React.FC<TopBarProps> = ({
       window.removeEventListener('mousedown', handleOutside);
       window.removeEventListener('keydown', handleEsc);
     };
-  }, [viewMenuOpen, moreMenuOpen]);
+  }, [viewMenuOpen, moreMenuOpen, projectMenuOpen]);
+
+  const handleLogoClick = onGoToDashboard || onOpenProjects;
+  const recentProjects = [...projects].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
 
   return (
     <header className="studio-topbar" id="studio-topbar">
       <div className="topbar-global">
-        <a
+        <button
+          type="button"
           className="brand-lockup"
-          href="https://pilotstand.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          title="PilotStand — Free 3D Exhibition Stand Planner (pilotstand.com)"
+          onClick={handleLogoClick}
+          title="PilotStand — Back to main dashboard"
+          aria-label="PilotStand — Back to main dashboard"
         >
           <div className="brand-mark" aria-hidden="true">
             <BrandMark size={24} />
@@ -156,7 +180,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <span className="brand-wordmark">PilotStand</span>
             <span className="brand-submark">3D Exhibition Planner</span>
           </div>
-        </a>
+        </button>
         <div className="topbar-right">
           <button
             id="btn-brand-setup"
@@ -278,6 +302,34 @@ export const TopBar: React.FC<TopBarProps> = ({
             </button>
             {moreMenuOpen && (
               <div className="topbar-more-popover" role="menu" aria-label="More studio actions">
+                {onNewProject && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="topbar-more-item highlight"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      onNewProject();
+                    }}
+                  >
+                    <Plus size={14} />
+                    <span>New Project</span>
+                  </button>
+                )}
+                {onOpenLoadModal && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="topbar-more-item"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      onOpenLoadModal();
+                    }}
+                  >
+                    <FolderOpen size={14} />
+                    <span>Load Project</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   role="menuitem"
@@ -288,7 +340,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   }}
                 >
                   <FolderOpen size={14} />
-                  <span>Projects</span>
+                  <span>All Projects</span>
                 </button>
                 <button
                   type="button"
@@ -401,15 +453,153 @@ export const TopBar: React.FC<TopBarProps> = ({
               }}
             />
           ) : (
-            <button
-              id="project-name-btn"
-              className="project-name-btn"
-              onClick={() => setEditingName(true)}
-              title={`Rename project: ${projectName}`}
-            >
-              <span className="project-name-text">{projectName}</span>
-              <ChevronDown size={14} aria-hidden="true" />
-            </button>
+            <div className="project-switcher-wrap" ref={projectMenuRef}>
+              <button
+                id="project-name-btn"
+                type="button"
+                className={`project-name-btn ${projectMenuOpen ? 'active' : ''}`}
+                onClick={() => setProjectMenuOpen((v) => !v)}
+                onDoubleClick={() => {
+                  setProjectMenuOpen(false);
+                  setEditingName(true);
+                }}
+                aria-expanded={projectMenuOpen}
+                aria-haspopup="menu"
+                title={`${projectName} — Click for project menu, double-click to rename`}
+              >
+                <span className="project-name-text">{projectName}</span>
+                <ChevronDown size={14} aria-hidden="true" />
+              </button>
+
+              {projectMenuOpen && (
+                <div className="project-menu-popover" role="menu" aria-label="Project actions">
+                  {onNewProject && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="topbar-more-item highlight"
+                      onClick={() => {
+                        setProjectMenuOpen(false);
+                        onNewProject();
+                      }}
+                    >
+                      <Plus size={14} />
+                      <span>New Blank Project</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="topbar-more-item"
+                    onClick={() => {
+                      setProjectMenuOpen(false);
+                      onOpenTemplates();
+                    }}
+                  >
+                    <LayoutTemplate size={14} />
+                    <span>New from Template…</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="topbar-more-item"
+                    onClick={() => {
+                      setProjectMenuOpen(false);
+                      if (onOpenLoadModal) {
+                        onOpenLoadModal();
+                      } else {
+                        onOpenProjects();
+                      }
+                    }}
+                  >
+                    <FolderOpen size={14} />
+                    <span>Load / Import Project…</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="topbar-more-item"
+                    onClick={() => {
+                      setProjectMenuOpen(false);
+                      setEditingName(true);
+                    }}
+                  >
+                    <Pencil size={14} />
+                    <span>Rename Current Project</span>
+                  </button>
+
+                  {recentProjects.length > 0 && onSelectProject && (
+                    <>
+                      <div className="topbar-more-divider" />
+                      <div className="project-menu-section-label">Switch Project</div>
+                      {recentProjects.map((proj) => {
+                        const isActive = proj.id === activeProjectId;
+                        return (
+                          <button
+                            key={proj.id}
+                            type="button"
+                            role="menuitem"
+                            className={`topbar-more-item ${isActive ? 'active-project' : ''}`}
+                            onClick={() => {
+                              setProjectMenuOpen(false);
+                              if (!isActive) onSelectProject(proj);
+                            }}
+                          >
+                            <span className="project-menu-item-check">
+                              {isActive ? <Check size={13} /> : null}
+                            </span>
+                            <span className="project-menu-item-name">{proj.name}</span>
+                          </button>
+                        );
+                      })}
+                    </>
+                  )}
+
+                  <div className="topbar-more-divider" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="topbar-more-item"
+                    onClick={() => {
+                      setProjectMenuOpen(false);
+                      onOpenProjects();
+                    }}
+                  >
+                    <FolderOpen size={14} />
+                    <span>All Projects Dashboard</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {(onNewProject || onOpenLoadModal) && (
+            <div className="topbar-project-actions" role="group" aria-label="Project actions">
+              {onNewProject && (
+                <button
+                  id="btn-new-project"
+                  type="button"
+                  className="topbar-project-btn primary"
+                  onClick={onNewProject}
+                  title="Start a new blank exhibition stand project"
+                >
+                  <Plus size={13} />
+                  <span>New Project</span>
+                </button>
+              )}
+              {onOpenLoadModal && (
+                <button
+                  id="btn-load-project"
+                  type="button"
+                  className="topbar-project-btn"
+                  onClick={onOpenLoadModal}
+                  title="Load a saved project or import .JSON"
+                >
+                  <FolderOpen size={13} />
+                  <span>Load</span>
+                </button>
+              )}
+            </div>
           )}
 
           <div className="topbar-icon-group">
