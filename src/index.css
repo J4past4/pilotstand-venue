@@ -1270,11 +1270,15 @@ select {
   width: 100%;
   height: 100%;
   position: relative;
+  touch-action: none;
+  user-select: none;
 }
 
 .viewport-canvas-host canvas {
   display: block;
   outline: none;
+  touch-action: none;
+  user-select: none;
 }
 
 .viewport-overlay-labels {
@@ -1455,6 +1459,19 @@ select {
 .viewport-camera-dock button:hover {
   background: var(--surface-2);
   color: var(--brand-primary);
+}
+
+.viewport-camera-dock button.nav-mode-btn.active {
+  background: var(--brand-primary);
+  color: #ffffff;
+}
+
+.topbar-icon-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border-subtle);
+  margin: 0 2px;
+  flex-shrink: 0;
 }
 
 .dock-divider {

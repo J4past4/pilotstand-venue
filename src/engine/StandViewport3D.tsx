@@ -17,6 +17,7 @@ import type {
   StandConfig,
   StandItem,
   ViewMode,
+  ViewportNavMode,
 } from '../types/stand';
 import { buildBoothShell, buildScaleFigures, buildStandItemMesh } from './meshFactory';
 import { buildCustomModelMesh } from './modelLoader';
@@ -31,6 +32,8 @@ export interface StandViewportHandle {
     target: [number, number, number],
     fov?: number
   ) => void;
+  zoomBy: (factor: number) => void;
+  frameSelected: () => void;
   captureSnapshot: (width?: number, height?: number) => string | null;
 }
 
@@ -41,6 +44,7 @@ interface StandViewportProps {
   selectedItemId: string | null;
   selectedShellWall: ShellWallSide | null;
   viewMode: ViewMode;
+  navMode?: ViewportNavMode;
   compliance: ComplianceReport;
   paintAssetId: string | null;
   tourActive?: boolean;
@@ -163,6 +167,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       selectedItemId,
       selectedShellWall,
       viewMode,
+      navMode = 'select',
       compliance,
       paintAssetId,
       tourActive,
@@ -198,8 +203,10 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
     const [dropHint, setDropHint] = useState<string | null>(null);
     const [wallCollision, setWallCollision] = useState<WallCollisionFeedback | null>(null);
     const [webglContextLost, setWebglContextLost] = useState(false);
+    const [spacePanning, setSpacePanning] = useState(false);
     const lastLabelsKeyRef = useRef<string>('');
     const isSoftwareWebGLRef = useRef<boolean>(false);
+    const effectiveNavMode: ViewportNavMode = spacePanning ? 'pan' : navMode;
 
     // Keep latest props accessible inside pointer/animation closures
     const propsRef = useRef({
@@ -207,6 +214,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       items,
       selectedItemId,
       viewMode,
+      navMode: effectiveNavMode,
       paintAssetId,
       tourActive,
       onUserInterruptTour,
@@ -220,6 +228,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       items,
       selectedItemId,
       viewMode,
+      navMode: effectiveNavMode,
       paintAssetId,
       tourActive,
       onUserInterruptTour,
@@ -267,80 +276,179 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       pointerDownY: 0,
     });
 
-    const applyCameraPreset = useCallback((preset: CameraPreset, instant = false) => {
-      const { config: cfg } = propsRef.current;
-      const maxSpan = Math.max(cfg.width, cfg.depth, 3.2);
-      const persp = perspCamRef.current;
-      const ortho = orthoCamRef.current;
+    const syncControlsInteraction = useCallback((mode: ViewportNavMode, isTop2D: boolean) => {
       const controls = controlsRef.current;
-      if (!persp || !ortho || !controls) return;
-
-      if (preset === 'top') {
-        const container = containerRef.current;
-        const aspect = container
-          ? container.clientWidth / Math.max(1, container.clientHeight)
-          : 1.6;
-        const halfH = Math.max(cfg.depth, cfg.width / aspect) * 0.78 + 0.9;
-        ortho.left = -halfH * aspect;
-        ortho.right = halfH * aspect;
-        ortho.top = halfH;
-        ortho.bottom = -halfH;
-        ortho.zoom = 1;
-        ortho.position.set(0, 14, 0.001);
-        ortho.lookAt(0, 0, 0);
-        ortho.updateProjectionMatrix();
-        activeCamRef.current = ortho;
-        controls.object = ortho;
-        controls.target.set(0, 0, 0);
+      if (!controls) return;
+      controls.enablePan = true;
+      controls.screenSpacePanning = true;
+      if (isTop2D) {
         controls.enableRotate = false;
-        controls.screenSpacePanning = true;
+        controls.mouseButtons = {
+          LEFT: THREE.MOUSE.PAN,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.PAN,
+        };
+      } else if (mode === 'pan') {
+        controls.enableRotate = true;
+        controls.mouseButtons = {
+          LEFT: THREE.MOUSE.PAN,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.ROTATE,
+        };
+      } else {
+        controls.enableRotate = true;
+        controls.mouseButtons = {
+          LEFT: THREE.MOUSE.ROTATE,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.PAN,
+        };
+      }
+      controls.update();
+    }, []);
+
+    const applyCameraPreset = useCallback(
+      (preset: CameraPreset, instant = false) => {
+        const { config: cfg, navMode: activeNav } = propsRef.current;
+        const maxSpan = Math.max(cfg.width, cfg.depth, 3.2);
+        const persp = perspCamRef.current;
+        const ortho = orthoCamRef.current;
+        const controls = controlsRef.current;
+        if (!persp || !ortho || !controls) return;
+
+        if (preset === 'top') {
+          const container = containerRef.current;
+          const aspect = container
+            ? container.clientWidth / Math.max(1, container.clientHeight)
+            : 1.6;
+          const halfH = Math.max(cfg.depth, cfg.width / aspect) * 0.78 + 0.9;
+          ortho.left = -halfH * aspect;
+          ortho.right = halfH * aspect;
+          ortho.top = halfH;
+          ortho.bottom = -halfH;
+          ortho.zoom = 1;
+          ortho.position.set(0, 14, 0.001);
+          ortho.lookAt(0, 0, 0);
+          ortho.updateProjectionMatrix();
+          activeCamRef.current = ortho;
+          controls.object = ortho;
+          controls.target.set(0, 0, 0);
+          syncControlsInteraction(activeNav, true);
+          cameraAnimRef.current.active = false;
+          return;
+        }
+
+        activeCamRef.current = persp;
+        controls.object = persp;
+        syncControlsInteraction(activeNav, false);
+        if (Math.abs(persp.fov - 42) > 0.01) {
+          persp.fov = 42;
+          persp.updateProjectionMatrix();
+        }
+
+        const targetPos = new THREE.Vector3();
+        const targetLook = new THREE.Vector3(0, 1.05, 0);
+
+        if (preset === 'isometric') {
+          if (cfg.openSides === 1 && cfg.showShellWalls) {
+            targetPos.set(maxSpan * 0.36, maxSpan * 0.78, maxSpan * 1.56);
+          } else {
+            targetPos.set(maxSpan * 1.15, maxSpan * 0.86, maxSpan * 1.28);
+          }
+        } else if (preset === 'front') {
+          targetPos.set(0, 1.65, maxSpan * 1.55);
+        } else if (preset === 'back') {
+          targetPos.set(0, 1.85, -maxSpan * 1.55);
+        } else if (preset === 'left') {
+          targetPos.set(-maxSpan * 1.5, 1.85, maxSpan * 0.35);
+        } else if (preset === 'right') {
+          targetPos.set(maxSpan * 1.5, 1.85, maxSpan * 0.35);
+        } else if (preset === 'eye-level') {
+          targetPos.set(cfg.width * 0.12, 1.65, cfg.depth / 2 + Math.max(2.3, cfg.width * 0.48));
+          targetLook.set(0, 1.32, -cfg.depth * 0.15);
+        }
+
+        if (instant) {
+          persp.position.copy(targetPos);
+          controls.target.copy(targetLook);
+          controls.update();
+          cameraAnimRef.current.active = false;
+        } else {
+          cameraAnimRef.current = {
+            active: true,
+            targetPos,
+            targetLook,
+          };
+        }
+      },
+      [syncControlsInteraction]
+    );
+
+    const zoomBy = useCallback((factor: number) => {
+      const cam = activeCamRef.current;
+      const controls = controlsRef.current;
+      if (!cam || !controls) return;
+      cameraAnimRef.current.active = false;
+
+      if (cam instanceof THREE.OrthographicCamera) {
+        cam.zoom = Math.max(0.35, Math.min(6, cam.zoom / factor));
+        cam.updateProjectionMatrix();
         controls.update();
-        cameraAnimRef.current.active = false;
         return;
       }
 
-      activeCamRef.current = persp;
-      controls.object = persp;
-      controls.enableRotate = true;
-      controls.screenSpacePanning = false;
-      if (Math.abs(persp.fov - 42) > 0.01) {
-        persp.fov = 42;
-        persp.updateProjectionMatrix();
-      }
-
-      const targetPos = new THREE.Vector3();
-      const targetLook = new THREE.Vector3(0, 1.05, 0);
-
-      if (preset === 'isometric') {
-        if (cfg.openSides === 1 && cfg.showShellWalls) {
-          targetPos.set(maxSpan * 0.36, maxSpan * 0.78, maxSpan * 1.56);
-        } else {
-          targetPos.set(maxSpan * 1.15, maxSpan * 0.86, maxSpan * 1.28);
+      if (cam instanceof THREE.PerspectiveCamera) {
+        const offset = cam.position.clone().sub(controls.target);
+        const curDist = offset.length();
+        const nextDist = Math.max(controls.minDistance, Math.min(controls.maxDistance, curDist * factor));
+        if (curDist > 0.001) {
+          offset.multiplyScalar(nextDist / curDist);
+          cam.position.copy(controls.target).add(offset);
+          controls.update();
         }
-      } else if (preset === 'front') {
-        targetPos.set(0, 1.65, maxSpan * 1.55);
-      } else if (preset === 'left') {
-        targetPos.set(-maxSpan * 1.5, 1.85, maxSpan * 0.35);
-      } else if (preset === 'right') {
-        targetPos.set(maxSpan * 1.5, 1.85, maxSpan * 0.35);
-      } else if (preset === 'eye-level') {
-        targetPos.set(cfg.width * 0.12, 1.65, cfg.depth / 2 + Math.max(2.3, cfg.width * 0.48));
-        targetLook.set(0, 1.32, -cfg.depth * 0.15);
       }
+    }, []);
 
-      if (instant) {
-        persp.position.copy(targetPos);
-        controls.target.copy(targetLook);
-        controls.update();
-        cameraAnimRef.current.active = false;
-      } else {
+    const frameTargetItemOrStand = useCallback(
+      (explicitItemId?: string | null) => {
+        const { items: curItems, selectedItemId: selId, viewMode: curView } = propsRef.current;
+        const targetId = explicitItemId !== undefined ? explicitItemId : selId;
+        const item = targetId ? curItems.find((i) => i.id === targetId) : null;
+        if (!item) {
+          applyCameraPreset(curView === '2d' ? 'top' : curView === 'eye-level' ? 'eye-level' : 'isometric');
+          return;
+        }
+
+        const controls = controlsRef.current;
+        const persp = perspCamRef.current;
+        const ortho = orthoCamRef.current;
+        if (!controls || !persp || !ortho) return;
+
+        if (activeCamRef.current === ortho) {
+          ortho.position.set(item.x, 14, item.z + 0.001);
+          controls.target.set(item.x, 0, item.z);
+          ortho.zoom = Math.max(1.2, Math.min(3.5, 4 / Math.max(item.dims.w, item.dims.d, 1.2)));
+          ortho.updateProjectionMatrix();
+          controls.update();
+          return;
+        }
+
+        const span = Math.max(item.dims.w, item.dims.h, item.dims.d, 1.1);
+        const centerY = item.y + item.dims.h * 0.45;
+        const look = new THREE.Vector3(item.x, centerY, item.z);
+        const dir = persp.position.clone().sub(controls.target);
+        if (dir.lengthSq() < 0.01) dir.set(1, 0.75, 1.1);
+        dir.normalize();
+        const dist = Math.max(2.2, span * 2.4);
+        const targetPos = look.clone().add(dir.multiplyScalar(dist));
+        targetPos.y = Math.max(0.85, targetPos.y);
         cameraAnimRef.current = {
           active: true,
           targetPos,
-          targetLook,
+          targetLook: look,
         };
-      }
-    }, []);
+      },
+      [applyCameraPreset]
+    );
 
     useImperativeHandle(
       ref,
@@ -357,8 +465,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           if (!persp || !controls) return;
           activeCamRef.current = persp;
           controls.object = persp;
-          controls.enableRotate = true;
-          controls.screenSpacePanning = false;
+          syncControlsInteraction(propsRef.current.navMode, false);
           cameraAnimRef.current.active = false;
           if (typeof fov === 'number' && Math.abs(persp.fov - fov) > 0.01) {
             persp.fov = fov;
@@ -368,6 +475,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           controls.target.set(target[0], target[1], target[2]);
           controls.update();
         },
+        zoomBy,
+        frameSelected: () => frameTargetItemOrStand(),
         captureSnapshot: (width = 1600, height = 1000) => {
           const renderer = rendererRef.current;
           const scene = sceneRef.current;
@@ -402,7 +511,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           return dataUrl;
         },
       }),
-      [applyCameraPreset]
+      [applyCameraPreset, syncControlsInteraction, zoomBy, frameTargetItemOrStand]
     );
 
     // Initialize Three.js Scene once
@@ -472,9 +581,15 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       const controls = new OrbitControls(persp, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.08;
+      controls.enablePan = true;
+      controls.screenSpacePanning = true;
+      controls.zoomToCursor = true;
+      controls.panSpeed = 0.9;
+      controls.rotateSpeed = 0.85;
+      controls.zoomSpeed = 1.05;
       controls.maxPolarAngle = Math.PI / 2 - 0.03;
-      controls.minDistance = 1.4;
-      controls.maxDistance = 24;
+      controls.minDistance = 1.1;
+      controls.maxDistance = 28;
       controls.target.set(0, 1.05, 0);
       controls.update();
       controlsRef.current = controls;
@@ -583,15 +698,22 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
       const onPointerDown = (ev: PointerEvent) => {
         if (ev.button !== 0) return;
-        updatePointerNDC(ev);
-        const picked = findPickedTarget();
         const {
+          navMode: activeNav,
           paintAssetId: activePaint,
           items: curItems,
           onSelectItem: selectItem,
           onSelectShellWall: selectShell,
           onPaintSurface: paintSurface,
         } = propsRef.current;
+
+        // In Orbit or Pan navigation mode (or Shift+drag), let OrbitControls handle pointer directly
+        if (!activePaint && (activeNav === 'orbit' || activeNav === 'pan' || ev.shiftKey)) {
+          return;
+        }
+
+        updatePointerNDC(ev);
+        const picked = findPickedTarget();
 
         if (activePaint) {
           if (picked?.kind === 'item' && picked.surfaceId) {
@@ -709,7 +831,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           return;
         }
 
-        // Hover feedback in Paint Mode or default cursor
+        // Hover feedback in Paint Mode, Navigation Mode, or default cursor
         if (propsRef.current.paintAssetId) {
           const picked = findPickedTarget();
           if (picked?.kind === 'item' && picked.surfaceId) {
@@ -722,11 +844,34 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
             renderer.domElement.style.cursor = 'not-allowed';
             setHoverPaintLabel('Hover over any wall, counter, banner, or screen');
           }
+        } else if (propsRef.current.navMode === 'pan' || propsRef.current.viewMode === '2d') {
+          setHoverPaintLabel(null);
+          if (propsRef.current.navMode === 'pan') {
+            renderer.domElement.style.cursor = 'grab';
+          } else {
+            const picked = findPickedTarget();
+            renderer.domElement.style.cursor =
+              picked?.kind === 'item' ? 'grab' : picked?.kind === 'shell' ? 'pointer' : 'move';
+          }
+        } else if (propsRef.current.navMode === 'orbit') {
+          setHoverPaintLabel(null);
+          renderer.domElement.style.cursor = 'grab';
         } else {
           setHoverPaintLabel(null);
           const picked = findPickedTarget();
           renderer.domElement.style.cursor =
             picked?.kind === 'item' ? 'grab' : picked?.kind === 'shell' ? 'pointer' : 'default';
+        }
+      };
+
+      const onDoubleClick = (ev: MouseEvent) => {
+        if (propsRef.current.paintAssetId) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointerNDC.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+        pointerNDC.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+        const picked = findPickedTarget();
+        if (picked?.kind === 'item') {
+          frameTargetItemOrStand(picked.itemId);
         }
       };
 
@@ -779,6 +924,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
       renderer.domElement.addEventListener('pointerdown', onPointerDown);
       renderer.domElement.addEventListener('pointermove', onPointerMove);
+      renderer.domElement.addEventListener('dblclick', onDoubleClick);
       renderer.domElement.addEventListener('webglcontextlost', onContextLost);
       renderer.domElement.addEventListener('webglcontextrestored', onContextRestored);
       window.addEventListener('pointerup', onPointerUp);
@@ -829,6 +975,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         }
 
         controls.update();
+        if (activeCamRef.current === persp && controls.target.y < 0) {
+          controls.target.y = 0;
+        }
         const cam = activeCamRef.current || persp;
         const renderStart = performance.now();
         renderer.render(scene, cam);
@@ -914,6 +1063,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         ro.disconnect();
         renderer.domElement.removeEventListener('pointerdown', onPointerDown);
         renderer.domElement.removeEventListener('pointermove', onPointerMove);
+        renderer.domElement.removeEventListener('dblclick', onDoubleClick);
         renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
         renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored);
         window.removeEventListener('pointerup', onPointerUp);
@@ -921,6 +1071,39 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         controls.dispose();
         envRT?.dispose();
         renderer.dispose();
+      };
+    }, [frameTargetItemOrStand]);
+
+    // Sync OrbitControls mouse bindings whenever navMode or viewMode changes
+    useEffect(() => {
+      syncControlsInteraction(effectiveNavMode, viewMode === '2d');
+    }, [effectiveNavMode, viewMode, syncControlsInteraction]);
+
+    // Hold Space for temporary Pan mode (like CAD / Figma)
+    useEffect(() => {
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.code !== 'Space' || e.repeat) return;
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || target?.isContentEditable) {
+          return;
+        }
+        e.preventDefault();
+        setSpacePanning(true);
+      };
+      const onKeyUp = (e: KeyboardEvent) => {
+        if (e.code === 'Space') {
+          setSpacePanning(false);
+        }
+      };
+      const onBlur = () => setSpacePanning(false);
+      window.addEventListener('keydown', onKeyDown);
+      window.addEventListener('keyup', onKeyUp);
+      window.addEventListener('blur', onBlur);
+      return () => {
+        window.removeEventListener('keydown', onKeyDown);
+        window.removeEventListener('keyup', onKeyUp);
+        window.removeEventListener('blur', onBlur);
       };
     }, []);
 

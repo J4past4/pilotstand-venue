@@ -4,10 +4,16 @@ import {
   Camera,
   CheckCircle2,
   Compass,
+  Focus,
+  Hand,
   Maximize2,
+  MousePointer2,
+  Orbit,
   Play,
   RotateCcw,
   Settings2,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { CATALOG_MAP } from './data/catalog';
 import { BUILTIN_BRAND_ASSETS } from './data/palettes';
@@ -47,6 +53,15 @@ import { LaunchAdminModal } from './components/LaunchAdminModal';
 import { applyAgentActions } from './agent/actionExecutor';
 import { sendStandAgentPrompt } from './agent/agentClient';
 import { findNearestAllowedPosition } from './utils/wallCollision';
+import {
+  canRedoHistory,
+  canUndoHistory,
+  createHistoryState,
+  pushHistoryState,
+  redoHistoryState,
+  undoHistoryState,
+  type EditorHistoryState,
+} from './utils/editorHistory';
 import type { AgentAudioPayload, AgentChatMessage, AgentHistoryTurn } from './agent/types';
 import type {
   AssetPrimitive,
@@ -64,6 +79,7 @@ import type {
   StandTemplate,
   SurfaceArtwork,
   ViewMode,
+  ViewportNavMode,
 } from './types/stand';
 import {
   applyDocumentFavicon,
@@ -228,21 +244,25 @@ function App({
     applyDocumentFavicon(config.faviconDataUrl);
   }, [config.displayFont, config.bodyFont, config.faviconDataUrl]);
 
-  // History stack
-  const [history, setHistory] = useState<HistorySnapshot[]>(() => [
-    cloneSnapshot(activeProj.config, activeProj.items),
-  ]);
-  const [historyIdx, setHistoryIdx] = useState<number>(0);
+  // Atomic undo/redo history stack
+  const [historyState, setHistoryState] = useState<EditorHistoryState<HistorySnapshot>>(() =>
+    createHistoryState(cloneSnapshot(activeProj.config, activeProj.items))
+  );
+  const canUndo = canUndoHistory(historyState);
+  const canRedo = canRedoHistory(historyState);
 
   // UI & selection state
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('catalog');
   const [railPanelOpen, setRailPanelOpen] = useState(false);
   const [standDetailsOpen, setStandDetailsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('3d');
+  const [viewportNavMode, setViewportNavMode] = useState<ViewportNavMode>('select');
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [selectedSurfaceId, setSelectedSurfaceId] = useState<string | null>(null);
   const [selectedShellWall, setSelectedShellWall] = useState<ShellWallSide | null>(null);
   const [paintAssetId, setPaintAssetId] = useState<string | null>(null);
+  const [clipboardItem, setClipboardItem] = useState<StandItem | null>(null);
+  const pasteCountRef = useRef<number>(0);
   const [currency, setCurrency] = useState<CurrencyCode>('GBP');
   const [pricingMode, setPricingMode] = useState<'hire' | 'buy'>('hire');
 
@@ -296,34 +316,38 @@ function App({
     [config, items, pricingMode]
   );
 
-  // Commit state to undo stack
-  const pushHistory = useCallback(
-    (nextConfig: StandConfig, nextItems: StandItem[]) => {
-      setHistory((prev) => {
-        const sliced = prev.slice(0, historyIdx + 1);
-        const updated = [...sliced, cloneSnapshot(nextConfig, nextItems)].slice(-40);
-        setHistoryIdx(updated.length - 1);
-        return updated;
-      });
-    },
-    [historyIdx]
-  );
+  // Reset or commit state to atomic undo stack
+  const resetHistory = useCallback((nextConfig: StandConfig, nextItems: StandItem[]) => {
+    setHistoryState(createHistoryState(cloneSnapshot(nextConfig, nextItems)));
+  }, []);
+
+  const pushHistory = useCallback((nextConfig: StandConfig, nextItems: StandItem[]) => {
+    setHistoryState((prev) => pushHistoryState(prev, cloneSnapshot(nextConfig, nextItems), { maxEntries: 50 }));
+  }, []);
 
   const handleUndo = useCallback(() => {
-    if (historyIdx <= 0) return;
-    const target = history[historyIdx - 1];
-    setHistoryIdx(historyIdx - 1);
-    setConfig(JSON.parse(JSON.stringify(target.config)));
-    setItems(JSON.parse(JSON.stringify(target.items)));
-  }, [history, historyIdx]);
+    setHistoryState((prev) => {
+      const { nextState, snapshot } = undoHistoryState(prev);
+      if (!snapshot) return prev;
+      setConfig(snapshot.config);
+      setItems(snapshot.items);
+      setSelectedItemId((cur) => (cur && snapshot.items.some((i) => i.id === cur) ? cur : null));
+      notify('Undid last change');
+      return nextState;
+    });
+  }, [notify]);
 
   const handleRedo = useCallback(() => {
-    if (historyIdx >= history.length - 1) return;
-    const target = history[historyIdx + 1];
-    setHistoryIdx(historyIdx + 1);
-    setConfig(JSON.parse(JSON.stringify(target.config)));
-    setItems(JSON.parse(JSON.stringify(target.items)));
-  }, [history, historyIdx]);
+    setHistoryState((prev) => {
+      const { nextState, snapshot } = redoHistoryState(prev);
+      if (!snapshot) return prev;
+      setConfig(snapshot.config);
+      setItems(snapshot.items);
+      setSelectedItemId((cur) => (cur && snapshot.items.some((i) => i.id === cur) ? cur : null));
+      notify('Redid change');
+      return nextState;
+    });
+  }, [notify]);
 
   // Persist any project-list mutations (create, duplicate, rename, delete) to localStorage
   useEffect(() => {
@@ -733,6 +757,68 @@ function App({
     [items, selectedItemId, config, pushHistory, notify]
   );
 
+  const copySelectedItem = useCallback(() => {
+    if (!selectedItemId) return;
+    const src = items.find((i) => i.id === selectedItemId);
+    if (!src) return;
+    setClipboardItem(JSON.parse(JSON.stringify(src)) as StandItem);
+    pasteCountRef.current = 0;
+    notify(`Copied ${src.name}`);
+  }, [items, selectedItemId, notify]);
+
+  const cutSelectedItem = useCallback(() => {
+    if (!selectedItemId) return;
+    const src = items.find((i) => i.id === selectedItemId);
+    if (!src) return;
+    setClipboardItem(JSON.parse(JSON.stringify(src)) as StandItem);
+    pasteCountRef.current = 0;
+    const nextItems = items.filter((i) => i.id !== selectedItemId);
+    setItems(nextItems);
+    setSelectedItemId(null);
+    setSelectedSurfaceId(null);
+    pushHistory(config, nextItems);
+    notify(`Cut ${src.name}`);
+  }, [items, selectedItemId, config, pushHistory, notify]);
+
+  const pasteClipboardItem = useCallback(() => {
+    if (!clipboardItem) return;
+    pasteCountRef.current += 1;
+    const step = pasteCountRef.current;
+    const copy: StandItem = {
+      ...(JSON.parse(JSON.stringify(clipboardItem)) as StandItem),
+      id: createItemId(clipboardItem.catalogId),
+      x: Number((clipboardItem.x + 0.35 * step).toFixed(2)),
+      z: Number((clipboardItem.z + 0.25 * step).toFixed(2)),
+      locked: false,
+    };
+    const resolved = findNearestAllowedPosition(copy, copy.x, copy.z, config, items);
+    copy.x = resolved.x;
+    copy.z = resolved.z;
+    const nextItems = [...items, copy];
+    setItems(nextItems);
+    setSelectedItemId(copy.id);
+    setSelectedShellWall(null);
+    pushHistory(config, nextItems);
+    notify(`Pasted ${clipboardItem.name}`);
+  }, [clipboardItem, config, items, pushHistory, notify]);
+
+  const nudgeSelectedItem = useCallback(
+    (dx: number, dz: number) => {
+      if (!selectedItemId) return;
+      const cur = items.find((i) => i.id === selectedItemId);
+      if (!cur || cur.locked) return;
+      updateItem(
+        cur.id,
+        {
+          x: Number((cur.x + dx).toFixed(3)),
+          z: Number((cur.z + dz).toFixed(3)),
+        },
+        true
+      );
+    },
+    [selectedItemId, items, updateItem]
+  );
+
   const handleUploadAssets = useCallback(
     async (files: FileList) => {
       const uploaded: BrandAsset[] = [];
@@ -960,9 +1046,11 @@ function App({
     [pushHistory, notify]
   );
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts (scoped to active main 3D editor, isolated from modals & Custom Asset Builder)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (showDashboard || showSetupGuide || showAssetBuilder || showAssetLibrary) return;
+
       if (e.key === 'Escape') {
         if (showExportModal) {
           setShowExportModal(false);
@@ -980,8 +1068,20 @@ function App({
           setShowTemplatesModal(false);
           return;
         }
+        if (showQuoteRequestModal) {
+          setShowQuoteRequestModal(false);
+          return;
+        }
+        if (showAdminInsightsModal) {
+          setShowAdminInsightsModal(false);
+          return;
+        }
         if (showAgentDrawer) {
           setShowAgentDrawer(false);
+          return;
+        }
+        if (viewportNavMode !== 'select') {
+          setViewportNavMode('select');
           return;
         }
         setRailPanelOpen(false);
@@ -992,43 +1092,126 @@ function App({
         return;
       }
 
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (
+        showExportModal ||
+        showEstimateModal ||
+        showProjectsModal ||
+        showTemplatesModal ||
+        showQuoteRequestModal ||
+        showAdminInsightsModal
+      ) {
+        return;
+      }
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
+        return;
+      }
+
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+
+      if (mod && key === 'z') {
         e.preventDefault();
         if (e.shiftKey) handleRedo();
         else handleUndo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      } else if (mod && key === 'y') {
         e.preventDefault();
         handleRedo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && selectedItemId) {
+      } else if (mod && key === 'c' && selectedItemId) {
+        e.preventDefault();
+        copySelectedItem();
+      } else if (mod && key === 'x' && selectedItemId) {
+        e.preventDefault();
+        cutSelectedItem();
+      } else if (mod && key === 'v' && clipboardItem) {
+        e.preventDefault();
+        pasteClipboardItem();
+      } else if (mod && key === 'd' && selectedItemId) {
         e.preventDefault();
         duplicateItem(selectedItemId);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedItemId) {
         e.preventDefault();
         deleteItem(selectedItemId);
-      } else if (e.key.toLowerCase() === 'r' && selectedItemId) {
+      } else if (!mod && key === 'r' && selectedItemId) {
+        e.preventDefault();
         const cur = items.find((i) => i.id === selectedItemId);
-        if (cur) {
-          updateItem(cur.id, { rotationY: (cur.rotationY + 90) % 360 }, true);
+        if (cur && !cur.locked) {
+          const delta = e.shiftKey ? -90 : 90;
+          updateItem(cur.id, { rotationY: (cur.rotationY + delta + 360) % 360 }, true);
         }
+      } else if (!mod && (e.key === '[' || e.key === ']') && selectedItemId) {
+        e.preventDefault();
+        const cur = items.find((i) => i.id === selectedItemId);
+        if (cur && !cur.locked) {
+          const delta = e.key === '[' ? -15 : 15;
+          updateItem(cur.id, { rotationY: (cur.rotationY + delta + 360) % 360 }, true);
+        }
+      } else if (
+        !mod &&
+        selectedItemId &&
+        (e.key === 'ArrowLeft' ||
+          e.key === 'ArrowRight' ||
+          e.key === 'ArrowUp' ||
+          e.key === 'ArrowDown')
+      ) {
+        e.preventDefault();
+        const baseStep = config.snapToGrid ? config.gridStep || 0.1 : 0.1;
+        const step = e.altKey ? 0.02 : e.shiftKey ? baseStep * 5 : baseStep;
+        if (e.key === 'ArrowLeft') nudgeSelectedItem(-step, 0);
+        else if (e.key === 'ArrowRight') nudgeSelectedItem(step, 0);
+        else if (e.key === 'ArrowUp') nudgeSelectedItem(0, -step);
+        else if (e.key === 'ArrowDown') nudgeSelectedItem(0, step);
+      } else if (!mod && key === 'f') {
+        e.preventDefault();
+        viewportRef.current?.frameSelected();
+      } else if (!mod && (e.key === '+' || e.key === '=')) {
+        e.preventDefault();
+        viewportRef.current?.zoomBy(0.82);
+      } else if (!mod && (e.key === '-' || e.key === '_')) {
+        e.preventDefault();
+        viewportRef.current?.zoomBy(1.22);
+      } else if (!mod && e.key === '0') {
+        e.preventDefault();
+        viewportRef.current?.setCameraPreset(viewMode === '2d' ? 'top' : viewMode === 'eye-level' ? 'eye-level' : 'isometric');
+      } else if (!mod && key === 'v') {
+        setViewportNavMode('select');
+      } else if (!mod && key === 'o') {
+        setViewportNavMode('orbit');
+      } else if (!mod && key === 'h') {
+        setViewportNavMode('pan');
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
+    showDashboard,
+    showSetupGuide,
+    showAssetBuilder,
+    showAssetLibrary,
     handleUndo,
     handleRedo,
     selectedItemId,
+    clipboardItem,
+    copySelectedItem,
+    cutSelectedItem,
+    pasteClipboardItem,
     duplicateItem,
     deleteItem,
+    nudgeSelectedItem,
     items,
+    config.snapToGrid,
+    config.gridStep,
+    viewMode,
+    viewportNavMode,
     updateItem,
     showExportModal,
     showEstimateModal,
     showProjectsModal,
     showTemplatesModal,
+    showQuoteRequestModal,
+    showAdminInsightsModal,
     showAgentDrawer,
   ]);
 
@@ -1207,8 +1390,7 @@ function App({
       setSelectedSurfaceId(null);
       setSelectedShellWall(null);
       setPaintAssetId(null);
-      setHistory([cloneSnapshot(built.config, finalItems)]);
-      setHistoryIdx(0);
+      resetHistory(built.config, finalItems);
       setShowSetupGuide(false);
 
       window.setTimeout(() => viewportRef.current?.setCameraPreset('isometric', true), 80);
@@ -1218,7 +1400,7 @@ function App({
         notify(`Loaded "${built.projectTitle}"`);
       }
     },
-    [startWalkthrough, notify]
+    [startWalkthrough, notify, resetHistory]
   );
 
   const handleSkipSetup = useCallback(() => {
@@ -1231,15 +1413,14 @@ function App({
     setSelectedSurfaceId(null);
     setSelectedShellWall(null);
     setPaintAssetId(null);
-    setHistory([cloneSnapshot(inst.config, inst.items)]);
-    setHistoryIdx(0);
+    resetHistory(inst.config, inst.items);
     setShowSetupGuide(false);
     setShowDashboard(false);
     window.setTimeout(() => viewportRef.current?.setCameraPreset('isometric', true), 80);
     if (shouldAutoShowWalkthrough()) {
       window.setTimeout(() => startWalkthrough(), 140);
     }
-  }, [startWalkthrough, shouldAutoShowWalkthrough]);
+  }, [startWalkthrough, shouldAutoShowWalkthrough, resetHistory]);
 
   const handleOpenProject = useCallback(
     (proj: SavedProject) => {
@@ -1252,13 +1433,12 @@ function App({
       setSelectedSurfaceId(null);
       setSelectedShellWall(null);
       setStandDetailsOpen(false);
-      setHistory([cloneSnapshot(proj.config, proj.items)]);
-      setHistoryIdx(0);
+      resetHistory(proj.config, proj.items);
       setShowDashboard(false);
       window.setTimeout(() => viewportRef.current?.setCameraPreset('isometric', true), 80);
       notify(`Opened "${proj.name}"`);
     },
-    [notify]
+    [notify, resetHistory]
   );
 
   const handleCreateBlankProject = useCallback(() => {
@@ -1341,14 +1521,13 @@ function App({
           setConfig(next[0].config);
           setItems(next[0].items);
           setCustomAssets(next[0].customAssets || []);
-          setHistory([cloneSnapshot(next[0].config, next[0].items)]);
-          setHistoryIdx(0);
+          resetHistory(next[0].config, next[0].items);
         }
         return next;
       });
       notify('Deleted project');
     },
-    [activeProjectId, notify]
+    [activeProjectId, notify, resetHistory]
   );
 
   const handleExportProjectJson = useCallback(
@@ -1547,10 +1726,18 @@ function App({
         }}
         config={config}
         onUpdateConfig={updateConfig}
-        canUndo={historyIdx > 0}
-        canRedo={historyIdx < history.length - 1}
+        canUndo={canUndo}
+        canRedo={canRedo}
         onUndo={handleUndo}
         onRedo={handleRedo}
+        canCopy={Boolean(selectedItemId)}
+        canPaste={Boolean(clipboardItem)}
+        onCopy={copySelectedItem}
+        onCut={cutSelectedItem}
+        onPaste={pasteClipboardItem}
+        onDuplicate={() => {
+          if (selectedItemId) duplicateItem(selectedItemId);
+        }}
         estimatedTotalGbp={estimate.grandTotalGbp}
         currency={currency}
         agentOpen={showAgentDrawer}
@@ -1650,6 +1837,7 @@ function App({
             selectedItemId={selectedItemId}
             selectedShellWall={selectedShellWall}
             viewMode={viewMode}
+            navMode={viewportNavMode}
             compliance={compliance}
             paintAssetId={paintAssetId}
             onSelectItem={(itemId, surfaceId) => {
@@ -1710,8 +1898,41 @@ function App({
             </div>
           </div>
 
-          {/* Bottom-Center Floating Camera Dock */}
-          <div className="viewport-camera-dock" role="toolbar" aria-label="Camera views">
+          {/* Bottom-Center Floating Camera & Viewport Navigation Dock */}
+          <div className="viewport-camera-dock" role="toolbar" aria-label="Viewport navigation and camera controls">
+            <button
+              type="button"
+              className={`nav-mode-btn ${viewportNavMode === 'select' ? 'active' : ''}`}
+              aria-pressed={viewportNavMode === 'select'}
+              onClick={() => setViewportNavMode('select')}
+              title="Select & Move items (V) — drag empty space to orbit"
+              aria-label="Select and move mode"
+            >
+              <MousePointer2 size={14} />
+            </button>
+            {viewMode !== '2d' && (
+              <button
+                type="button"
+                className={`nav-mode-btn ${viewportNavMode === 'orbit' ? 'active' : ''}`}
+                aria-pressed={viewportNavMode === 'orbit'}
+                onClick={() => setViewportNavMode('orbit')}
+                title="Orbit camera (O) — drag anywhere to rotate view"
+                aria-label="Orbit camera mode"
+              >
+                <Orbit size={14} />
+              </button>
+            )}
+            <button
+              type="button"
+              className={`nav-mode-btn ${viewportNavMode === 'pan' ? 'active' : ''}`}
+              aria-pressed={viewportNavMode === 'pan'}
+              onClick={() => setViewportNavMode('pan')}
+              title="Pan camera (H or hold Space) — drag anywhere to pan"
+              aria-label="Pan camera mode"
+            >
+              <Hand size={14} />
+            </button>
+            <div className="dock-divider" />
             <select
               className="camera-preset-select"
               aria-label="Camera angle"
@@ -1721,6 +1942,7 @@ function App({
               <option value="" disabled>Camera angle</option>
               <option value="isometric">Isometric</option>
               <option value="front">Front</option>
+              <option value="back">Back</option>
               <option value="left">Left</option>
               <option value="right">Right</option>
             </select>
@@ -1732,11 +1954,47 @@ function App({
               <Maximize2 size={14} />
               <span>Front</span>
             </button>
+            <button className="camera-preset-button" onClick={() => triggerCamera('back')} title="Back angle">
+              <span>Back</span>
+            </button>
             <button className="camera-preset-button" onClick={() => triggerCamera('left')} title="Left angle">
               <span>Left</span>
             </button>
             <button className="camera-preset-button" onClick={() => triggerCamera('right')} title="Right angle">
               <span>Right</span>
+            </button>
+            <div className="dock-divider" />
+            <button
+              type="button"
+              onClick={() => viewportRef.current?.zoomBy(1.22)}
+              title="Zoom out (-)"
+              aria-label="Zoom out"
+            >
+              <ZoomOut size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => viewportRef.current?.zoomBy(0.82)}
+              title="Zoom in (+)"
+              aria-label="Zoom in"
+            >
+              <ZoomIn size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => viewportRef.current?.frameSelected()}
+              title={selectedItemId ? 'Frame selected item (F)' : 'Fit stand to view (F)'}
+              aria-label="Frame selection"
+            >
+              <Focus size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => viewportRef.current?.setCameraPreset(viewMode === '2d' ? 'top' : viewMode === 'eye-level' ? 'eye-level' : 'isometric')}
+              title="Reset camera (0)"
+              aria-label="Reset camera"
+            >
+              <RotateCcw size={14} />
             </button>
             <div className="dock-divider" />
             <button onClick={startWalkthrough} title="Watch guided walkthrough — build a stand step by step">
@@ -1745,13 +2003,6 @@ function App({
             </button>
             <button onClick={handleDownloadPng} title="Download high-res PNG render" aria-label="Snapshot">
               <Camera size={14} />
-            </button>
-            <button
-              onClick={() => viewportRef.current?.setCameraPreset(viewMode === '2d' ? 'top' : 'isometric')}
-              title="Reset camera"
-              aria-label="Reset camera"
-            >
-              <RotateCcw size={14} />
             </button>
           </div>
 
@@ -1767,7 +2018,7 @@ function App({
             onClose={() => setShowAgentDrawer(false)}
             messages={agentMessages}
             isLoading={agentLoading}
-            canUndo={historyIdx > 0}
+            canUndo={canUndo}
             onSendText={(text, viaVoice) => runAgentTurn({ text, viaVoice })}
             onSendAudio={(audio) => runAgentTurn({ audio, viaVoice: true })}
             onUndoLastTurn={() => {
@@ -1884,8 +2135,7 @@ function App({
           }
           setSelectedItemId(null);
           setSelectedShellWall(null);
-          setHistory([cloneSnapshot(proj.config, proj.items)]);
-          setHistoryIdx(0);
+          resetHistory(proj.config, proj.items);
           notify(`Loaded "${proj.name}"`);
         }}
         onDeleteProject={(id) => {

@@ -14,7 +14,9 @@ export type MeasurementUnit = 'm' | 'ft';
 
 export type ViewMode = '3d' | '2d' | 'eye-level';
 
-export type CameraPreset = 'isometric' | 'front' | 'left' | 'right' | 'top' | 'eye-level';
+export type ViewportNavMode = 'select' | 'orbit' | 'pan';
+
+export type CameraPreset = 'isometric' | 'front' | 'back' | 'left' | 'right' | 'top' | 'eye-level';
 
 export type CurrencyCode = 'GBP' | 'USD' | 'EUR';
 

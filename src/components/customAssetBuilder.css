@@ -522,6 +522,8 @@
 
 .cab-preview-cams {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
 }
 
@@ -531,9 +533,14 @@
   color: var(--ink-secondary);
   font-size: 11px;
   font-weight: 600;
-  padding: 3px 8px;
+  padding: 3px 7px;
+  min-height: 24px;
   border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+  transition: all 0.14s ease;
 }
 
 .cab-preview-cams button:hover {
@@ -541,11 +548,80 @@
   color: var(--brand-primary);
 }
 
+.cab-preview-cams button.active {
+  border-color: var(--brand-primary);
+  background: var(--brand-primary);
+  color: #ffffff;
+}
+
+.cab-cam-sep {
+  width: 1px;
+  height: 15px;
+  background: var(--border-subtle);
+  margin: 0 2px;
+}
+
+.cab-edit-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 5px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.cab-edit-toolbar button {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.cab-edit-toolbar button:hover:not(:disabled) {
+  background: var(--surface-0);
+  border-color: var(--border-subtle);
+  color: var(--brand-primary);
+}
+
+.cab-edit-toolbar button:disabled {
+  opacity: 0.36;
+  cursor: not-allowed;
+}
+
+.cab-toolbar-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border-subtle);
+  margin: 0 2px;
+}
+
 .cab-preview-canvas {
   flex: 1;
   min-height: 0;
   width: 100%;
+  position: relative;
+  overflow: hidden;
   cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.cab-preview-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+  user-select: none;
 }
 
 .cab-preview-canvas:active {

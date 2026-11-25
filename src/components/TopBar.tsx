@@ -5,6 +5,9 @@ import {
   Box,
   Calculator,
   ChevronDown,
+  ClipboardPaste,
+  Copy,
+  CopyPlus,
   Eye,
   FolderOpen,
   Grid2x2,
@@ -15,6 +18,7 @@ import {
   Palette,
   Redo2,
   Ruler,
+  Scissors,
   SlidersHorizontal,
   Sparkles,
   Store,
@@ -41,6 +45,12 @@ interface TopBarProps {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  canCopy?: boolean;
+  canPaste?: boolean;
+  onCopy?: () => void;
+  onCut?: () => void;
+  onPaste?: () => void;
+  onDuplicate?: () => void;
   estimatedTotalGbp: number;
   currency: CurrencyCode;
   agentOpen: boolean;
@@ -75,6 +85,12 @@ export const TopBar: React.FC<TopBarProps> = ({
   canRedo,
   onUndo,
   onRedo,
+  canCopy = false,
+  canPaste = false,
+  onCopy,
+  onCut,
+  onPaste,
+  onDuplicate,
   estimatedTotalGbp,
   currency,
   agentOpen,
@@ -282,11 +298,56 @@ export const TopBar: React.FC<TopBarProps> = ({
               className="icon-btn"
               disabled={!canRedo}
               onClick={onRedo}
-              title="Redo (Ctrl+Y)"
+              title="Redo (Ctrl+Y / Ctrl+Shift+Z)"
               aria-label="Redo"
             >
               <Redo2 size={15} />
             </button>
+            {onCopy && onCut && onPaste && onDuplicate && (
+              <>
+                <span className="topbar-icon-sep" aria-hidden="true" />
+                <button
+                  id="btn-copy"
+                  className="icon-btn"
+                  disabled={!canCopy}
+                  onClick={onCopy}
+                  title="Copy selected item (Ctrl+C)"
+                  aria-label="Copy"
+                >
+                  <Copy size={14} />
+                </button>
+                <button
+                  id="btn-cut"
+                  className="icon-btn"
+                  disabled={!canCopy}
+                  onClick={onCut}
+                  title="Cut selected item (Ctrl+X)"
+                  aria-label="Cut"
+                >
+                  <Scissors size={14} />
+                </button>
+                <button
+                  id="btn-paste"
+                  className="icon-btn"
+                  disabled={!canPaste}
+                  onClick={onPaste}
+                  title="Paste item (Ctrl+V)"
+                  aria-label="Paste"
+                >
+                  <ClipboardPaste size={14} />
+                </button>
+                <button
+                  id="btn-duplicate"
+                  className="icon-btn"
+                  disabled={!canCopy}
+                  onClick={onDuplicate}
+                  title="Duplicate selected item (Ctrl+D)"
+                  aria-label="Duplicate"
+                >
+                  <CopyPlus size={14} />
+                </button>
+              </>
+            )}
           </div>
         </div>
 

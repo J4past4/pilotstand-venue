@@ -7,23 +7,34 @@ import {
   Box,
   Check,
   Circle,
+  ClipboardPaste,
   Copy,
+  CopyPlus,
   Cylinder,
   FileImage,
+  Focus,
+  Hand,
   Layers,
   Loader2,
   MousePointer2,
+  Orbit,
   Pentagon,
   Plus,
+  Redo2,
+  RotateCcw,
   Ruler,
   ScanSearch,
+  Scissors,
   Sparkles,
   Square,
   Trash2,
   Triangle,
+  Undo2,
   Upload,
   Wand2,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import {
   buildPrimitivesGroup,
@@ -41,7 +52,17 @@ import type {
   AssetPrimitiveKind,
   CustomAssetCategory,
   CustomBuiltAsset,
+  ViewportNavMode,
 } from '../types/stand';
+import {
+  canRedoHistory,
+  canUndoHistory,
+  createHistoryState,
+  pushHistoryState,
+  redoHistoryState,
+  undoHistoryState,
+  type EditorHistoryState,
+} from '../utils/editorHistory';
 import {
   analyzeSchematicLocally,
   analyzeSchematicWithAI,
@@ -102,33 +123,72 @@ const SHAPE_TOOLS: { kind: AssetPrimitiveKind; label: string; hint: string }[] =
 
 /* ==================== LIVE 3D PREVIEW SUB-COMPONENT ==================== */
 
+interface Preview3DHandle {
+  zoomBy: (factor: number) => void;
+  frameSelection: () => void;
+  resetCamera: () => void;
+}
+
 interface Preview3DProps {
   primitives: AssetPrimitive[];
   selectedId: string | null;
+  navMode: ViewportNavMode;
+  onChangeNavMode: (mode: ViewportNavMode) => void;
   onSelectPrimitive: (id: string) => void;
+  onDragPrimitive: (id: string, xMm: number, zMm: number, commit: boolean) => void;
   compact?: boolean;
+  previewHandleRef?: React.MutableRefObject<Preview3DHandle | null>;
 }
 
 const AssetBuilderPreview3D: React.FC<Preview3DProps> = ({
   primitives,
   selectedId,
+  navMode,
+  onChangeNavMode,
   onSelectPrimitive,
+  onDragPrimitive,
   compact = false,
+  previewHandleRef,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const assetGroupRef = useRef<THREE.Group | null>(null);
-  const onSelectRef = useRef(onSelectPrimitive);
+  const [spacePanning, setSpacePanning] = useState(false);
+  const effectiveNavMode: ViewportNavMode = spacePanning ? 'pan' : navMode;
+
+  const cameraAnimRef = useRef<{
+    active: boolean;
+    targetPos: THREE.Vector3;
+    targetLook: THREE.Vector3;
+  }>({
+    active: false,
+    targetPos: new THREE.Vector3(),
+    targetLook: new THREE.Vector3(),
+  });
+
+  const latestRef = useRef({
+    primitives,
+    selectedId,
+    navMode: effectiveNavMode,
+    onSelectPrimitive,
+    onDragPrimitive,
+  });
   useEffect(() => {
-    onSelectRef.current = onSelectPrimitive;
-  }, [onSelectPrimitive]);
+    latestRef.current = {
+      primitives,
+      selectedId,
+      navMode: effectiveNavMode,
+      onSelectPrimitive,
+      onDragPrimitive,
+    };
+  }, [primitives, selectedId, effectiveNavMode, onSelectPrimitive, onDragPrimitive]);
 
   const bounds = useMemo(() => computePrimitivesBounds(primitives), [primitives]);
 
   const setCameraView = useCallback(
-    (view: 'iso' | 'front' | 'side' | 'top') => {
+    (view: 'iso' | 'front' | 'back' | 'left' | 'right' | 'top', instant = false) => {
       const cam = cameraRef.current;
       const ctrl = controlsRef.current;
       if (!cam || !ctrl) return;
@@ -136,20 +196,148 @@ const AssetBuilderPreview3D: React.FC<Preview3DProps> = ({
       const cy = Math.max(0.4, bounds.dims.h * 0.45);
       const dist = span * 1.95;
 
-      ctrl.target.set(0, cy, 0);
+      const targetLook = new THREE.Vector3(0, cy, 0);
+      const targetPos = new THREE.Vector3();
       if (view === 'iso') {
-        cam.position.set(dist * 0.85, cy + dist * 0.65, dist * 0.95);
+        targetPos.set(dist * 0.85, cy + dist * 0.65, dist * 0.95);
       } else if (view === 'front') {
-        cam.position.set(0, cy, dist * 1.25);
-      } else if (view === 'side') {
-        cam.position.set(dist * 1.25, cy, 0);
+        targetPos.set(0, cy, dist * 1.25);
+      } else if (view === 'back') {
+        targetPos.set(0, cy, -dist * 1.25);
+      } else if (view === 'left') {
+        targetPos.set(-dist * 1.25, cy, 0);
+      } else if (view === 'right') {
+        targetPos.set(dist * 1.25, cy, 0);
       } else if (view === 'top') {
-        cam.position.set(0, dist * 1.45, 0.01);
+        targetPos.set(0, dist * 1.45, 0.02);
       }
-      ctrl.update();
+
+      if (instant) {
+        cam.position.copy(targetPos);
+        ctrl.target.copy(targetLook);
+        ctrl.update();
+        cameraAnimRef.current.active = false;
+      } else {
+        cameraAnimRef.current = {
+          active: true,
+          targetPos,
+          targetLook,
+        };
+      }
     },
     [bounds.dims.d, bounds.dims.h, bounds.dims.w]
   );
+
+  const zoomBy = useCallback((factor: number) => {
+    const cam = cameraRef.current;
+    const ctrl = controlsRef.current;
+    if (!cam || !ctrl) return;
+    cameraAnimRef.current.active = false;
+    const offset = cam.position.clone().sub(ctrl.target);
+    const curDist = offset.length();
+    const nextDist = Math.max(ctrl.minDistance, Math.min(ctrl.maxDistance, curDist * factor));
+    if (curDist > 0.001) {
+      offset.multiplyScalar(nextDist / curDist);
+      cam.position.copy(ctrl.target).add(offset);
+      ctrl.update();
+    }
+  }, []);
+
+  const frameSelection = useCallback(
+    (explicitId?: string | null) => {
+      const cam = cameraRef.current;
+      const ctrl = controlsRef.current;
+      if (!cam || !ctrl) return;
+      const { primitives: curPrims, selectedId: curSel } = latestRef.current;
+      const targetId = explicitId !== undefined ? explicitId : curSel;
+      const prim = targetId ? curPrims.find((p) => p.id === targetId) : null;
+      if (!prim) {
+        setCameraView('iso');
+        return;
+      }
+      const cx = prim.x / 1000;
+      const cy = (prim.y + prim.h * 0.5) / 1000;
+      const cz = prim.z / 1000;
+      const span = Math.max(prim.w, prim.h, prim.d, 400) / 1000;
+      const look = new THREE.Vector3(cx, cy, cz);
+      const dir = cam.position.clone().sub(ctrl.target);
+      if (dir.lengthSq() < 0.01) dir.set(0.85, 0.65, 0.95);
+      dir.normalize();
+      const targetPos = look.clone().add(dir.multiplyScalar(Math.max(1.2, span * 2.5)));
+      targetPos.y = Math.max(0.35, targetPos.y);
+      cameraAnimRef.current = {
+        active: true,
+        targetPos,
+        targetLook: look,
+      };
+    },
+    [setCameraView]
+  );
+
+  useEffect(() => {
+    if (!previewHandleRef) return;
+    previewHandleRef.current = {
+      zoomBy,
+      frameSelection: () => frameSelection(),
+      resetCamera: () => setCameraView('iso'),
+    };
+    return () => {
+      previewHandleRef.current = null;
+    };
+  }, [previewHandleRef, zoomBy, frameSelection, setCameraView]);
+
+  const frameSelectionRef = useRef(frameSelection);
+  useEffect(() => {
+    frameSelectionRef.current = frameSelection;
+  }, [frameSelection]);
+
+  // Sync OrbitControls mouse bindings whenever navMode changes
+  useEffect(() => {
+    const ctrl = controlsRef.current;
+    if (!ctrl) return;
+    ctrl.enablePan = true;
+    ctrl.screenSpacePanning = true;
+    if (effectiveNavMode === 'pan') {
+      ctrl.mouseButtons = {
+        LEFT: THREE.MOUSE.PAN,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.ROTATE,
+      };
+    } else {
+      ctrl.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN,
+      };
+    }
+    ctrl.update();
+  }, [effectiveNavMode]);
+
+  // Hold Space for temporary Pan mode
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || e.repeat) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || target?.isContentEditable) {
+        return;
+      }
+      e.preventDefault();
+      setSpacePanning(true);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') setSpacePanning(false);
+    };
+    const onBlur = () => setSpacePanning(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
 
   // Initialize Three.js preview once
   useEffect(() => {
@@ -176,7 +364,10 @@ const AssetBuilderPreview3D: React.FC<Preview3DProps> = ({
       gpuStr
     );
     renderer.setPixelRatio(isSoftwareWebGL ? 1 : Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(width, height);
+    renderer.setSize(width, height, false);
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
+    renderer.domElement.style.display = 'block';
     renderer.shadowMap.enabled = !isSoftwareWebGL;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.innerHTML = '';
@@ -185,11 +376,21 @@ const AssetBuilderPreview3D: React.FC<Preview3DProps> = ({
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
+    controls.enablePan = true;
+    controls.screenSpacePanning = true;
+    controls.zoomToCursor = true;
+    controls.panSpeed = 0.9;
+    controls.rotateSpeed = 0.85;
+    controls.zoomSpeed = 1.05;
     controls.target.set(0, 0.75, 0);
-    controls.minDistance = 0.4;
-    controls.maxDistance = 24;
+    controls.minDistance = 0.35;
+    controls.maxDistance = 30;
     controls.maxPolarAngle = Math.PI / 2 - 0.02;
     controlsRef.current = controls;
+
+    controls.addEventListener('start', () => {
+      cameraAnimRef.current.active = false;
+    });
 
     // Studio lighting
     const hemi = new THREE.HemisphereLight('#ffffff', '#cbd5e1', 1.05);
@@ -229,37 +430,153 @@ const AssetBuilderPreview3D: React.FC<Preview3DProps> = ({
     scene.add(assetGroup);
     assetGroupRef.current = assetGroup;
 
-    // Click picking to select primitive
+    // Click picking & direct floor-plane dragging for primitives
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
-    let downX = 0;
-    let downY = 0;
+    const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const planeHit = new THREE.Vector3();
 
-    const onPointerDown = (ev: PointerEvent) => {
-      downX = ev.clientX;
-      downY = ev.clientY;
+    const dragState = {
+      active: false,
+      primId: null as string | null,
+      offsetX: 0,
+      offsetZ: 0,
+      moved: false,
+      lastXMm: 0,
+      lastZMm: 0,
+      downX: 0,
+      downY: 0,
     };
-    const onPointerUp = (ev: PointerEvent) => {
-      if (Math.hypot(ev.clientX - downX, ev.clientY - downY) > 6) return;
+
+    const setPointerNDC = (ev: MouseEvent | PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
-      pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+      pointer.x = ((ev.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+      pointer.y = -((ev.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+    };
+
+    const pickPrimitiveId = (): string | null => {
       raycaster.setFromCamera(pointer, camera);
       const hits = raycaster.intersectObjects(assetGroup.children, true);
       for (const hit of hits) {
         let cur: THREE.Object3D | null = hit.object;
         while (cur) {
           if (cur.userData?.primitiveId) {
-            onSelectRef.current(cur.userData.primitiveId as string);
-            return;
+            return cur.userData.primitiveId as string;
           }
           cur = cur.parent;
         }
       }
+      return null;
+    };
+
+    const onPointerDown = (ev: PointerEvent) => {
+      if (ev.button !== 0) return;
+      const { navMode: activeNav, primitives: curPrims, onSelectPrimitive: selectPrim } =
+        latestRef.current;
+      if (activeNav === 'orbit' || activeNav === 'pan' || ev.shiftKey) {
+        return;
+      }
+      setPointerNDC(ev);
+      const hitId = pickPrimitiveId();
+      if (!hitId) return;
+
+      selectPrim(hitId);
+      const prim = curPrims.find((p) => p.id === hitId);
+      if (!prim) return;
+
+      dragPlane.constant = -(prim.y / 1000);
+      raycaster.setFromCamera(pointer, camera);
+      if (raycaster.ray.intersectPlane(dragPlane, planeHit)) {
+        dragState.active = true;
+        dragState.primId = hitId;
+        dragState.offsetX = prim.x / 1000 - planeHit.x;
+        dragState.offsetZ = prim.z / 1000 - planeHit.z;
+        dragState.moved = false;
+        dragState.lastXMm = prim.x;
+        dragState.lastZMm = prim.z;
+        dragState.downX = ev.clientX;
+        dragState.downY = ev.clientY;
+        controls.enabled = false;
+        renderer.domElement.style.cursor = 'grabbing';
+        try {
+          renderer.domElement.setPointerCapture(ev.pointerId);
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    const onPointerMove = (ev: PointerEvent) => {
+      setPointerNDC(ev);
+      if (dragState.active && dragState.primId) {
+        if (!dragState.moved && Math.hypot(ev.clientX - dragState.downX, ev.clientY - dragState.downY) < 4) {
+          return;
+        }
+        raycaster.setFromCamera(pointer, camera);
+        if (raycaster.ray.intersectPlane(dragPlane, planeHit)) {
+          const stepMm = ev.altKey ? 10 : 25;
+          const rawXMm = (planeHit.x + dragState.offsetX) * 1000;
+          const rawZMm = (planeHit.z + dragState.offsetZ) * 1000;
+          const xMm = Math.max(-6000, Math.min(6000, Math.round(rawXMm / stepMm) * stepMm));
+          const zMm = Math.max(-6000, Math.min(6000, Math.round(rawZMm / stepMm) * stepMm));
+          if (xMm !== dragState.lastXMm || zMm !== dragState.lastZMm) {
+            dragState.moved = true;
+            dragState.lastXMm = xMm;
+            dragState.lastZMm = zMm;
+            latestRef.current.onDragPrimitive(dragState.primId, xMm, zMm, false);
+          }
+        }
+        return;
+      }
+
+      const activeNav = latestRef.current.navMode;
+      if (activeNav === 'pan' || activeNav === 'orbit') {
+        renderer.domElement.style.cursor = 'grab';
+      } else {
+        const hitId = pickPrimitiveId();
+        renderer.domElement.style.cursor = hitId ? 'grab' : 'default';
+      }
+    };
+
+    const finishDrag = (pointerId?: number) => {
+      if (!dragState.active) return;
+      if (dragState.moved && dragState.primId) {
+        latestRef.current.onDragPrimitive(
+          dragState.primId,
+          dragState.lastXMm,
+          dragState.lastZMm,
+          true
+        );
+      }
+      dragState.active = false;
+      dragState.primId = null;
+      controls.enabled = true;
+      renderer.domElement.style.cursor = 'default';
+      if (typeof pointerId === 'number') {
+        try {
+          renderer.domElement.releasePointerCapture(pointerId);
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    const onPointerUp = (ev: PointerEvent) => finishDrag(ev.pointerId);
+    const onPointerCancel = (ev: PointerEvent) => finishDrag(ev.pointerId);
+
+    const onDoubleClick = (ev: MouseEvent) => {
+      setPointerNDC(ev);
+      const hitId = pickPrimitiveId();
+      if (hitId) {
+        frameSelectionRef.current(hitId);
+      }
     };
 
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
-    renderer.domElement.addEventListener('pointerup', onPointerUp);
+    renderer.domElement.addEventListener('pointermove', onPointerMove);
+    renderer.domElement.addEventListener('dblclick', onDoubleClick);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerCancel);
 
     const resizeObserver = new ResizeObserver(() => {
       if (!container) return;
@@ -267,7 +584,7 @@ const AssetBuilderPreview3D: React.FC<Preview3DProps> = ({
       const nh = Math.max(140, container.clientHeight);
       camera.aspect = nw / nh;
       camera.updateProjectionMatrix();
-      renderer.setSize(nw, nh);
+      renderer.setSize(nw, nh, false);
     });
     resizeObserver.observe(container);
 
@@ -278,7 +595,20 @@ const AssetBuilderPreview3D: React.FC<Preview3DProps> = ({
       if (document.hidden) return;
       if (isSoftwareWebGL && lastTs > 0 && now - lastTs < 120) return;
       lastTs = now;
+
+      if (cameraAnimRef.current.active) {
+        camera.position.lerp(cameraAnimRef.current.targetPos, 0.14);
+        controls.target.lerp(cameraAnimRef.current.targetLook, 0.14);
+        if (
+          camera.position.distanceTo(cameraAnimRef.current.targetPos) < 0.02 &&
+          controls.target.distanceTo(cameraAnimRef.current.targetLook) < 0.02
+        ) {
+          cameraAnimRef.current.active = false;
+        }
+      }
+
       controls.update();
+      if (controls.target.y < 0) controls.target.y = 0;
       renderer.render(scene, camera);
     };
     animate();
@@ -287,7 +617,10 @@ const AssetBuilderPreview3D: React.FC<Preview3DProps> = ({
       cancelAnimationFrame(raf);
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
-      renderer.domElement.removeEventListener('pointerup', onPointerUp);
+      renderer.domElement.removeEventListener('pointermove', onPointerMove);
+      renderer.domElement.removeEventListener('dblclick', onDoubleClick);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
       controls.dispose();
       renderer.dispose();
     };
@@ -332,23 +665,80 @@ const AssetBuilderPreview3D: React.FC<Preview3DProps> = ({
           </span>
         </div>
         <div className="cab-preview-cams">
-          <button type="button" onClick={() => setCameraView('iso')}>
+          <button
+            type="button"
+            className={effectiveNavMode === 'select' ? 'active' : ''}
+            onClick={() => onChangeNavMode('select')}
+            title="Select & Drag parts in 3D (V)"
+            aria-label="Select and move mode"
+          >
+            <MousePointer2 size={12} />
+          </button>
+          <button
+            type="button"
+            className={effectiveNavMode === 'orbit' ? 'active' : ''}
+            onClick={() => onChangeNavMode('orbit')}
+            title="Orbit camera (O)"
+            aria-label="Orbit camera mode"
+          >
+            <Orbit size={12} />
+          </button>
+          <button
+            type="button"
+            className={effectiveNavMode === 'pan' ? 'active' : ''}
+            onClick={() => onChangeNavMode('pan')}
+            title="Pan camera (H or hold Space)"
+            aria-label="Pan camera mode"
+          >
+            <Hand size={12} />
+          </button>
+          <span className="cab-cam-sep" aria-hidden="true" />
+          <button type="button" onClick={() => setCameraView('iso')} title="Isometric view">
             Iso
           </button>
-          <button type="button" onClick={() => setCameraView('front')}>
+          <button type="button" onClick={() => setCameraView('front')} title="Front view">
             Front
           </button>
-          <button type="button" onClick={() => setCameraView('side')}>
-            Side
+          <button type="button" onClick={() => setCameraView('back')} title="Back view">
+            Back
           </button>
-          <button type="button" onClick={() => setCameraView('top')}>
+          <button type="button" onClick={() => setCameraView('left')} title="Left view">
+            Left
+          </button>
+          <button type="button" onClick={() => setCameraView('right')} title="Right view">
+            Right
+          </button>
+          <button type="button" onClick={() => setCameraView('top')} title="Top view">
             Top
+          </button>
+          <span className="cab-cam-sep" aria-hidden="true" />
+          <button type="button" onClick={() => zoomBy(1.22)} title="Zoom out (-)" aria-label="Zoom out">
+            <ZoomOut size={12} />
+          </button>
+          <button type="button" onClick={() => zoomBy(0.82)} title="Zoom in (+)" aria-label="Zoom in">
+            <ZoomIn size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={() => frameSelection()}
+            title="Frame selected part (F)"
+            aria-label="Frame selection"
+          >
+            <Focus size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setCameraView('iso')}
+            title="Reset camera (0)"
+            aria-label="Reset camera"
+          >
+            <RotateCcw size={12} />
           </button>
         </div>
       </div>
       <div ref={containerRef} className="cab-preview-canvas" />
       <div className="cab-preview-footer-hint">
-        Drag to orbit · Scroll to zoom · Click any shape to edit · Grid = 500 mm squares
+        Drag part to move · Drag empty space to orbit · Right-drag or hold Space to pan · Scroll to zoom · Double-click to frame
       </div>
     </div>
   );
@@ -364,6 +754,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
   onSaveAsset,
 }) => {
   const [mode, setMode] = useState<BuilderMode>(initialMode);
+  const [navMode, setNavMode] = useState<ViewportNavMode>('select');
   const [assetName, setAssetName] = useState<string>(
     editingAsset?.name || 'New Custom Asset'
   );
@@ -371,22 +762,38 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
     editingAsset?.category || 'product'
   );
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const noticeTimerRef = useRef<number | null>(null);
+  const previewHandleRef = useRef<Preview3DHandle | null>(null);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-  const [primitives, setPrimitives] = useState<AssetPrimitive[]>(() =>
-    editingAsset && editingAsset.primitives.length > 0
-      ? editingAsset.primitives.map((p) => ({ ...p }))
-      : instantiatePresetPrimitives('blank')
+  const showNotice = useCallback((msg: string) => {
+    setSavedNotice(msg);
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = window.setTimeout(() => setSavedNotice(null), 2400);
+  }, []);
+
+  const initialPrimitives = useMemo<AssetPrimitive[]>(
+    () =>
+      editingAsset && editingAsset.primitives.length > 0
+        ? editingAsset.primitives.map((p) => ({
+            ...p,
+            points: p.points ? p.points.map((pt) => ({ ...pt })) : undefined,
+          }))
+        : instantiatePresetPrimitives('blank'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
   );
+
+  const [primitives, setPrimitives] = useState<AssetPrimitive[]>(initialPrimitives);
+  const [historyState, setHistoryState] = useState<EditorHistoryState<AssetPrimitive[]>>(() =>
+    createHistoryState(initialPrimitives)
+  );
+  const lastCoalesceRef = useRef<{ key: string; ts: number }>({ key: '', ts: 0 });
+  const canUndo = canUndoHistory(historyState);
+  const canRedo = canRedoHistory(historyState);
+
+  const [clipboardPrim, setClipboardPrim] = useState<AssetPrimitive | null>(null);
+  const pasteCountRef = useRef<number>(0);
+
   const [rawSelectedId, setSelectedId] = useState<string | null>(
     () => (editingAsset?.primitives[0]?.id ?? null)
   );
@@ -405,38 +812,104 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
 
   const bounds = useMemo(() => computePrimitivesBounds(primitives), [primitives]);
 
-  /* -------- Shape CRUD helpers -------- */
-  const updatePrimitive = useCallback((id: string, patch: Partial<AssetPrimitive>) => {
-    setPrimitives((prev) =>
-      prev.map((p) => {
-        if (p.id !== id) return p;
-        const next = { ...p, ...patch };
-        // Keep cylinder / cone / ring diameter synchronized on w & d
-        if (
-          (next.kind === 'cylinder' || next.kind === 'cone' || next.kind === 'ring') &&
-          patch.w !== undefined &&
-          patch.d === undefined
-        ) {
-          next.d = patch.w;
+  const commitPrimitives = useCallback(
+    (
+      nextOrUpdater: AssetPrimitive[] | ((prev: AssetPrimitive[]) => AssetPrimitive[]),
+      options?: { coalesceKey?: string; recordHistory?: boolean }
+    ) => {
+      const recordHistory = options?.recordHistory !== false;
+      setPrimitives((prev) => {
+        const next =
+          typeof nextOrUpdater === 'function' ? nextOrUpdater(prev) : nextOrUpdater;
+        if (recordHistory) {
+          const now = Date.now();
+          const key = options?.coalesceKey || '';
+          const shouldReplace =
+            Boolean(key) &&
+            lastCoalesceRef.current.key === key &&
+            now - lastCoalesceRef.current.ts < 450;
+          lastCoalesceRef.current = { key, ts: now };
+          setHistoryState((h) =>
+            pushHistoryState(h, next, { maxEntries: 50, replaceTop: shouldReplace })
+          );
         }
         return next;
-      })
-    );
-  }, []);
+      });
+    },
+    []
+  );
+
+  const handleUndo = useCallback(() => {
+    lastCoalesceRef.current = { key: '', ts: 0 };
+    setHistoryState((prev) => {
+      const { nextState, snapshot } = undoHistoryState(prev);
+      if (!snapshot) return prev;
+      setPrimitives(snapshot);
+      showNotice('Undid last change');
+      return nextState;
+    });
+  }, [showNotice]);
+
+  const handleRedo = useCallback(() => {
+    lastCoalesceRef.current = { key: '', ts: 0 };
+    setHistoryState((prev) => {
+      const { nextState, snapshot } = redoHistoryState(prev);
+      if (!snapshot) return prev;
+      setPrimitives(snapshot);
+      showNotice('Redid change');
+      return nextState;
+    });
+  }, [showNotice]);
+
+  /* -------- Shape CRUD helpers -------- */
+  const updatePrimitive = useCallback(
+    (id: string, patch: Partial<AssetPrimitive>, coalesceKey?: string) => {
+      const key = coalesceKey ?? `${id}:${Object.keys(patch).sort().join(',')}`;
+      commitPrimitives(
+        (prev) =>
+          prev.map((p) => {
+            if (p.id !== id) return p;
+            const next = { ...p, ...patch };
+            // Keep cylinder / cone / ring diameter synchronized on w & d
+            if (
+              (next.kind === 'cylinder' || next.kind === 'cone' || next.kind === 'ring') &&
+              patch.w !== undefined &&
+              patch.d === undefined
+            ) {
+              next.d = patch.w;
+            }
+            return next;
+          }),
+        { coalesceKey: key }
+      );
+    },
+    [commitPrimitives]
+  );
+
+  const dragPrimitive = useCallback(
+    (id: string, xMm: number, zMm: number, commit: boolean) => {
+      commitPrimitives(
+        (prev) => prev.map((p) => (p.id === id ? { ...p, x: xMm, z: zMm } : p)),
+        { recordHistory: commit }
+      );
+    },
+    [commitPrimitives]
+  );
 
   const addShape = useCallback(
     (kind: AssetPrimitiveKind) => {
       const next = createDefaultPrimitive(kind, primitives.length + 1);
-      setPrimitives((prev) => [...prev, next]);
+      commitPrimitives((prev) => [...prev, next]);
       setSelectedId(next.id);
+      showNotice(`Added ${next.label}`);
     },
-    [primitives.length]
+    [primitives.length, commitPrimitives, showNotice]
   );
 
-  const duplicatePrimitive = useCallback((id: string) => {
-    setPrimitives((prev) => {
-      const src = prev.find((p) => p.id === id);
-      if (!src) return prev;
+  const duplicatePrimitive = useCallback(
+    (id: string) => {
+      const src = primitives.find((p) => p.id === id);
+      if (!src) return;
       const copy: AssetPrimitive = {
         ...src,
         id: createPrimitiveId(),
@@ -444,33 +917,187 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
         x: src.x + 250,
         points: src.points ? src.points.map((pt) => ({ ...pt })) : undefined,
       };
+      commitPrimitives((prev) => [...prev, copy]);
       setSelectedId(copy.id);
-      return [...prev, copy];
-    });
-  }, []);
+      showNotice(`Duplicated ${src.label}`);
+    },
+    [primitives, commitPrimitives, showNotice]
+  );
 
-  const deletePrimitive = useCallback((id: string) => {
-    setPrimitives((prev) => prev.filter((p) => p.id !== id));
-  }, []);
+  const deletePrimitive = useCallback(
+    (id: string) => {
+      const src = primitives.find((p) => p.id === id);
+      commitPrimitives((prev) => prev.filter((p) => p.id !== id));
+      if (src) showNotice(`Deleted ${src.label}`);
+    },
+    [primitives, commitPrimitives, showNotice]
+  );
+
+  const copySelectedPrimitive = useCallback(() => {
+    if (!selectedPrim) return;
+    setClipboardPrim({
+      ...selectedPrim,
+      points: selectedPrim.points ? selectedPrim.points.map((pt) => ({ ...pt })) : undefined,
+    });
+    pasteCountRef.current = 0;
+    showNotice(`Copied ${selectedPrim.label}`);
+  }, [selectedPrim, showNotice]);
+
+  const cutSelectedPrimitive = useCallback(() => {
+    if (!selectedPrim) return;
+    setClipboardPrim({
+      ...selectedPrim,
+      points: selectedPrim.points ? selectedPrim.points.map((pt) => ({ ...pt })) : undefined,
+    });
+    pasteCountRef.current = 0;
+    const cutId = selectedPrim.id;
+    const cutLabel = selectedPrim.label;
+    commitPrimitives((prev) => prev.filter((p) => p.id !== cutId));
+    showNotice(`Cut ${cutLabel}`);
+  }, [selectedPrim, commitPrimitives, showNotice]);
+
+  const pasteClipboardPrimitive = useCallback(() => {
+    if (!clipboardPrim) return;
+    pasteCountRef.current += 1;
+    const step = pasteCountRef.current;
+    const copy: AssetPrimitive = {
+      ...clipboardPrim,
+      id: createPrimitiveId(),
+      label: clipboardPrim.label.endsWith(' Copy') ? clipboardPrim.label : `${clipboardPrim.label} Copy`,
+      x: clipboardPrim.x + 200 * step,
+      z: clipboardPrim.z + 150 * step,
+      points: clipboardPrim.points ? clipboardPrim.points.map((pt) => ({ ...pt })) : undefined,
+    };
+    commitPrimitives((prev) => [...prev, copy]);
+    setSelectedId(copy.id);
+    showNotice(`Pasted ${clipboardPrim.label}`);
+  }, [clipboardPrim, commitPrimitives, showNotice]);
 
   const stackOnTopOfHighest = useCallback(
     (id: string) => {
       const others = primitives.filter((p) => p.id !== id);
       const maxTop = others.reduce((acc, p) => Math.max(acc, p.y + p.h), 0);
-      updatePrimitive(id, { y: Math.round(maxTop) });
+      updatePrimitive(id, { y: Math.round(maxTop) }, '');
     },
     [primitives, updatePrimitive]
   );
 
-  const applyPreset = useCallback((presetId: string) => {
-    const preset = CUSTOM_ASSET_PRESETS.find((p) => p.id === presetId);
-    if (!preset) return;
-    const next = instantiatePresetPrimitives(presetId);
-    setPrimitives(next);
-    setSelectedId(next[0]?.id ?? null);
-    setAssetName(preset.name);
-    setAssetCategory(preset.category);
-  }, []);
+  const applyPreset = useCallback(
+    (presetId: string) => {
+      const preset = CUSTOM_ASSET_PRESETS.find((p) => p.id === presetId);
+      if (!preset) return;
+      const next = instantiatePresetPrimitives(presetId);
+      commitPrimitives(next);
+      setSelectedId(next[0]?.id ?? null);
+      setAssetName(preset.name);
+      setAssetCategory(preset.category);
+      showNotice(`Loaded ${preset.name} preset`);
+    },
+    [commitPrimitives, showNotice]
+  );
+
+  // Keyboard shortcuts scoped to Custom Asset Builder 3D Editor
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (navMode !== 'select') {
+          setNavMode('select');
+          return;
+        }
+        onClose();
+        return;
+      }
+
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
+        return;
+      }
+
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+
+      if (mod && key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) handleRedo();
+        else handleUndo();
+      } else if (mod && key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      } else if (mod && key === 'c' && selectedPrim) {
+        e.preventDefault();
+        copySelectedPrimitive();
+      } else if (mod && key === 'x' && selectedPrim) {
+        e.preventDefault();
+        cutSelectedPrimitive();
+      } else if (mod && key === 'v' && clipboardPrim) {
+        e.preventDefault();
+        pasteClipboardPrimitive();
+      } else if (mod && key === 'd' && selectedPrim) {
+        e.preventDefault();
+        duplicatePrimitive(selectedPrim.id);
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPrim) {
+        e.preventDefault();
+        deletePrimitive(selectedPrim.id);
+      } else if (!mod && key === 'r' && selectedPrim) {
+        e.preventDefault();
+        const delta = e.shiftKey ? -90 : 90;
+        updatePrimitive(
+          selectedPrim.id,
+          { rotY: (((selectedPrim.rotY ?? 0) + delta) % 360 + 360) % 360 },
+          ''
+        );
+      } else if (
+        !mod &&
+        selectedPrim &&
+        (e.key === 'ArrowLeft' ||
+          e.key === 'ArrowRight' ||
+          e.key === 'ArrowUp' ||
+          e.key === 'ArrowDown')
+      ) {
+        e.preventDefault();
+        const step = e.altKey ? 10 : e.shiftKey ? 200 : 50;
+        if (e.key === 'ArrowLeft') updatePrimitive(selectedPrim.id, { x: selectedPrim.x - step }, '');
+        else if (e.key === 'ArrowRight') updatePrimitive(selectedPrim.id, { x: selectedPrim.x + step }, '');
+        else if (e.key === 'ArrowUp') updatePrimitive(selectedPrim.id, { z: selectedPrim.z - step }, '');
+        else if (e.key === 'ArrowDown') updatePrimitive(selectedPrim.id, { z: selectedPrim.z + step }, '');
+      } else if (!mod && key === 'f') {
+        e.preventDefault();
+        previewHandleRef.current?.frameSelection();
+      } else if (!mod && (e.key === '+' || e.key === '=')) {
+        e.preventDefault();
+        previewHandleRef.current?.zoomBy(0.82);
+      } else if (!mod && (e.key === '-' || e.key === '_')) {
+        e.preventDefault();
+        previewHandleRef.current?.zoomBy(1.22);
+      } else if (!mod && e.key === '0') {
+        e.preventDefault();
+        previewHandleRef.current?.resetCamera();
+      } else if (!mod && key === 'v') {
+        setNavMode('select');
+      } else if (!mod && key === 'o') {
+        setNavMode('orbit');
+      } else if (!mod && key === 'h') {
+        setNavMode('pan');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    onClose,
+    navMode,
+    handleUndo,
+    handleRedo,
+    selectedPrim,
+    clipboardPrim,
+    copySelectedPrimitive,
+    cutSelectedPrimitive,
+    pasteClipboardPrimitive,
+    duplicatePrimitive,
+    deletePrimitive,
+    updatePrimitive,
+  ]);
 
   /* ==================== 2D SCHEMATIC STATE & TRACING ==================== */
   const schematicInputRef = useRef<HTMLInputElement | null>(null);
@@ -582,7 +1209,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
           setDetectedLayout(result.layout);
         }
         if (result.primitives.length > 0) {
-          setPrimitives(result.primitives);
+          commitPrimitives(result.primitives);
           setSelectedId(result.primitives[0].id);
           if (result.assetName && !editingAsset) {
             setAssetName(result.assetName);
@@ -602,6 +1229,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
       overallWidthMm,
       schematicNotes,
       editingAsset,
+      commitPrimitives,
     ]
   );
 
@@ -719,7 +1347,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
             points: mmPts.map((p) => ({ x: Math.round(p.xMm - cx), y: Math.round(-(p.yMm - cy)) })),
           };
 
-    setPrimitives((prev) => [...prev, newPrim]);
+    commitPrimitives((prev) => [...prev, newPrim]);
     setSelectedId(newPrim.id);
     setPolyPointsPx([]);
     setAnalysisStatus(`Added traced polygon (${wMm} × ${dOrHMm} mm).`);
@@ -733,6 +1361,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
     defaultDepthMm,
     schematicNaturalSize.h,
     mmPerPx,
+    commitPrimitives,
   ]);
 
   const handleCanvasPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -816,7 +1445,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
                 color: '#E2E8F0',
                 finish: 'metal',
               };
-        setPrimitives((prev) => [...prev, newPrim]);
+        commitPrimitives((prev) => [...prev, newPrim]);
         setSelectedId(newPrim.id);
         setAnalysisStatus(`Traced box: ${wMm} × ${hOrDMm} mm.`);
       }
@@ -854,7 +1483,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
                 color: '#334155',
                 finish: 'dark-steel',
               };
-        setPrimitives((prev) => [...prev, newPrim]);
+        commitPrimitives((prev) => [...prev, newPrim]);
         setSelectedId(newPrim.id);
         setAnalysisStatus(`Traced cylinder: Ø${diamMm} mm.`);
       }
@@ -916,10 +1545,10 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
     if (keepOpen) {
       const fresh = instantiatePresetPrimitives('blank');
       setPrimitives(fresh);
+      setHistoryState(createHistoryState(fresh));
       setSelectedId(fresh[0]?.id ?? null);
       setAssetName('New Custom Asset');
-      setSavedNotice(`Saved "${finalName}" to Asset Library — ready to build your next asset.`);
-      window.setTimeout(() => setSavedNotice(null), 3500);
+      showNotice(`Saved "${finalName}" to Asset Library — ready to build your next asset.`);
     }
   };
 
@@ -970,6 +1599,73 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
                 Custom Asset Builder · All dimensions in millimetres (mm)
               </span>
             </div>
+          </div>
+
+          <div className="cab-edit-toolbar" role="toolbar" aria-label="Edit actions">
+            <button
+              type="button"
+              disabled={!canUndo}
+              onClick={handleUndo}
+              title="Undo (Ctrl+Z)"
+              aria-label="Undo"
+            >
+              <Undo2 size={14} />
+            </button>
+            <button
+              type="button"
+              disabled={!canRedo}
+              onClick={handleRedo}
+              title="Redo (Ctrl+Y / Ctrl+Shift+Z)"
+              aria-label="Redo"
+            >
+              <Redo2 size={14} />
+            </button>
+            <span className="cab-toolbar-sep" aria-hidden="true" />
+            <button
+              type="button"
+              disabled={!selectedPrim}
+              onClick={copySelectedPrimitive}
+              title="Copy selected part (Ctrl+C)"
+              aria-label="Copy part"
+            >
+              <Copy size={13} />
+            </button>
+            <button
+              type="button"
+              disabled={!selectedPrim}
+              onClick={cutSelectedPrimitive}
+              title="Cut selected part (Ctrl+X)"
+              aria-label="Cut part"
+            >
+              <Scissors size={13} />
+            </button>
+            <button
+              type="button"
+              disabled={!clipboardPrim}
+              onClick={pasteClipboardPrimitive}
+              title="Paste part (Ctrl+V)"
+              aria-label="Paste part"
+            >
+              <ClipboardPaste size={13} />
+            </button>
+            <button
+              type="button"
+              disabled={!selectedPrim}
+              onClick={() => selectedPrim && duplicatePrimitive(selectedPrim.id)}
+              title="Duplicate selected part (Ctrl+D)"
+              aria-label="Duplicate part"
+            >
+              <CopyPlus size={13} />
+            </button>
+            <button
+              type="button"
+              disabled={!selectedPrim}
+              onClick={() => selectedPrim && deletePrimitive(selectedPrim.id)}
+              title="Delete selected part (Del)"
+              aria-label="Delete part"
+            >
+              <Trash2 size={13} />
+            </button>
           </div>
 
           <div className="cab-mode-tabs" role="tablist">
@@ -1065,7 +1761,10 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
                       <button
                         type="button"
                         className="cab-text-btn danger"
-                        onClick={() => setPrimitives([])}
+                        onClick={() => {
+                          commitPrimitives([]);
+                          showNotice('Cleared all parts');
+                        }}
                       >
                         Clear All
                       </button>
@@ -1345,7 +2044,11 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
                 <AssetBuilderPreview3D
                   primitives={primitives}
                   selectedId={selectedId}
+                  navMode={navMode}
+                  onChangeNavMode={setNavMode}
                   onSelectPrimitive={setSelectedId}
+                  onDragPrimitive={dragPrimitive}
+                  previewHandleRef={previewHandleRef}
                 />
               </div>
             </>
@@ -2019,7 +2722,11 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
                 <AssetBuilderPreview3D
                   primitives={primitives}
                   selectedId={selectedId}
+                  navMode={navMode}
+                  onChangeNavMode={setNavMode}
                   onSelectPrimitive={setSelectedId}
+                  onDragPrimitive={dragPrimitive}
+                  previewHandleRef={previewHandleRef}
                   compact
                 />
               </div>
