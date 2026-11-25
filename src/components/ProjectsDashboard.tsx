@@ -12,6 +12,7 @@ import {
   Layers,
   LayoutTemplate,
   LogOut,
+  MessageSquarePlus,
   Palette,
   Pencil,
   Play,
@@ -40,6 +41,7 @@ interface ProjectsDashboardProps {
   onOpenPublicAuth?: () => void;
   onOpenSupplierModal?: () => void;
   onOpenAdminInsights?: () => void;
+  onOpenFeedbackBoard?: () => void;
   onReturnToEditor: () => void;
   onOpenProject: (project: SavedProject) => void;
   onCreateBlankProject: () => void;
@@ -211,6 +213,7 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
   onOpenPublicAuth,
   onOpenSupplierModal,
   onOpenAdminInsights,
+  onOpenFeedbackBoard,
   onReturnToEditor,
   onOpenProject,
   onCreateBlankProject,
@@ -284,6 +287,17 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
             <Palette size={14} />
             <span>Brand Setup</span>
           </button>
+          {onOpenFeedbackBoard && (
+            <button
+              type="button"
+              className="dash-ghost-btn"
+              onClick={onOpenFeedbackBoard}
+              title="Report an issue or suggest an improvement"
+            >
+              <MessageSquarePlus size={14} />
+              <span>Feedback</span>
+            </button>
+          )}
           {onOpenSupplierModal && (
             <button
               type="button"

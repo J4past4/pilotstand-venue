@@ -50,6 +50,7 @@ import { AssetLibraryModal } from './components/AssetLibraryModal';
 import type { BetaUser, PublicAuthPromptOptions } from './components/BetaAuthGate';
 import { QuoteRequestModal } from './components/QuoteRequestModal';
 import { LaunchAdminModal } from './components/LaunchAdminModal';
+import { FeedbackBoardModal } from './components/FeedbackBoardModal';
 import { applyAgentActions } from './agent/actionExecutor';
 import { sendStandAgentPrompt } from './agent/agentClient';
 import { findNearestAllowedPosition } from './utils/wallCollision';
@@ -276,6 +277,7 @@ function App({
   const [showExportModal, setShowExportModal] = useState(false);
   const [showQuoteRequestModal, setShowQuoteRequestModal] = useState(false);
   const [showAdminInsightsModal, setShowAdminInsightsModal] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showAssetLibrary, setShowAssetLibrary] = useState(false);
   const [showAssetBuilder, setShowAssetBuilder] = useState(false);
   const [assetBuilderMode, setAssetBuilderMode] = useState<BuilderMode>('shapes');
@@ -1131,6 +1133,10 @@ function App({
           setShowAdminInsightsModal(false);
           return;
         }
+        if (showFeedbackModal) {
+          setShowFeedbackModal(false);
+          return;
+        }
         if (showAgentDrawer) {
           setShowAgentDrawer(false);
           return;
@@ -1153,7 +1159,8 @@ function App({
         showProjectsModal ||
         showTemplatesModal ||
         showQuoteRequestModal ||
-        showAdminInsightsModal
+        showAdminInsightsModal ||
+        showFeedbackModal
       ) {
         return;
       }
@@ -1266,6 +1273,7 @@ function App({
     showTemplatesModal,
     showQuoteRequestModal,
     showAdminInsightsModal,
+    showFeedbackModal,
     showAgentDrawer,
   ]);
 
@@ -1742,6 +1750,7 @@ function App({
           }
           onOpenSupplierModal={onOpenSupplierModal}
           onOpenAdminInsights={() => setShowAdminInsightsModal(true)}
+          onOpenFeedbackBoard={() => setShowFeedbackModal(true)}
           onReturnToEditor={() => setShowDashboard(false)}
           onOpenProject={handleOpenProject}
           onCreateBlankProject={handleCreateBlankProject}
@@ -1766,6 +1775,16 @@ function App({
         <LaunchAdminModal
           open={showAdminInsightsModal}
           onClose={() => setShowAdminInsightsModal(false)}
+        />
+        <FeedbackBoardModal
+          open={showFeedbackModal}
+          onClose={() => setShowFeedbackModal(false)}
+          betaUser={betaUser}
+          standContext={{
+            viewMode,
+            standSize: `${config.width}×${config.depth}m`,
+            itemCount: items.length,
+          }}
         />
         {toast && <div role="status" className="studio-toast">{toast}</div>}
       </>
@@ -1843,6 +1862,7 @@ function App({
         }
         onOpenSupplierModal={onOpenSupplierModal}
         onOpenAdminInsights={() => setShowAdminInsightsModal(true)}
+        onOpenFeedbackBoard={() => setShowFeedbackModal(true)}
       />
 
       <main className="studio-workspace">
@@ -2178,6 +2198,17 @@ function App({
       <LaunchAdminModal
         open={showAdminInsightsModal}
         onClose={() => setShowAdminInsightsModal(false)}
+      />
+
+      <FeedbackBoardModal
+        open={showFeedbackModal}
+        onClose={() => setShowFeedbackModal(false)}
+        betaUser={betaUser}
+        standContext={{
+          viewMode,
+          standSize: `${config.width}×${config.depth}m`,
+          itemCount: items.length,
+        }}
       />
 
       <ProjectsModal

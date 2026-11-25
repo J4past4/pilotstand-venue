@@ -1,0 +1,175 @@
+name: Gemini Cloud Ticket Agent
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'GitHub Issue number to implement with Gemini Cloud Agent'
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: gemini-ticket-agent-${{ inputs.issue_number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  implement-ticket:
+    name: Implement Confirmed Ticket (Draft PR)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && github.event.label.name == 'agent-approved')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Verify Owner / Maintainer Approval
+        id: authz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ inputs.issue_number || github.event.issue.number }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "No issue number resolved."
+            exit 1
+          fi
+          echo "issue_number=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
+
+          # Only repository owners/admins/maintainers/write-collaborators can trigger the agent
+          PERM=$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${ACTOR}/permission" --jq '.permission' 2>/dev/null || echo "none")
+          echo "Actor ${ACTOR} permission: ${PERM}"
+          if [ "$PERM" != "admin" ] && [ "$PERM" != "maintain" ] && [ "$PERM" != "write" ]; then
+            echo "::error::Only repository maintainers with write access can approve Gemini Cloud Agent runs."
+            exit 1
+          fi
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Configure git identity
+        run: |
+          git config user.name "Gemini Cloud Agent"
+          git config user.email "gemini-agent[bot]@users.noreply.github.com"
+
+      - name: Load Issue Details & Mark Agent Working
+        id: issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ steps.authz.outputs.issue_number }}
+        run: |
+          # Ensure status labels exist
+          gh label create "agent-working" --color "7C3AED" --description "Gemini Cloud Agent is actively implementing this ticket" 2>/dev/null || true
+          gh label create "agent-pr-ready" --color "0891B2" --description "Gemini Cloud Agent opened a Draft PR for review" 2>/dev/null || true
+          gh label create "agent-failed" --color "DC2626" --description "Gemini Cloud Agent run failed — check workflow logs" 2>/dev/null || true
+
+          gh issue edit "$ISSUE_NUMBER" --add-label "agent-working" --remove-label "needs-approval" || true
+          gh issue comment "$ISSUE_NUMBER" --body "🤖 **Gemini Cloud Agent confirmed & starting work** on issue #${ISSUE_NUMBER}. I'll create a branch, implement the change, verify lint & build, and open a **Draft PR** for your review."
+
+          ISSUE_JSON=$(gh issue view "$ISSUE_NUMBER" --json title,body,labels,comments)
+          echo "$ISSUE_JSON" > /tmp/ticket-issue.json
+
+          IS_BUG=$(jq -r '[.labels[].name] | index("bug") != null' /tmp/ticket-issue.json)
+          if [ "$IS_BUG" = "true" ]; then
+            BRANCH="fix/ticket-${ISSUE_NUMBER}"
+          else
+            BRANCH="feat/ticket-${ISSUE_NUMBER}"
+          fi
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+
+          # Create or reset the ticket branch from latest main
+          git checkout -B "$BRANCH" origin/main
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Gemini Cloud Agent
+        id: gemini
+        uses: google-github-actions/run-gemini-cli@v0
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            You are the Gemini Cloud Agent implementing an owner-approved user feedback ticket for the `J4past4/exhibition-stand-` (PilotStand 3D Exhibition Planner) repository.
+
+            Read `/tmp/ticket-issue.json` (which contains the GitHub Issue title, body, labels, and any owner approval comments) and `AGENTS.md`.
+
+            Follow these strict rules:
+            1. You are ALREADY on the dedicated branch `${{ steps.issue.outputs.branch }}` branched from `main`. NEVER switch to or push to `main`.
+            2. Carefully inspect the relevant files in the codebase before making edits.
+            3. Implement the requested bug fix or improvement cleanly, keeping changes focused, minimal, and idiomatic to the existing React + TypeScript + Vite + Vercel API codebase.
+            4. Add or update unit tests where appropriate.
+            5. Run `npm run lint`, `npm run build`, and `npm run test` and fix any issues until all checks pass.
+            6. Commit your changes with a clear conventional commit message referencing `#${{ steps.authz.outputs.issue_number }}` and push the branch to `origin`:
+               `git push -u origin ${{ steps.issue.outputs.branch }} --force-with-lease`
+            7. Open a **Draft Pull Request** (ALWAYS use `--draft` so it waits for owner review before entering the auto-merge queue):
+               `gh pr create --draft --base main --head ${{ steps.issue.outputs.branch }} --title "..." --body "Closes #${{ steps.authz.outputs.issue_number }}\n\n..."`
+
+      - name: Finalize Draft PR & Update Ticket Status
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ steps.authz.outputs.issue_number }}
+          BRANCH: ${{ steps.issue.outputs.branch }}
+        run: |
+          # If Gemini left uncommitted changes or unpushed commits, ensure branch & Draft PR exist
+          if [ -n "$(git status --porcelain)" ]; then
+            npm run lint
+            npm run build
+            git add -A
+            git commit -m "feat: implement ticket #${ISSUE_NUMBER}"
+          fi
+
+          AHEAD=$(git rev-list --count origin/main..HEAD)
+          if [ "$AHEAD" -eq 0 ]; then
+            gh issue edit "$ISSUE_NUMBER" --remove-label "agent-working" --add-label "agent-failed" || true
+            gh issue comment "$ISSUE_NUMBER" --body "⚠️ Gemini Cloud Agent finished without producing any code commits on \`${BRANCH}\`. Please check the [workflow run logs](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
+            exit 1
+          fi
+
+          git push -u origin "$BRANCH" --force-with-lease
+
+          PR_URL=$(gh pr list --head "$BRANCH" --state open --json url --jq '.[0].url // ""')
+          if [ -z "$PR_URL" ]; then
+            ISSUE_TITLE=$(jq -r '.title' /tmp/ticket-issue.json)
+            PR_URL=$(gh pr create --draft \
+              --base main \
+              --head "$BRANCH" \
+              --title "${ISSUE_TITLE}" \
+              --body "Closes #${ISSUE_NUMBER}
+
+            Automated Draft PR generated by **Gemini Cloud Agent** after owner confirmation.
+
+            Mark this PR **Ready for review** when you're happy with the changes to enter the Auto-Merge Queue.")
+          fi
+
+          gh issue edit "$ISSUE_NUMBER" --remove-label "agent-working" --add-label "agent-pr-ready" || true
+          gh issue comment "$ISSUE_NUMBER" --body "✅ **Draft PR ready for your review:** ${PR_URL}
+
+          Review the diff, and when you're happy, click **Ready for review** to send it through the Auto-Merge Queue and deploy to Vercel."
+
+      - name: Report Failure on Issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ steps.authz.outputs.issue_number }}
+        run: |
+          if [ -n "$ISSUE_NUMBER" ]; then
+            gh issue edit "$ISSUE_NUMBER" --remove-label "agent-working" --add-label "agent-failed" || true
+            gh issue comment "$ISSUE_NUMBER" --body "❌ **Gemini Cloud Agent run failed** for issue #${ISSUE_NUMBER}. Inspect the logs here: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" || true
+          fi

@@ -16,6 +16,7 @@ import {
   LayoutTemplate,
   LogOut,
   Magnet,
+  MessageSquarePlus,
   Monitor,
   Moon,
   MoreHorizontal,
@@ -88,6 +89,7 @@ interface TopBarProps {
   onOpenPublicAuth?: () => void;
   onOpenSupplierModal?: () => void;
   onOpenAdminInsights?: () => void;
+  onOpenFeedbackBoard?: () => void;
 }
 
 const LIGHTING_OPTIONS: { id: LightingPreset; label: string; icon: React.ReactNode }[] = [
@@ -143,6 +145,7 @@ export const TopBar: React.FC<TopBarProps> = React.memo(({
   onOpenPublicAuth,
   onOpenSupplierModal,
   onOpenAdminInsights,
+  onOpenFeedbackBoard,
 }) => {
   const estimateTotal = formatMoney(estimatedTotalGbp, currency);
   const activePerfProfile = PERFORMANCE_PROFILES[performanceMode];
@@ -263,6 +266,18 @@ export const TopBar: React.FC<TopBarProps> = React.memo(({
             <Upload size={14} />
             <span>Export brief</span>
           </button>
+          {onOpenFeedbackBoard && (
+            <button
+              id="btn-feedback-board"
+              type="button"
+              className="topbar-supplier-btn topbar-collapse-label topbar-secondary-desktop"
+              onClick={onOpenFeedbackBoard}
+              title="Report an issue or suggest an improvement"
+            >
+              <MessageSquarePlus size={13} />
+              <span>Feedback</span>
+            </button>
+          )}
           {onOpenSupplierModal && (
             <button
               id="btn-for-suppliers"
@@ -394,6 +409,20 @@ export const TopBar: React.FC<TopBarProps> = React.memo(({
                   <Palette size={14} />
                   <span>Brand Setup</span>
                 </button>
+                {onOpenFeedbackBoard && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="topbar-more-item"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      onOpenFeedbackBoard();
+                    }}
+                  >
+                    <MessageSquarePlus size={14} />
+                    <span>Report Issue / Suggest Improvement</span>
+                  </button>
+                )}
                 {onOpenSupplierModal && (
                   <button
                     type="button"
