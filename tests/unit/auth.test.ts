@@ -141,6 +141,12 @@ describe('Private Beta Auth Library', () => {
     expect(isBetaAuthEnabled({})).toBe(false);
     expect(requireBetaSession({}, {})).toEqual({ authorized: true, user: null });
 
+    // Explicit beta mode must fail closed even when BETA_USERS is missing or malformed
+    const misconfiguredBetaEnv = { APP_ACCESS_MODE: 'beta', BETA_USERS: '[{"email":"bad-json"' };
+    expect(isBetaAuthEnabled(misconfiguredBetaEnv)).toBe(true);
+    expect(requireBetaSession({}, misconfiguredBetaEnv)).toEqual({ authorized: false, user: null });
+    expect(isBetaAuthEnabled({ APP_ACCESS_MODE: 'beta' })).toBe(true);
+
     expect(isBetaAuthEnabled(envWithUsers)).toBe(true);
     expect(requireBetaSession({}, envWithUsers)).toEqual({ authorized: false, user: null });
 

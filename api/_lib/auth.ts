@@ -365,12 +365,7 @@ export function isBetaSignupEnabled(env: NodeJS.ProcessEnv = process.env): boole
 }
 
 export function isBetaAuthEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return (
-    isPasscodeMode(env) ||
-    isPublicLaunchMode(env) ||
-    parseBetaUsers(env.BETA_USERS).length > 0 ||
-    parseInviteCodes(env.BETA_INVITE_CODE).length > 0
-  );
+  return getAppAccessMode(env) !== 'open';
 }
 
 function getSessionSecret(env: NodeJS.ProcessEnv = process.env): string {
