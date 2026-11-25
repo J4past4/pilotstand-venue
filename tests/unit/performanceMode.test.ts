@@ -24,7 +24,7 @@ describe('performanceMode profiles & helpers', () => {
     expect(high.useEnvironmentIBL).toBe(true);
     expect(eco.useEnvironmentIBL).toBe(false);
 
-    expect(high.renderOnDemandWhenIdle).toBe(false);
+    expect(high.renderOnDemandWhenIdle).toBe(true);
     expect(balanced.renderOnDemandWhenIdle).toBe(true);
     expect(eco.renderOnDemandWhenIdle).toBe(true);
   });

@@ -713,6 +713,7 @@ export function buildStandItemMesh(item: StandItem, ctx: BuildContext): THREE.Gr
         tiled.wrapS = THREE.RepeatWrapping;
         tiled.wrapT = THREE.ClampToEdgeWrapping;
         tiled.repeat.set(3, 1);
+        tiled.userData = { ...tiled.userData, disposeOnCleanup: true };
         tiled.needsUpdate = true;
         ringMat.map = tiled;
         if (ringMat.emissiveMap) ringMat.emissiveMap = tiled;

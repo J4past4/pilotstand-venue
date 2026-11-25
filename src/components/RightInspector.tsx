@@ -66,7 +66,7 @@ const DEFAULT_ART: SurfaceArtwork = {
   emissive: false,
 };
 
-export const RightInspector: React.FC<RightInspectorProps> = ({
+export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
   config,
   onUpdateConfig,
   selectedItem,
@@ -1035,4 +1035,4 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
       </div>
     </aside>
   );
-};
+});

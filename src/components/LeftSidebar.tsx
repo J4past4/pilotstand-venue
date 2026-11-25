@@ -103,7 +103,7 @@ const FLOOR_OPTIONS: { id: FloorMaterial; label: string; swatch: string }[] = [
   { id: 'brand-carpet', label: 'Custom', swatch: 'conic-gradient(#1B365D,#D95D39,#1F4E46,#1B365D)' },
 ];
 
-export const LeftSidebar: React.FC<LeftSidebarProps> = ({
+export const LeftSidebar: React.FC<LeftSidebarProps> = React.memo(({
   activeTab,
   panelOpen = true,
   onClosePanel,
@@ -950,4 +950,4 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
       </div>
     </aside>
   );
-};
+});

@@ -82,6 +82,7 @@ interface OverlayLabel {
 }
 
 function disposeObject3D(obj: THREE.Object3D) {
+  const disposedTextures = new Set<THREE.Texture>();
   obj.traverse((child) => {
     const mesh = child as THREE.Mesh;
     if (mesh.geometry && !mesh.userData.sharedGeometry) {
@@ -90,6 +91,14 @@ function disposeObject3D(obj: THREE.Object3D) {
     if (mesh.material) {
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       for (const m of mats) {
+        const std = m as THREE.MeshStandardMaterial;
+        const textures = [std.map, std.emissiveMap];
+        for (const tex of textures) {
+          if (tex && tex.userData?.disposeOnCleanup && !disposedTextures.has(tex)) {
+            disposedTextures.add(tex);
+            tex.dispose();
+          }
+        }
         m.dispose();
       }
     }
@@ -168,6 +177,35 @@ function resizePerspectiveCamera(camera: THREE.PerspectiveCamera, aspect: number
   camera.updateProjectionMatrix();
 }
 
+function isOverheadRcpItem(item: StandItem, viewMode: ViewMode): boolean {
+  return (
+    viewMode === '2d' &&
+    (item.y >= 1.8 ||
+      item.catalogId === 'hanging-cube' ||
+      item.catalogId === 'hanging-ring' ||
+      item.catalogId === 'front-arch' ||
+      item.catalogId === 'truss-rig')
+  );
+}
+
+function computeItemVisualSignature(
+  item: StandItem,
+  viewMode: ViewMode,
+  isColliding: boolean,
+  globalSig: string
+): string {
+  const { x: _x, y: _y, z: _z, rotationY: _r, visible: _v, locked: _l, ...visualProps } = item;
+  void _x;
+  void _y;
+  void _z;
+  void _r;
+  void _v;
+  void _l;
+  return `${globalSig}|${isOverheadRcpItem(item, viewMode) ? 'rcp' : 'std'}|${
+    isColliding ? 'col' : 'ok'
+  }|${JSON.stringify(visualProps)}`;
+}
+
 export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProps>(
   function StandViewport3D(
     {
@@ -211,6 +249,13 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
     const lightsGroupRef = useRef<THREE.Group | null>(null);
     const hallFloorRef = useRef<THREE.Mesh | null>(null);
 
+    // Per-item 3D mesh cache & persistent selection ring for zero-rebuild imperative dragging
+    const itemMeshCacheRef = useRef<Map<string, { group: THREE.Group; sig: string }>>(new Map());
+    const selectionRingRef = useRef<THREE.Group | null>(null);
+    const canvasRectRef = useRef<DOMRect | null>(null);
+    const assetsVersionRef = useRef(0);
+    const lastAssetsMapRef = useRef(assetsMap);
+
     const [textureTick, setTextureTick] = useState(0);
     const [hoverPaintLabel, setHoverPaintLabel] = useState<string | null>(null);
     const [overlayLabels, setOverlayLabels] = useState<OverlayLabel[]>([]);
@@ -228,6 +273,13 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
     const markSceneDirty = useCallback(() => {
       dirtyRef.current = true;
       lastActivityTsRef.current = performance.now();
+    }, []);
+
+    const markShadowsDirty = useCallback(() => {
+      const renderer = rendererRef.current;
+      if (renderer && renderer.shadowMap.enabled) {
+        renderer.shadowMap.needsUpdate = true;
+      }
     }, []);
 
     // Keep latest props accessible inside pointer/animation closures
@@ -528,6 +580,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           if (cam instanceof THREE.PerspectiveCamera) {
             resizePerspectiveCamera(cam, width / height);
           }
+          if (renderer.shadowMap.enabled) {
+            renderer.shadowMap.needsUpdate = true;
+          }
           renderer.render(scene, cam);
           const dataUrl = renderer.domElement.toDataURL('image/png');
 
@@ -561,7 +616,6 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       const initialProfile = PERFORMANCE_PROFILES[propsRef.current.performanceMode];
       const renderer = new THREE.WebGLRenderer({
         antialias: true,
-        preserveDrawingBuffer: true,
         powerPreference: 'high-performance',
       });
       const gl = renderer.getContext();
@@ -582,6 +636,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       renderer.setSize(width, height);
       renderer.shadowMap.enabled = !isSoftwareRenderer && initialProfile.shadowsEnabled;
       renderer.shadowMap.type = THREE.PCFShadowMap;
+      renderer.shadowMap.autoUpdate = false;
+      renderer.shadowMap.needsUpdate = true;
       renderer.toneMapping =
         initialProfile.toneMapping === 'aces' ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
       renderer.toneMappingExposure = 1.06;
@@ -694,10 +750,15 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       const pointerNDC = new THREE.Vector2();
       const planeHit = new THREE.Vector3();
 
+      const refreshCanvasRect = () => {
+        canvasRectRef.current = renderer.domElement.getBoundingClientRect();
+      };
+      refreshCanvasRect();
+
       const updatePointerNDC = (ev: PointerEvent) => {
-        const rect = renderer.domElement.getBoundingClientRect();
-        pointerNDC.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
-        pointerNDC.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+        const rect = canvasRectRef.current ?? renderer.domElement.getBoundingClientRect();
+        pointerNDC.x = ((ev.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+        pointerNDC.y = -((ev.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
       };
 
       const findPickedTarget = () => {
@@ -743,6 +804,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
       const onPointerDown = (ev: PointerEvent) => {
         if (ev.button !== 0) return;
+        refreshCanvasRect();
         const {
           navMode: activeNav,
           paintAssetId: activePaint,
@@ -817,6 +879,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       };
 
       let lastHoverRaycastTs = 0;
+      let lastDragShadowUpdateTs = 0;
+      let lastDragCollisionSearchTs = 0;
 
       const onPointerMove = (ev: PointerEvent) => {
         updatePointerNDC(ev);
@@ -830,7 +894,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
           raycaster.setFromCamera(pointerNDC, activeCamRef.current);
           if (raycaster.ray.intersectPlane(floorPlane, planeHit)) {
-            const { config: cfg, items: curItems, onMoveItem: moveItem } = propsRef.current;
+            const { config: cfg, items: curItems } = propsRef.current;
             let nx = planeHit.x + drag.offsetX;
             let nz = planeHit.z + drag.offsetZ;
             if (cfg.snapToGrid) {
@@ -846,34 +910,57 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
               drag.lastX = nx;
               drag.lastZ = nz;
 
+              const nowTs = performance.now();
               const itemObj = curItems.find((i) => i.id === drag.itemId);
+
+              // Imperative 3D transform update — zero React re-renders or mesh rebuilds while dragging
+              const cachedMesh = itemMeshCacheRef.current.get(drag.itemId);
+              if (cachedMesh && itemObj) {
+                cachedMesh.group.position.set(nx, itemObj.y, nz);
+              }
+              if (selectionRingRef.current) {
+                selectionRingRef.current.position.set(nx, 0.012, nz);
+              }
+
+              // Throttle shadow map refresh during drag (~10 Hz) and finalize crisply on drop
+              if (renderer.shadowMap.enabled && nowTs - lastDragShadowUpdateTs >= 100) {
+                lastDragShadowUpdateTs = nowTs;
+                renderer.shadowMap.needsUpdate = true;
+              }
+
               if (itemObj) {
                 const collision = checkWallCollision(itemObj, nx, nz, cfg, curItems);
                 if (collision.collides) {
-                  const nearest = findNearestAllowedPosition(itemObj, nx, nz, cfg, curItems, {
-                    x: drag.lastValidX,
-                    z: drag.lastValidZ,
-                  });
+                  const enteredCollision = !drag.colliding;
                   drag.colliding = true;
                   renderer.domElement.style.cursor = 'not-allowed';
-                  setWallCollision({
-                    itemId: drag.itemId,
-                    collidedShellSides: collision.collidedShellSides,
-                    collidedWallItemIds: collision.collidedWallItemIds,
-                    snapX: nearest.x,
-                    snapZ: nearest.z,
-                  });
+                  if (enteredCollision || nowTs - lastDragCollisionSearchTs >= 100) {
+                    lastDragCollisionSearchTs = nowTs;
+                    const nearest = findNearestAllowedPosition(itemObj, nx, nz, cfg, curItems, {
+                      x: drag.lastValidX,
+                      z: drag.lastValidZ,
+                    });
+                    setWallCollision({
+                      itemId: drag.itemId,
+                      collidedShellSides: collision.collidedShellSides,
+                      collidedWallItemIds: collision.collidedWallItemIds,
+                      snapX: nearest.x,
+                      snapZ: nearest.z,
+                    });
+                  }
                 } else {
+                  const wasColliding = drag.colliding;
                   drag.colliding = false;
                   drag.lastValidX = nx;
                   drag.lastValidZ = nz;
                   renderer.domElement.style.cursor = 'grabbing';
-                  setWallCollision((prev) => (prev ? null : prev));
+                  if (wasColliding) {
+                    setWallCollision(null);
+                  }
                 }
               }
 
               markSceneDirty();
-              moveItem(drag.itemId, nx, nz, false);
             }
           }
           return;
@@ -920,9 +1007,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
       const onDoubleClick = (ev: MouseEvent) => {
         if (propsRef.current.paintAssetId) return;
-        const rect = renderer.domElement.getBoundingClientRect();
-        pointerNDC.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
-        pointerNDC.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+        const rect = canvasRectRef.current ?? renderer.domElement.getBoundingClientRect();
+        pointerNDC.x = ((ev.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+        pointerNDC.y = -((ev.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
         const picked = findPickedTarget();
         if (picked?.kind === 'item') {
           frameTargetItemOrStand(picked.itemId);
@@ -946,6 +1033,16 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
             finalX = nearest.x;
             finalZ = nearest.z;
           }
+          // Snap imperative 3D meshes to final allowed position immediately before React commits
+          const cachedMesh = itemMeshCacheRef.current.get(drag.itemId);
+          if (cachedMesh && itemObj) {
+            cachedMesh.group.position.set(finalX, itemObj.y, finalZ);
+          }
+          if (selectionRingRef.current) {
+            selectionRingRef.current.position.set(finalX, 0.012, finalZ);
+          }
+          markShadowsDirty();
+          markSceneDirty();
           moveItem(drag.itemId, finalX, finalZ, true);
         }
 
@@ -983,6 +1080,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       renderer.domElement.addEventListener('webglcontextrestored', onContextRestored);
       window.addEventListener('pointerup', onPointerUp);
       window.addEventListener('pointercancel', onPointerCancel);
+      window.addEventListener('resize', refreshCanvasRect);
 
       // Resize observer
       const ro = new ResizeObserver(() => {
@@ -990,6 +1088,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         const w = container.clientWidth || 1;
         const h = container.clientHeight || 1;
         renderer.setSize(w, h);
+        refreshCanvasRect();
         const a = w / h;
         resizePerspectiveCamera(persp, a);
 
@@ -1011,7 +1110,25 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       let lastRenderedTs = 0;
       let lastMetricsReportTs = 0;
       let wasIdle = false;
+      let lastEmittedMetricsKey = '';
       const projVec = new THREE.Vector3();
+
+      const itemMeshCache = itemMeshCacheRef.current;
+
+      const emitMetricsIfChanged = (
+        avgFps: number | null,
+        isIdle: boolean,
+        isSoftwareWebGL: boolean
+      ) => {
+        const key = `${avgFps ?? 'null'}|${isIdle ? 1 : 0}|${isSoftwareWebGL ? 1 : 0}`;
+        if (key === lastEmittedMetricsKey) return;
+        lastEmittedMetricsKey = key;
+        propsRef.current.onPerformanceMetrics?.({
+          avgFps,
+          isIdle,
+          isSoftwareWebGL,
+        });
+      };
 
       const animate = (now: number = performance.now()) => {
         animId = requestAnimationFrame(animate);
@@ -1022,7 +1139,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
         const profile = PERFORMANCE_PROFILES[propsRef.current.performanceMode];
 
-        // On-demand idle sleep in Balanced / Eco modes: skip GPU work when camera & scene are still
+        // On-demand idle sleep: skip GPU work when camera & scene are still
         const isAnimatingCam = cameraAnimRef.current.active && activeCamRef.current === persp;
         const isDragging = dragStateRef.current.active;
         const isWithinActivityWindow = now - lastActivityTsRef.current < 450;
@@ -1031,18 +1148,17 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           !profile.renderOnDemandWhenIdle ||
           dirtyRef.current ||
           isAnimatingCam ||
-          isDragging ||
           isWithinActivityWindow;
 
         if (!shouldRender) {
-          if (!wasIdle || now - lastMetricsReportTs > 1500) {
+          if (!wasIdle) {
             wasIdle = true;
             lastMetricsReportTs = now;
-            propsRef.current.onPerformanceMetrics?.({
-              avgFps: perfMonitorRef.current.getAverageFps(),
-              isIdle: true,
-              isSoftwareWebGL: isSoftwareWebGLRef.current,
-            });
+            emitMetricsIfChanged(
+              perfMonitorRef.current.getAverageFps(),
+              true,
+              isSoftwareWebGLRef.current
+            );
           }
           return;
         }
@@ -1084,23 +1200,27 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           nextSoftwareRenderTs = performance.now() + Math.max(200, renderMs * 2);
         }
 
-        // Record active frame for slow-device detection & live FPS readout
+        // Record active frame for slow-device detection & live FPS readout (paused during drag)
         const slowAlert = perfMonitorRef.current.recordActiveFrame(now, renderMs);
-        if (slowAlert) {
+        if (slowAlert && !isDragging) {
           propsRef.current.onSlowPerformanceDetected?.(slowAlert);
         }
-        if (now - lastMetricsReportTs >= 1000) {
+        if (!isDragging && now - lastMetricsReportTs >= 1000) {
           lastMetricsReportTs = now;
-          propsRef.current.onPerformanceMetrics?.({
-            avgFps: perfMonitorRef.current.getAverageFps(),
-            isIdle: false,
-            isSoftwareWebGL: isSoftwareWebGLRef.current,
-          });
+          emitMetricsIfChanged(
+            perfMonitorRef.current.getAverageFps(),
+            false,
+            isSoftwareWebGLRef.current
+          );
         }
 
-        // Update 2D projected dimension & aisle badges according to profile interval
+        // Update 2D projected dimension & aisle badges (paused during item drag since camera is locked)
         const labelInterval = profile.labelUpdateIntervalFrames;
-        if ((frameCount === 1 || frameCount % labelInterval === 0) && propsRef.current.config.showDimensions) {
+        if (
+          !isDragging &&
+          (frameCount === 1 || frameCount % labelInterval === 0) &&
+          propsRef.current.config.showDimensions
+        ) {
           const { config: cfg } = propsRef.current;
           const cw = container.clientWidth;
           const ch = container.clientHeight;
@@ -1181,12 +1301,16 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored);
         window.removeEventListener('pointerup', onPointerUp);
         window.removeEventListener('pointercancel', onPointerCancel);
+        window.removeEventListener('resize', refreshCanvasRect);
+        itemMeshCache.clear();
+        selectionRingRef.current = null;
+        canvasRectRef.current = null;
         controls.dispose();
         envRT?.dispose();
         envRTRef.current = null;
         renderer.dispose();
       };
-    }, [frameTargetItemOrStand, markSceneDirty]);
+    }, [frameTargetItemOrStand, markSceneDirty, markShadowsDirty]);
 
     // Sync OrbitControls mouse bindings whenever navMode or viewMode changes
     useEffect(() => {
@@ -1391,8 +1515,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           lightsGroup.add(bayLight);
         }
       }
+      markShadowsDirty();
       markSceneDirty();
-    }, [config.lightingPreset, config.width, config.depth, performanceMode, markSceneDirty]);
+    }, [config.lightingPreset, config.width, config.depth, performanceMode, markSceneDirty, markShadowsDirty]);
 
     // Rebuild Booth Shell + Scale Figures
     useEffect(() => {
@@ -1439,20 +1564,49 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         }
         shellGroup.add(edge);
       }
+      markShadowsDirty();
       markSceneDirty();
-    }, [config, assetsMap, selectedShellWall, textureTick, viewMode, markSceneDirty]);
+    }, [config, assetsMap, selectedShellWall, textureTick, viewMode, markSceneDirty, markShadowsDirty]);
 
-    // Rebuild Equipment Items
+    // Sync Equipment Items incrementally (reuse cached 3D meshes when only transform/visibility changes)
     const collidingItemId = wallCollision?.itemId ?? null;
     useEffect(() => {
       const itemsGroup = itemsGroupRef.current;
       if (!itemsGroup) return;
 
-      while (itemsGroup.children.length > 0) {
-        const c = itemsGroup.children[0];
-        itemsGroup.remove(c);
-        disposeObject3D(c);
+      const cache = itemMeshCacheRef.current;
+      const activeIds = new Set<string>();
+      for (const item of items) {
+        activeIds.add(item.id);
       }
+
+      // Remove and dispose items that were deleted
+      for (const [id, entry] of cache.entries()) {
+        if (!activeIds.has(id)) {
+          itemsGroup.remove(entry.group);
+          disposeObject3D(entry.group);
+          cache.delete(id);
+        }
+      }
+
+      if (lastAssetsMapRef.current !== assetsMap) {
+        lastAssetsMapRef.current = assetsMap;
+        assetsVersionRef.current += 1;
+      }
+
+      const globalItemSig = [
+        viewMode,
+        textureTick,
+        assetsVersionRef.current,
+        config.primaryColor,
+        config.accentColor,
+        config.brandName,
+        config.brandTagline,
+        config.displayFont || '',
+        config.bodyFont || '',
+        config.standNumber || '',
+        config.eventName || '',
+      ].join('|');
 
       const ctx = {
         config,
@@ -1460,7 +1614,27 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         onTextureReady: () => setTextureTick((t) => t + 1),
       };
 
+      const activeDrag = dragStateRef.current;
+
       for (const item of items) {
+        const isColliding = Boolean(collidingItemId && collidingItemId === item.id);
+        const sig = computeItemVisualSignature(item, viewMode, isColliding, globalItemSig);
+        const existing = cache.get(item.id);
+        const posX = activeDrag.active && activeDrag.itemId === item.id ? activeDrag.lastX : item.x;
+        const posZ = activeDrag.active && activeDrag.itemId === item.id ? activeDrag.lastZ : item.z;
+
+        if (existing && existing.sig === sig) {
+          existing.group.position.set(posX, item.y, posZ);
+          existing.group.rotation.y = (item.rotationY * Math.PI) / 180;
+          existing.group.visible = item.visible !== false;
+          continue;
+        }
+
+        if (existing) {
+          itemsGroup.remove(existing.group);
+          disposeObject3D(existing.group);
+        }
+
         const meshGroup =
           item.catalogId === 'custom-3d-model'
             ? buildCustomModelMesh(item)
@@ -1470,14 +1644,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
         // In 2D Plan mode, render overhead rigging/hanging signs as semi-transparent
         // Reflected Ceiling Plan (RCP) outlines so they never obscure floor furniture below
-        if (
-          viewMode === '2d' &&
-          (item.y >= 1.8 ||
-            item.catalogId === 'hanging-cube' ||
-            item.catalogId === 'hanging-ring' ||
-            item.catalogId === 'front-arch' ||
-            item.catalogId === 'truss-rig')
-        ) {
+        if (isOverheadRcpItem(item, viewMode)) {
           meshGroup.traverse((child) => {
             if (child instanceof THREE.Mesh) {
               const applyGhost = (m: THREE.Material) => {
@@ -1495,8 +1662,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
               child.castShadow = false;
             }
           });
+          const rcpBox = new THREE.BoxGeometry(item.dims.w, 0.02, item.dims.d);
           const rcpOutline = new THREE.LineSegments(
-            new THREE.EdgesGeometry(new THREE.BoxGeometry(item.dims.w, 0.02, item.dims.d)),
+            new THREE.EdgesGeometry(rcpBox),
             new THREE.LineDashedMaterial({
               color: '#1B365D',
               dashSize: 0.14,
@@ -1505,25 +1673,33 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
               opacity: 0.65,
             })
           );
+          rcpBox.dispose();
           rcpOutline.computeLineDistances();
           rcpOutline.position.y = item.dims.h;
           meshGroup.add(rcpOutline);
         }
 
-        if (collidingItemId && collidingItemId === item.id) {
+        if (isColliding) {
           applyWallCollisionRedTint(meshGroup, item);
         }
 
+        meshGroup.position.set(posX, item.y, posZ);
+        meshGroup.rotation.y = (item.rotationY * Math.PI) / 180;
+        meshGroup.visible = item.visible !== false;
+
         itemsGroup.add(meshGroup);
+        cache.set(item.id, { group: meshGroup, sig });
       }
+      markShadowsDirty();
       markSceneDirty();
-    }, [items, config, assetsMap, textureTick, viewMode, collidingItemId, markSceneDirty]);
+    }, [items, config, assetsMap, textureTick, viewMode, collidingItemId, markSceneDirty, markShadowsDirty]);
 
     // Rebuild Helpers (Floor Grid, Selection Ring, Boundary Alerts, Venue Height Limit Frame)
     useEffect(() => {
       const helpersGroup = helpersGroupRef.current;
       if (!helpersGroup) return;
 
+      selectionRingRef.current = null;
       while (helpersGroup.children.length > 0) {
         const c = helpersGroup.children[0];
         helpersGroup.remove(c);
@@ -1581,9 +1757,12 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           const isWallColliding = wallCollision?.itemId === sel.id;
           const isOob = compliance.outOfBoundsIds.includes(sel.id);
           const selColor = isWallColliding ? '#EF4444' : isOob ? '#DC2626' : '#D95D39';
+          const activeDrag = dragStateRef.current;
+          const selX = activeDrag.active && activeDrag.itemId === sel.id ? activeDrag.lastX : sel.x;
+          const selZ = activeDrag.active && activeDrag.itemId === sel.id ? activeDrag.lastZ : sel.z;
 
           const ringGroup = new THREE.Group();
-          ringGroup.position.set(sel.x, 0.012, sel.z);
+          ringGroup.position.set(selX, 0.012, selZ);
           ringGroup.rotation.y = (sel.rotationY * Math.PI) / 180;
 
           const rectPts = [
@@ -1624,6 +1803,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           ringGroup.add(arrowMesh);
 
           helpersGroup.add(ringGroup);
+          selectionRingRef.current = ringGroup;
 
           // Ghost preview showing the nearest allowed snap-back position on drop
           if (isWallColliding && wallCollision) {
@@ -1666,7 +1846,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
             // Dashed guide line connecting dragged item to its snap-back destination
             const guideLine = new THREE.Line(
               new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(sel.x, 0.02, sel.z),
+                new THREE.Vector3(selX, 0.02, selZ),
                 new THREE.Vector3(wallCollision.snapX, 0.02, wallCollision.snapZ),
               ]),
               new THREE.LineDashedMaterial({

@@ -102,7 +102,7 @@ function getPerformanceIcon(mode: PerformanceMode, size = 13): React.ReactNode {
   return <Monitor size={size} />;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({
+export const TopBar: React.FC<TopBarProps> = React.memo(({
   projectName,
   onChangeProjectName,
   projects = [],
@@ -899,4 +899,4 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
     </header>
   );
-};
+});

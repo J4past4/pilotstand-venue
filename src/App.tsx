@@ -130,13 +130,6 @@ interface HistorySnapshot {
   items: StandItem[];
 }
 
-function cloneSnapshot(config: StandConfig, items: StandItem[]): HistorySnapshot {
-  return {
-    config: JSON.parse(JSON.stringify(config)),
-    items: JSON.parse(JSON.stringify(items)),
-  };
-}
-
 function readImageFile(file: File): Promise<BrandAsset> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -256,7 +249,7 @@ function App({
 
   // Atomic undo/redo history stack
   const [historyState, setHistoryState] = useState<EditorHistoryState<HistorySnapshot>>(() =>
-    createHistoryState(cloneSnapshot(activeProj.config, activeProj.items))
+    createHistoryState({ config: activeProj.config, items: activeProj.items })
   );
   const canUndo = canUndoHistory(historyState);
   const canRedo = canRedoHistory(historyState);
@@ -316,8 +309,25 @@ function App({
   const [performanceMetrics, setPerformanceMetrics] = useState<ViewportPerformanceMetrics | null>(
     null
   );
+  const handlePerformanceMetrics = useCallback((next: ViewportPerformanceMetrics) => {
+    setPerformanceMetrics((prev) => {
+      if (
+        prev &&
+        prev.avgFps === next.avgFps &&
+        prev.isIdle === next.isIdle &&
+        prev.isSoftwareWebGL === next.isSoftwareWebGL
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
   const [slowPerfAlert, setSlowPerfAlert] = useState<SlowPerformanceAlert | null>(null);
   const dismissedSlowModesRef = useRef<Set<PerformanceMode>>(new Set());
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   const handleChangePerformanceMode = useCallback(
     (nextMode: PerformanceMode) => {
@@ -363,11 +373,11 @@ function App({
 
   // Reset or commit state to atomic undo stack
   const resetHistory = useCallback((nextConfig: StandConfig, nextItems: StandItem[]) => {
-    setHistoryState(createHistoryState(cloneSnapshot(nextConfig, nextItems)));
+    setHistoryState(createHistoryState({ config: nextConfig, items: nextItems }));
   }, []);
 
   const pushHistory = useCallback((nextConfig: StandConfig, nextItems: StandItem[]) => {
-    setHistoryState((prev) => pushHistoryState(prev, cloneSnapshot(nextConfig, nextItems), { maxEntries: 50 }));
+    setHistoryState((prev) => pushHistoryState(prev, { config: nextConfig, items: nextItems }, { maxEntries: 50 }));
   }, []);
 
   const handleUndo = useCallback(() => {
@@ -1181,14 +1191,14 @@ function App({
         deleteItem(selectedItemId);
       } else if (!mod && key === 'r' && selectedItemId) {
         e.preventDefault();
-        const cur = items.find((i) => i.id === selectedItemId);
+        const cur = itemsRef.current.find((i) => i.id === selectedItemId);
         if (cur && !cur.locked) {
           const delta = e.shiftKey ? -90 : 90;
           updateItem(cur.id, { rotationY: (cur.rotationY + delta + 360) % 360 }, true);
         }
       } else if (!mod && (e.key === '[' || e.key === ']') && selectedItemId) {
         e.preventDefault();
-        const cur = items.find((i) => i.id === selectedItemId);
+        const cur = itemsRef.current.find((i) => i.id === selectedItemId);
         if (cur && !cur.locked) {
           const delta = e.key === '[' ? -15 : 15;
           updateItem(cur.id, { rotationY: (cur.rotationY + delta + 360) % 360 }, true);
@@ -1245,7 +1255,6 @@ function App({
     duplicateItem,
     deleteItem,
     nudgeSelectedItem,
-    items,
     config.snapToGrid,
     config.gridStep,
     viewMode,
@@ -1902,7 +1911,7 @@ function App({
             performanceMode={performanceMode}
             compliance={compliance}
             paintAssetId={paintAssetId}
-            onPerformanceMetrics={setPerformanceMetrics}
+            onPerformanceMetrics={handlePerformanceMetrics}
             onSlowPerformanceDetected={handleSlowPerformanceDetected}
             onSelectItem={(itemId, surfaceId) => {
               setRailPanelOpen(false);
