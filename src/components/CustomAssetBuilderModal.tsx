@@ -45,6 +45,7 @@ import type {
 import {
   analyzeSchematicLocally,
   analyzeSchematicWithAI,
+  type SchematicLayoutInfo,
   type SchematicViewPlane,
 } from '../utils/schematicAnalyzer';
 import './customAssetBuilder.css';
@@ -479,8 +480,9 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
     w: 900,
     h: 720,
   });
-  const [schematicViewPlane, setSchematicViewPlane] = useState<SchematicViewPlane>('top');
-  const [overallWidthMm, setOverallWidthMm] = useState<number>(3900);
+  const [schematicViewPlane, setSchematicViewPlane] = useState<SchematicViewPlane>('auto');
+  const [detectedLayout, setDetectedLayout] = useState<SchematicLayoutInfo | null>(null);
+  const [overallWidthMm, setOverallWidthMm] = useState<number>(2500);
   const [defaultHeightMm, setDefaultHeightMm] = useState<number>(1600);
   const [defaultDepthMm, setDefaultDepthMm] = useState<number>(900);
   const [traceElevationMm, setTraceElevationMm] = useState<number>(0);
@@ -497,10 +499,12 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
   const [calibPtsPx, setCalibPtsPx] = useState<Array<{ x: number; y: number }>>([]);
   const [calibInputMm, setCalibInputMm] = useState<number>(1650);
 
-  const mmPerPx = useMemo(
-    () => overallWidthMm / Math.max(1, schematicNaturalSize.w),
-    [overallWidthMm, schematicNaturalSize.w]
-  );
+  const mmPerPx = useMemo(() => {
+    if (detectedLayout?.mmPerOriginalPx && detectedLayout.mmPerOriginalPx > 0) {
+      return detectedLayout.mmPerOriginalPx;
+    }
+    return overallWidthMm / Math.max(1, schematicNaturalSize.w);
+  }, [detectedLayout, overallWidthMm, schematicNaturalSize.w]);
 
   const loadSchematicFromDataUrl = useCallback(
     (dataUrl: string, suggestedWidthMm?: number, suggestedName?: string) => {
@@ -508,6 +512,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
       img.onload = () => {
         setSchematicDataUrl(dataUrl);
         setSchematicImg(img);
+        setDetectedLayout(null);
         setSchematicNaturalSize({
           w: img.naturalWidth || 900,
           h: img.naturalHeight || 720,
@@ -515,7 +520,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
         if (suggestedWidthMm) setOverallWidthMm(suggestedWidthMm);
         if (suggestedName && !editingAsset) setAssetName(suggestedName);
         setAnalysisStatus(
-          'Schematic loaded. Click "Auto-Generate 3D" or trace boxes, circles, and polygons directly over the drawing.'
+          'Schematic loaded. Enter Machine Width (mm) or click "Auto-Generate 3D" — multi-view Elevation + Plan sheets are detected and fused automatically.'
         );
       };
       img.src = dataUrl;
@@ -529,7 +534,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
       reader.onload = () => {
         const dataUrl = String(reader.result || '');
         const cleanName = file.name.replace(/\.[^.]+$/, '');
-        loadSchematicFromDataUrl(dataUrl, 3000, cleanName);
+        loadSchematicFromDataUrl(dataUrl, 2450, cleanName);
       };
       reader.readAsDataURL(file);
     },
@@ -538,8 +543,8 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
 
   const handleLoadSampleSchematic = useCallback(() => {
     const sample = createSampleSchematicDataUrl();
-    setSchematicViewPlane('top');
-    loadSchematicFromDataUrl(sample.dataUrl, sample.realWidthMm, sample.name);
+    setSchematicViewPlane('auto');
+    loadSchematicFromDataUrl(sample.dataUrl, 2520, sample.name);
   }, [loadSchematicFromDataUrl]);
 
   const handleAutoGenerate = useCallback(
@@ -548,28 +553,34 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
       setAnalyzing(true);
       setAnalysisStatus(
         forceLocal
-          ? 'Scanning schematic contours locally...'
+          ? 'Scanning schematic views & contours locally...'
           : 'Analyzing 2D schematic & generating 3D shapes...'
       );
       try {
+        const rawMmPerPx = overallWidthMm / Math.max(1, schematicNaturalSize.w);
         const result = forceLocal
           ? analyzeSchematicLocally({
               image: schematicImg,
-              mmPerPx,
+              mmPerPx: rawMmPerPx,
               viewPlane: schematicViewPlane,
               defaultHeightMm,
               defaultDepthMm,
+              machineWidthMm: overallWidthMm,
             })
           : await analyzeSchematicWithAI({
               image: schematicImg,
-              mmPerPx,
+              mmPerPx: rawMmPerPx,
               viewPlane: schematicViewPlane,
               defaultHeightMm,
               defaultDepthMm,
               overallWidthMm,
+              machineWidthMm: overallWidthMm,
               notes: schematicNotes,
             });
 
+        if (result.layout) {
+          setDetectedLayout(result.layout);
+        }
         if (result.primitives.length > 0) {
           setPrimitives(result.primitives);
           setSelectedId(result.primitives[0].id);
@@ -584,7 +595,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
     },
     [
       schematicImg,
-      mmPerPx,
+      schematicNaturalSize.w,
       schematicViewPlane,
       defaultHeightMm,
       defaultDepthMm,
@@ -594,31 +605,53 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
     ]
   );
 
-  // Convert SVG/image pixel coordinates to asset mm coordinates (centered on image center)
+  // Active plan & elevation reference origins in image pixels (aligns overlays dead-center on detected views!)
+  const planOriginPx = useMemo(() => {
+    if (detectedLayout?.planRect) {
+      return {
+        cx: (detectedLayout.planRect.x + detectedLayout.planRect.w / 2) * schematicNaturalSize.w,
+        cy: (detectedLayout.planRect.y + detectedLayout.planRect.h / 2) * schematicNaturalSize.h,
+      };
+    }
+    return {
+      cx: schematicNaturalSize.w / 2,
+      cy: schematicNaturalSize.h / 2,
+    };
+  }, [detectedLayout, schematicNaturalSize.h, schematicNaturalSize.w]);
+
+  const elevOriginPx = useMemo(() => {
+    if (detectedLayout?.elevationRect) {
+      return {
+        cx: (detectedLayout.elevationRect.x + detectedLayout.elevationRect.w / 2) * schematicNaturalSize.w,
+        floorY: (detectedLayout.elevationRect.y + detectedLayout.elevationRect.h) * schematicNaturalSize.h,
+      };
+    }
+    return {
+      cx: schematicNaturalSize.w / 2,
+      floorY: schematicNaturalSize.h,
+    };
+  }, [detectedLayout, schematicNaturalSize.h, schematicNaturalSize.w]);
+
+  // Convert SVG/image pixel coordinates to asset mm coordinates
   const pxToMm = useCallback(
     (px: number, py: number) => {
-      const cx = schematicNaturalSize.w / 2;
-      const cy = schematicNaturalSize.h / 2;
       return {
-        xMm: Math.round((px - cx) * mmPerPx),
-        yMm: Math.round((py - cy) * mmPerPx),
-        // For front elevation, bottom of image is floor (0)
-        elevMm: Math.max(0, Math.round((schematicNaturalSize.h - py) * mmPerPx)),
+        xMm: Math.round((px - planOriginPx.cx) * mmPerPx),
+        yMm: Math.round((py - planOriginPx.cy) * mmPerPx),
+        elevMm: Math.max(0, Math.round((elevOriginPx.floorY - py) * mmPerPx)),
       };
     },
-    [mmPerPx, schematicNaturalSize.h, schematicNaturalSize.w]
+    [mmPerPx, planOriginPx.cx, planOriginPx.cy, elevOriginPx.floorY]
   );
 
   const mmToPx = useCallback(
     (xMm: number, zOrYMm: number) => {
-      const cx = schematicNaturalSize.w / 2;
-      const cy = schematicNaturalSize.h / 2;
       return {
-        x: cx + xMm / mmPerPx,
-        y: cy + zOrYMm / mmPerPx,
+        x: planOriginPx.cx + xMm / mmPerPx,
+        y: planOriginPx.cy + zOrYMm / mmPerPx,
       };
     },
-    [mmPerPx, schematicNaturalSize.h, schematicNaturalSize.w]
+    [mmPerPx, planOriginPx.cx, planOriginPx.cy]
   );
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -654,7 +687,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
     const dOrHMm = Math.max(60, Math.round(maxY - minY));
 
     const newPrim: AssetPrimitive =
-      schematicViewPlane === 'top'
+      schematicViewPlane !== 'front'
         ? {
             id: createPrimitiveId(),
             label: `Traced Shape ${primitives.length + 1}`,
@@ -756,7 +789,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
         const wMm = Math.max(50, Math.round(pxW * mmPerPx));
         const hOrDMm = Math.max(50, Math.round(pxH * mmPerPx));
         const newPrim: AssetPrimitive =
-          schematicViewPlane === 'top'
+          schematicViewPlane !== 'front'
             ? {
                 id: createPrimitiveId(),
                 label: `Traced Box ${primitives.length + 1} (${wMm}×${hOrDMm}mm)`,
@@ -793,7 +826,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
         const diamMm = Math.max(60, Math.round(rPx * 2 * mmPerPx));
         const centerMm = pxToMm(dragStartPx.x, dragStartPx.y);
         const newPrim: AssetPrimitive =
-          schematicViewPlane === 'top'
+          schematicViewPlane !== 'front'
             ? {
                 id: createPrimitiveId(),
                 label: `Traced Cylinder ${primitives.length + 1} (Ø${diamMm}mm)`,
@@ -839,12 +872,19 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
     );
     if (distPx < 5) return;
     const newMmPerPx = calibInputMm / distPx;
-    const newOverallW = Math.max(200, Math.round(newMmPerPx * schematicNaturalSize.w));
+    const newOverallW = detectedLayout?.planRect
+      ? Math.max(200, Math.round(newMmPerPx * detectedLayout.planRect.w * schematicNaturalSize.w))
+      : detectedLayout?.elevationRect
+        ? Math.max(200, Math.round(newMmPerPx * detectedLayout.elevationRect.w * schematicNaturalSize.w))
+        : Math.max(200, Math.round(newMmPerPx * schematicNaturalSize.w));
     setOverallWidthMm(newOverallW);
+    if (detectedLayout) {
+      setDetectedLayout({ ...detectedLayout, mmPerOriginalPx: newMmPerPx });
+    }
     setCalibPtsPx([]);
     setTraceTool('box');
     setAnalysisStatus(
-      `Scale calibrated: reference span = ${calibInputMm} mm (full drawing width = ${newOverallW} mm).`
+      `Scale calibrated: reference span = ${calibInputMm} mm (machine width = ${newOverallW} mm). Click "Auto-Generate 3D" or "Local Detect" to re-scale shapes.`
     );
   };
 
@@ -1359,23 +1399,35 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
                   <div className="cab-seg-toggle">
                     <button
                       type="button"
+                      className={
+                        schematicViewPlane === 'auto' || schematicViewPlane === 'multi-view'
+                          ? 'active'
+                          : ''
+                      }
+                      onClick={() => setSchematicViewPlane('auto')}
+                      title="Automatically detects 2-view Elevation + Plan sheets or single-view drawings"
+                    >
+                      Auto / 2-View
+                    </button>
+                    <button
+                      type="button"
                       className={schematicViewPlane === 'top' ? 'active' : ''}
                       onClick={() => setSchematicViewPlane('top')}
                     >
-                      Top-Down Plan
+                      Top Plan
                     </button>
                     <button
                       type="button"
                       className={schematicViewPlane === 'front' ? 'active' : ''}
                       onClick={() => setSchematicViewPlane('front')}
                     >
-                      Front Elevation
+                      Front Elev
                     </button>
                   </div>
 
                   <div className="cab-num-grid-2">
                     <label className="cab-num-field">
-                      <span>Drawing Width (mm)</span>
+                      <span>Machine Width (mm)</span>
                       <input
                         type="number"
                         min={200}
@@ -1387,9 +1439,9 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
                         }
                       />
                     </label>
-                    {schematicViewPlane === 'top' ? (
+                    {schematicViewPlane !== 'front' ? (
                       <label className="cab-num-field">
-                        <span>Extrude Height (mm)</span>
+                        <span>Default Height (mm)</span>
                         <input
                           type="number"
                           min={50}
@@ -1418,7 +1470,7 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
                     )}
                   </div>
 
-                  {schematicViewPlane === 'top' && (
+                  {schematicViewPlane !== 'front' && (
                     <div className="cab-num-grid-2" style={{ marginTop: 6 }}>
                       <label className="cab-num-field">
                         <span>Base Elevation Y (mm)</span>
@@ -1695,6 +1747,66 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
                         opacity={schematicOpacity}
                       />
 
+                      {/* Detected Multi-View Frames */}
+                      {detectedLayout &&
+                        (detectedLayout.mode === 'multi-view-vertical' ||
+                          detectedLayout.mode === 'multi-view-horizontal') && (
+                          <g pointerEvents="none">
+                            {detectedLayout.elevationRect && (
+                              <g>
+                                <rect
+                                  x={detectedLayout.elevationRect.x * schematicNaturalSize.w}
+                                  y={detectedLayout.elevationRect.y * schematicNaturalSize.h}
+                                  width={detectedLayout.elevationRect.w * schematicNaturalSize.w}
+                                  height={detectedLayout.elevationRect.h * schematicNaturalSize.h}
+                                  fill="none"
+                                  stroke="#0F766E"
+                                  strokeWidth={Math.max(1.5, schematicNaturalSize.w * 0.0022)}
+                                  strokeDasharray="6 4"
+                                />
+                                <text
+                                  x={detectedLayout.elevationRect.x * schematicNaturalSize.w + 4}
+                                  y={Math.max(
+                                    12,
+                                    detectedLayout.elevationRect.y * schematicNaturalSize.h - 4
+                                  )}
+                                  fill="#0F766E"
+                                  fontSize={Math.max(10, schematicNaturalSize.w * 0.014)}
+                                  fontWeight={700}
+                                >
+                                  ELEVATION VIEW
+                                </text>
+                              </g>
+                            )}
+                            {detectedLayout.planRect && (
+                              <g>
+                                <rect
+                                  x={detectedLayout.planRect.x * schematicNaturalSize.w}
+                                  y={detectedLayout.planRect.y * schematicNaturalSize.h}
+                                  width={detectedLayout.planRect.w * schematicNaturalSize.w}
+                                  height={detectedLayout.planRect.h * schematicNaturalSize.h}
+                                  fill="none"
+                                  stroke="#2563EB"
+                                  strokeWidth={Math.max(1.5, schematicNaturalSize.w * 0.0022)}
+                                  strokeDasharray="6 4"
+                                />
+                                <text
+                                  x={detectedLayout.planRect.x * schematicNaturalSize.w + 4}
+                                  y={Math.max(
+                                    12,
+                                    detectedLayout.planRect.y * schematicNaturalSize.h - 4
+                                  )}
+                                  fill="#2563EB"
+                                  fontSize={Math.max(10, schematicNaturalSize.w * 0.014)}
+                                  fontWeight={700}
+                                >
+                                  PLAN VIEW
+                                </text>
+                              </g>
+                            )}
+                          </g>
+                        )}
+
                       {/* Existing primitives projected onto the 2D schematic */}
                       {primitives.map((p) => {
                         const isSel = p.id === selectedId;
@@ -1703,118 +1815,104 @@ export const CustomAssetBuilderModal: React.FC<CustomAssetBuilderModalProps> = (
                           ? 'rgba(37, 99, 235, 0.20)'
                           : 'rgba(217, 93, 57, 0.14)';
 
-                        if (schematicViewPlane === 'top') {
-                          const pos = mmToPx(p.x, p.z);
-                          const wPx = p.w / mmPerPx;
-                          const dPx =
-                            (p.kind === 'cylinder' || p.kind === 'cone' || p.kind === 'ring'
-                              ? p.w
-                              : p.d) / mmPerPx;
+                        const showPlanOverlay =
+                          schematicViewPlane === 'top' ||
+                          detectedLayout?.mode === 'single-top' ||
+                          detectedLayout?.mode === 'multi-view-vertical' ||
+                          (!detectedLayout && schematicViewPlane !== 'front');
+                        const showElevOverlay =
+                          schematicViewPlane === 'front' ||
+                          detectedLayout?.mode === 'single-front' ||
+                          detectedLayout?.mode === 'multi-view-vertical' ||
+                          detectedLayout?.mode === 'multi-view-horizontal';
 
-                          if (p.kind === 'cylinder' || p.kind === 'cone' || p.kind === 'ring' || p.kind === 'sphere') {
-                            return (
-                              <g
-                                key={p.id}
-                                onClick={(e) => {
-                                  if (traceTool === 'select') {
-                                    e.stopPropagation();
-                                    setSelectedId(p.id);
-                                  }
-                                }}
-                              >
-                                <circle
-                                  cx={pos.x}
-                                  cy={pos.y}
-                                  r={wPx / 2}
+                        const pos = mmToPx(p.x, p.z);
+                        const wPx = p.w / mmPerPx;
+                        const dPx =
+                          (p.kind === 'cylinder' || p.kind === 'cone' || p.kind === 'ring'
+                            ? p.w
+                            : p.d) / mmPerPx;
+                        const elevCx = elevOriginPx.cx + p.x / mmPerPx;
+                        const elevHPx = p.h / mmPerPx;
+                        const elevBottomY = elevOriginPx.floorY - p.y / mmPerPx;
+
+                        return (
+                          <g
+                            key={p.id}
+                            onClick={(e) => {
+                              if (traceTool === 'select') {
+                                e.stopPropagation();
+                                setSelectedId(p.id);
+                              }
+                            }}
+                          >
+                            {showPlanOverlay &&
+                              (p.kind === 'cylinder' ||
+                              p.kind === 'cone' ||
+                              p.kind === 'ring' ||
+                              p.kind === 'sphere' ? (
+                                <g>
+                                  <circle
+                                    cx={pos.x}
+                                    cy={pos.y}
+                                    r={wPx / 2}
+                                    fill={fill}
+                                    stroke={stroke}
+                                    strokeWidth={Math.max(2, schematicNaturalSize.w * 0.003)}
+                                  />
+                                  <text
+                                    x={pos.x}
+                                    y={pos.y}
+                                    textAnchor="middle"
+                                    dominantBaseline="middle"
+                                    fill="#0F172A"
+                                    fontSize={Math.max(11, schematicNaturalSize.w * 0.015)}
+                                    fontWeight={700}
+                                  >
+                                    Ø{p.w}
+                                  </text>
+                                </g>
+                              ) : p.kind === 'extrusion' && p.points && p.points.length >= 3 ? (
+                                <polygon
+                                  points={p.points
+                                    .map((pt) => {
+                                      const pp = mmToPx(p.x + pt.x, p.z + pt.y);
+                                      return `${pp.x},${pp.y}`;
+                                    })
+                                    .join(' ')}
                                   fill={fill}
                                   stroke={stroke}
                                   strokeWidth={Math.max(2, schematicNaturalSize.w * 0.003)}
                                 />
-                                <text
-                                  x={pos.x}
-                                  y={pos.y}
-                                  textAnchor="middle"
-                                  dominantBaseline="middle"
-                                  fill="#0F172A"
-                                  fontSize={Math.max(12, schematicNaturalSize.w * 0.016)}
-                                  fontWeight={700}
-                                >
-                                  Ø{p.w}
-                                </text>
-                              </g>
-                            );
-                          }
+                              ) : (
+                                <rect
+                                  x={pos.x - wPx / 2}
+                                  y={pos.y - dPx / 2}
+                                  width={wPx}
+                                  height={dPx}
+                                  fill={fill}
+                                  stroke={stroke}
+                                  strokeWidth={Math.max(2, schematicNaturalSize.w * 0.003)}
+                                />
+                              ))}
 
-                          if (p.kind === 'extrusion' && p.points && p.points.length >= 3) {
-                            const ptsStr = p.points
-                              .map((pt) => {
-                                const pp = mmToPx(p.x + pt.x, p.z + pt.y);
-                                return `${pp.x},${pp.y}`;
-                              })
-                              .join(' ');
-                            return (
-                              <polygon
-                                key={p.id}
-                                points={ptsStr}
-                                fill={fill}
-                                stroke={stroke}
-                                strokeWidth={Math.max(2, schematicNaturalSize.w * 0.003)}
-                                onClick={(e) => {
-                                  if (traceTool === 'select') {
-                                    e.stopPropagation();
-                                    setSelectedId(p.id);
-                                  }
-                                }}
-                              />
-                            );
-                          }
-
-                          return (
-                            <g
-                              key={p.id}
-                              onClick={(e) => {
-                                if (traceTool === 'select') {
-                                  e.stopPropagation();
-                                  setSelectedId(p.id);
-                                }
-                              }}
-                            >
+                            {showElevOverlay && (
                               <rect
-                                x={pos.x - wPx / 2}
-                                y={pos.y - dPx / 2}
+                                x={elevCx - wPx / 2}
+                                y={elevBottomY - elevHPx}
                                 width={wPx}
-                                height={dPx}
-                                fill={fill}
-                                stroke={stroke}
-                                strokeWidth={Math.max(2, schematicNaturalSize.w * 0.003)}
-                              />
-                            </g>
-                          );
-                        } else {
-                          // Front elevation projection
-                          const cx = schematicNaturalSize.w / 2 + p.x / mmPerPx;
-                          const wPx = p.w / mmPerPx;
-                          const hPx = p.h / mmPerPx;
-                          const bottomY = schematicNaturalSize.h - p.y / mmPerPx;
-                          return (
-                            <rect
-                              key={p.id}
-                              x={cx - wPx / 2}
-                              y={bottomY - hPx}
-                              width={wPx}
-                              height={hPx}
-                              fill={fill}
-                              stroke={stroke}
-                              strokeWidth={Math.max(2, schematicNaturalSize.w * 0.003)}
-                              onClick={(e) => {
-                                if (traceTool === 'select') {
-                                  e.stopPropagation();
-                                  setSelectedId(p.id);
+                                height={elevHPx}
+                                fill={
+                                  isSel
+                                    ? 'rgba(37, 99, 235, 0.16)'
+                                    : 'rgba(15, 118, 110, 0.14)'
                                 }
-                              }}
-                            />
-                          );
-                        }
+                                stroke={isSel ? '#2563EB' : '#0F766E'}
+                                strokeWidth={Math.max(1.8, schematicNaturalSize.w * 0.0028)}
+                              />
+                            )}
+                          </g>
+                        );
                       })}
 
                       {/* Active Box Drag Preview */}

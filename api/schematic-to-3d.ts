@@ -21,14 +21,23 @@ interface VercelLikeResponse {
 
 interface SchematicRequestBody {
   imageDataUrl?: string;
-  viewPlane?: 'top' | 'front';
+  viewPlane?: 'auto' | 'multi-view' | 'top' | 'front';
   overallWidthMm?: number;
   defaultHeightMm?: number;
   notes?: string;
 }
 
-const SYSTEM_PROMPT = `You are an industrial CAD & exhibition stand 3D blockout assistant.
-Given a 2D technical schematic, floor plan, or elevation drawing of a machine/product/asset, decompose it into simple 3D primitive shapes in MILLIMETRES (mm) so it can be placed onto an exhibition stand.
+const SYSTEM_PROMPT = `You are an industrial CAD & exhibition stand 3D blockout engineer.
+Given a 2D technical schematic, floor plan, elevation, or MULTI-VIEW ORTHOGRAPHIC SHEET (e.g. Side/Front Elevation stacked above Top-Down Plan, or Front + Side Elevation side-by-side), reconstruct a single accurate 3D assembly in MILLIMETRES (mm).
+
+CRITICAL MULTI-VIEW RULES:
+1. First inspect whether the drawing shows MULTIPLE orthographic views of the SAME machine (e.g. Side Elevation on top + Top-Down Plan on bottom).
+2. NEVER emit duplicate primitives for separate views! FUSE the views into ONE 3D machine:
+   - Take footprints (x, z, w, d, circular turntable/drum diameters) from the Top-Down Plan view.
+   - Take vertical heights (h) and floor elevations (y) for each corresponding X-aligned section from the Elevation view (e.g. a Ø1500mm turntable whose side elevation is 78mm tall MUST have h: 78, y: 0; a vertical mast whose elevation is 2600mm tall MUST have h: 2600, y: 0).
+3. COMPLETELY IGNORE dimension lines, extension lines, arrows, leader callouts, text boxes, title blocks, and drawing borders — never turn dimension cages into 3D boxes.
+4. Read every printed dimension callout on the drawing (e.g. "2450", "2600", "Ø1500", "78", "290") and honour them accurately.
+5. Center the assembled machine around x = 0, z = 0, resting cleanly on the floor (y = 0 for floor-contacting parts). Keep the blockout clean (2 to 12 meaningful structural parts, not fragmented sub-panels).
 
 Allowed primitive kinds: "box", "cylinder", "cone", "sphere", "wedge", "ring".
 Allowed finishes: "matte", "metal", "dark-steel", "glass", "accent".
@@ -42,21 +51,20 @@ Coordinate system (ALL values in millimetres):
 - d: depth along Z (equal to w for cylinder/cone/ring)
 - rotX, rotY, rotZ: optional rotation in degrees (0 if unrotated)
 
-Read any dimension callouts printed on the drawing (e.g., "1650", "Ø1650", "H:2400") and honour them accurately.
 Return STRICT JSON ONLY with this exact schema:
 {
   "assetName": "Short descriptive name of the machine/asset",
-  "summary": "One concise sentence describing the detected parts and dimensions",
+  "summary": "One concise sentence describing the detected views, parts, and overall dimensions",
   "primitives": [
     {
       "label": "Part name",
       "kind": "cylinder",
-      "w": 1650,
-      "h": 100,
-      "d": 1650,
-      "x": 0,
+      "w": 1500,
+      "h": 78,
+      "d": 1500,
+      "x": -475,
       "y": 0,
-      "z": 200,
+      "z": 0,
       "rotX": 0,
       "rotY": 0,
       "rotZ": 0,
@@ -142,10 +150,17 @@ export default async function handler(req: VercelLikeRequest, res: VercelLikeRes
     return res.status(400).json({ error: 'Unsupported image format. Use PNG, JPEG, or WebP.' });
   }
 
+  const viewDesc =
+    body.viewPlane === 'front'
+      ? 'front elevation'
+      : body.viewPlane === 'top'
+        ? 'top-down plan'
+        : '2D technical schematic (auto-detect whether single-view or multi-view orthographic sheet and fuse views into one 3D assembly)';
+
   const userPrompt = [
-    `Analyze this 2D ${body.viewPlane === 'front' ? 'front elevation' : 'top-down plan'} schematic and convert it into 3D primitives (max 12 parts).`,
-    body.overallWidthMm ? `Reference overall drawing width: ~${Math.round(body.overallWidthMm)} mm.` : '',
-    body.defaultHeightMm ? `Default height if not labeled on drawing: ${Math.round(body.defaultHeightMm)} mm.` : '',
+    `Analyze this ${viewDesc} and convert it into clean 3D primitives (max 12 parts).`,
+    body.overallWidthMm ? `Reference overall machine width if unlabeled: ~${Math.round(body.overallWidthMm)} mm (always prefer printed dimension callouts on the drawing).` : '',
+    body.defaultHeightMm ? `Default height if not shown in an elevation view or labeled: ${Math.round(body.defaultHeightMm)} mm.` : '',
     body.notes ? `User notes: ${body.notes.slice(0, 400)}` : '',
   ]
     .filter(Boolean)
