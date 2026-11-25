@@ -58,6 +58,8 @@ import type { BetaUser, PublicAuthPromptOptions } from './components/BetaAuthGat
 import { QuoteRequestModal } from './components/QuoteRequestModal';
 import { LaunchAdminModal } from './components/LaunchAdminModal';
 import { FeedbackBoardModal } from './components/FeedbackBoardModal';
+import { VenueExplorer, type DesignStandHandoff } from './components/VenueExplorer';
+import { PACKAGING_INNOVATIONS_VENUE } from './data/packagingInnovationsVenue';
 import { applyAgentActions } from './agent/actionExecutor';
 import { sendStandAgentPrompt } from './agent/agentClient';
 import { findNearestAllowedPosition } from './utils/wallCollision';
@@ -252,8 +254,9 @@ function App({
     }
   }, [assetLibraryStorageKey, customBuiltAssets]);
 
-  // Main Projects Dashboard, Setup Guide & Guided Walkthrough Popup state
-  const [showDashboard, setShowDashboard] = useState<boolean>(true);
+  // Venue Hall Explorer, Projects Dashboard, Setup Guide & Guided Walkthrough Popup state
+  const [showVenueExplorer, setShowVenueExplorer] = useState<boolean>(true);
+  const [showDashboard, setShowDashboard] = useState<boolean>(false);
   const [showSetupGuide, setShowSetupGuide] = useState<boolean>(false);
   const [tourActive, setTourActive] = useState<boolean>(false);
 
@@ -2100,6 +2103,99 @@ function App({
     </>
   );
 
+  const handleDesignStandFromVenue = ({ stand, analytics, venue }: DesignStandHandoff) => {
+    const newId = `venue-${venue.id}-${stand.id}-${Date.now().toString(36)}`;
+    const newName = `Stand ${stand.id} (${stand.width}m × ${stand.depth}m) — ${venue.name}`;
+    const newConfig: StandConfig = {
+      ...DEFAULT_STAND_CONFIG,
+      width: Math.max(2, Math.round(stand.width * 10) / 10),
+      depth: Math.max(2, Math.round(stand.depth * 10) / 10),
+      heightLimit: Math.min(6, venue.ceilingHeightM),
+      openSides: stand.openSides,
+      showShellWalls: stand.openSides < 4,
+      eventName: `${venue.name} ${venue.edition}`,
+      standNumber: stand.id,
+      showOuterGrid: true,
+    };
+
+    // Auto-place any obstructing structural hall pillars as permanent venue fixtures
+    const standCenterX = stand.x + stand.width / 2;
+    const standCenterZ = stand.z + stand.depth / 2;
+    const pillarItems: StandItem[] = analytics.obstructingPillars.map((pillar) => {
+      const relX = Math.round((pillar.x + pillar.width / 2 - standCenterX) * 100) / 100;
+      const relZ = Math.round((pillar.z + pillar.depth / 2 - standCenterZ) * 100) / 100;
+      const pillarDims = {
+        w: Math.min(2.4, Math.max(0.5, pillar.width)),
+        h: Math.min(6, pillar.heightM),
+        d: Math.min(2.4, Math.max(0.5, pillar.depth)),
+      };
+      return {
+        id: createItemId('venue-pillar-square'),
+        catalogId: 'venue-pillar-square',
+        name: pillar.label,
+        x: Math.max(-stand.width / 2 + 0.4, Math.min(stand.width / 2 - 0.4, relX)),
+        y: 0,
+        z: Math.max(-stand.depth / 2 + 0.4, Math.min(stand.depth / 2 - 0.4, relZ)),
+        rotationY: 0,
+        dims: pillarDims,
+        locked: true,
+        visible: true,
+        artwork: {},
+        isPermanentFixture: true,
+        fixtureOwner: 'venue',
+        venueBranding: createDefaultVenueBranding(pillarDims, 'venue-pillar-square'),
+      };
+    });
+
+    const newProject: SavedProject = {
+      id: newId,
+      name: newName,
+      updatedAt: Date.now(),
+      config: newConfig,
+      items: pillarItems,
+      customAssets: [],
+    };
+
+    setProjects((prev) => [newProject, ...prev]);
+    setActiveProjectId(newId);
+    setProjectName(newName);
+    setConfig(newConfig);
+    setItems(pillarItems);
+    setCustomAssets([]);
+    setSelectedItemIds([]);
+    setSelectedSurfaceId(null);
+    setSelectedShellWall(null);
+    setHistoryState(createHistoryState({ config: newConfig, items: pillarItems }));
+    setShowVenueExplorer(false);
+    setShowDashboard(false);
+    setViewMode('3d');
+    notify(
+      pillarItems.length > 0
+        ? `Loaded Stand ${stand.id} (${stand.width}×${stand.depth}m) with ${pillarItems.length} permanent hall pillar fixture.`
+        : `Loaded Stand ${stand.id} (${stand.width}×${stand.depth}m) into 3D Stand Designer.`
+    );
+  };
+
+  if (showVenueExplorer) {
+    return (
+      <>
+        <VenueExplorer
+          venue={PACKAGING_INNOVATIONS_VENUE}
+          onDesignStand={handleDesignStandFromVenue}
+          onOpenStandDesigner={() => {
+            setShowVenueExplorer(false);
+            setShowDashboard(false);
+          }}
+          onOpenProjectsDashboard={() => {
+            setShowVenueExplorer(false);
+            setShowDashboard(true);
+          }}
+        />
+        {toast && <div role="status" className="studio-toast">{toast}</div>}
+      </>
+    );
+  }
+
   if (showDashboard) {
     return (
       <>
@@ -2172,6 +2268,10 @@ function App({
         onGoToDashboard={() => {
           setTourActive(false);
           setShowDashboard(true);
+        }}
+        onOpenVenueExplorer={() => {
+          setTourActive(false);
+          setShowVenueExplorer(true);
         }}
         viewMode={viewMode}
         onChangeViewMode={(mode) => {
