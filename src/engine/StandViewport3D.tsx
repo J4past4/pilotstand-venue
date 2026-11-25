@@ -42,6 +42,14 @@ import {
   type SlowPerformanceAlert,
   type ViewportPerformanceMetrics,
 } from '../utils/performanceMode';
+import {
+  computeGroupBounds,
+  computeMarqueeRect,
+  computeMultiDragPositions,
+  isScreenBoxIntersectingRect,
+  mergeSelection,
+  type MarqueeRect,
+} from '../utils/multiSelect';
 
 export interface StandViewportHandle {
   setCameraPreset: (preset: CameraPreset, instant?: boolean) => void;
@@ -60,7 +68,7 @@ interface StandViewportProps {
   items: StandItem[];
   assetsMap: Map<string, BrandAsset>;
   modelsVersion?: number;
-  selectedItemId: string | null;
+  selectedItemIds: string[];
   selectedShellWall: ShellWallSide | null;
   viewMode: ViewMode;
   navMode?: ViewportNavMode;
@@ -72,8 +80,14 @@ interface StandViewportProps {
   onPerformanceMetrics?: (metrics: ViewportPerformanceMetrics) => void;
   onSlowPerformanceDetected?: (alert: SlowPerformanceAlert) => void;
   onSelectItem: (itemId: string | null, surfaceId?: string | null) => void;
+  onSelectItems: (itemIds: string[]) => void;
+  onToggleSelectItem: (itemId: string) => void;
   onSelectShellWall: (side: ShellWallSide | null) => void;
   onMoveItem: (itemId: string, x: number, z: number, commitHistory: boolean) => void;
+  onMoveItems: (
+    updates: Array<{ id: string; x: number; z: number }>,
+    commitHistory: boolean
+  ) => void;
   onPaintSurface: (
     target:
       | { kind: 'item'; itemId: string; surfaceId: string }
@@ -231,7 +245,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       items,
       assetsMap,
       modelsVersion = 0,
-      selectedItemId,
+      selectedItemIds,
       selectedShellWall,
       viewMode,
       navMode = 'select',
@@ -243,8 +257,11 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       onPerformanceMetrics,
       onSlowPerformanceDetected,
       onSelectItem,
+      onSelectItems,
+      onToggleSelectItem,
       onSelectShellWall,
       onMoveItem,
+      onMoveItems,
       onPaintSurface,
       onDropCatalogItem,
       onDropCustomModelAsset,
@@ -282,6 +299,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
     const [wallCollision, setWallCollision] = useState<WallCollisionFeedback | null>(null);
     const [webglContextLost, setWebglContextLost] = useState(false);
     const [spacePanning, setSpacePanning] = useState(false);
+    const [marqueeRect, setMarqueeRect] = useState<MarqueeRect | null>(null);
     const lastLabelsKeyRef = useRef<string>('');
     const isSoftwareWebGLRef = useRef<boolean>(false);
     const dirtyRef = useRef<boolean>(true);
@@ -305,7 +323,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
     const propsRef = useRef({
       config,
       items,
-      selectedItemId,
+      selectedItemIds,
       viewMode,
       navMode: effectiveNavMode,
       performanceMode,
@@ -315,14 +333,17 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       onPerformanceMetrics,
       onSlowPerformanceDetected,
       onSelectItem,
+      onSelectItems,
+      onToggleSelectItem,
       onSelectShellWall,
       onMoveItem,
+      onMoveItems,
       onPaintSurface,
     });
     propsRef.current = {
       config,
       items,
-      selectedItemId,
+      selectedItemIds,
       viewMode,
       navMode: effectiveNavMode,
       performanceMode,
@@ -332,8 +353,11 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       onPerformanceMetrics,
       onSlowPerformanceDetected,
       onSelectItem,
+      onSelectItems,
+      onToggleSelectItem,
       onSelectShellWall,
       onMoveItem,
+      onMoveItems,
       onPaintSurface,
     };
 
@@ -350,6 +374,14 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
     const dragStateRef = useRef<{
       active: boolean;
       itemId: string | null;
+      isMulti: boolean;
+      clickedInMultiId: string | null;
+      clickedSurfaceId: string | null;
+      startPlaneX: number;
+      startPlaneZ: number;
+      startPositions: Array<{ id: string; x: number; z: number }>;
+      lastPositions: Array<{ id: string; x: number; z: number }>;
+      lastValidPositions: Array<{ id: string; x: number; z: number }>;
       offsetX: number;
       offsetZ: number;
       moved: boolean;
@@ -363,6 +395,14 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
     }>({
       active: false,
       itemId: null,
+      isMulti: false,
+      clickedInMultiId: null,
+      clickedSurfaceId: null,
+      startPlaneX: 0,
+      startPlaneZ: 0,
+      startPositions: [],
+      lastPositions: [],
+      lastValidPositions: [],
       offsetX: 0,
       offsetZ: 0,
       moved: false,
@@ -373,6 +413,24 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       colliding: false,
       pointerDownX: 0,
       pointerDownY: 0,
+    });
+
+    const marqueeStateRef = useRef<{
+      active: boolean;
+      dragging: boolean;
+      startX: number;
+      startY: number;
+      currentX: number;
+      currentY: number;
+      startedOnItemId: string | null;
+    }>({
+      active: false,
+      dragging: false,
+      startX: 0,
+      startY: 0,
+      currentX: 0,
+      currentY: 0,
+      startedOnItemId: null,
     });
 
     const syncControlsInteraction = useCallback((mode: ViewportNavMode, isTop2D: boolean) => {
@@ -511,10 +569,18 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
     const frameTargetItemOrStand = useCallback(
       (explicitItemId?: string | null) => {
-        const { items: curItems, selectedItemId: selId, viewMode: curView } = propsRef.current;
-        const targetId = explicitItemId !== undefined ? explicitItemId : selId;
-        const item = targetId ? curItems.find((i) => i.id === targetId) : null;
-        if (!item) {
+        const { items: curItems, selectedItemIds: selIds, viewMode: curView } = propsRef.current;
+        const targetIds =
+          explicitItemId !== undefined
+            ? explicitItemId
+              ? [explicitItemId]
+              : []
+            : selIds;
+        const targetItems = curItems.filter(
+          (i) => targetIds.includes(i.id) && i.visible !== false
+        );
+        const bounds = computeGroupBounds(targetItems);
+        if (!bounds) {
           applyCameraPreset(curView === '2d' ? 'top' : curView === 'eye-level' ? 'eye-level' : 'isometric');
           return;
         }
@@ -526,17 +592,20 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         markSceneDirty();
 
         if (activeCamRef.current === ortho) {
-          ortho.position.set(item.x, 14, item.z + 0.001);
-          controls.target.set(item.x, 0, item.z);
-          ortho.zoom = Math.max(1.2, Math.min(3.5, 4 / Math.max(item.dims.w, item.dims.d, 1.2)));
+          ortho.position.set(bounds.cx, 14, bounds.cz + 0.001);
+          controls.target.set(bounds.cx, 0, bounds.cz);
+          ortho.zoom = Math.max(
+            0.85,
+            Math.min(3.5, 4 / Math.max(bounds.width, bounds.depth, 1.2))
+          );
           ortho.updateProjectionMatrix();
           controls.update();
           return;
         }
 
-        const span = Math.max(item.dims.w, item.dims.h, item.dims.d, 1.1);
-        const centerY = item.y + item.dims.h * 0.45;
-        const look = new THREE.Vector3(item.x, centerY, item.z);
+        const span = Math.max(bounds.width, bounds.height, bounds.depth, 1.1);
+        const centerY = bounds.minY + bounds.height * 0.45;
+        const look = new THREE.Vector3(bounds.cx, centerY, bounds.cz);
         const dir = persp.position.clone().sub(controls.target);
         if (dir.lengthSq() < 0.01) dir.set(1, 0.75, 1.1);
         dir.normalize();
@@ -828,10 +897,37 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           navMode: activeNav,
           paintAssetId: activePaint,
           items: curItems,
+          selectedItemIds: curSelectedIds,
           onSelectItem: selectItem,
           onSelectShellWall: selectShell,
           onPaintSurface: paintSurface,
         } = propsRef.current;
+
+        const isMultiMod = ev.ctrlKey || ev.metaKey;
+
+        // Ctrl/Cmd + click or Ctrl/Cmd + drag: intercept before OrbitControls so it never pans
+        if (!activePaint && isMultiMod) {
+          ev.stopImmediatePropagation();
+          ev.preventDefault();
+          updatePointerNDC(ev);
+          const picked = findPickedTarget();
+          const rect = renderer.domElement.getBoundingClientRect();
+          const localX = ev.clientX - rect.left;
+          const localY = ev.clientY - rect.top;
+
+          marqueeStateRef.current = {
+            active: true,
+            dragging: false,
+            startX: localX,
+            startY: localY,
+            currentX: localX,
+            currentY: localY,
+            startedOnItemId: picked?.kind === 'item' ? picked.itemId : null,
+          };
+          controls.enabled = false;
+          renderer.domElement.setPointerCapture(ev.pointerId);
+          return;
+        }
 
         // In Orbit or Pan navigation mode (or Shift+drag), let OrbitControls handle pointer directly
         if (!activePaint && (activeNav === 'orbit' || activeNav === 'pan' || ev.shiftKey)) {
@@ -864,28 +960,78 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
         if (picked?.kind === 'item') {
           selectShell(null);
-          selectItem(picked.itemId, picked.surfaceId);
           const itemObj = curItems.find((i) => i.id === picked.itemId);
-          if (itemObj && !itemObj.locked && activeCamRef.current) {
+          const isAlreadyInMulti =
+            curSelectedIds.length > 1 && curSelectedIds.includes(picked.itemId);
+
+          if (!isAlreadyInMulti) {
+            selectItem(picked.itemId, picked.surfaceId);
+          }
+
+          if (itemObj && activeCamRef.current) {
             raycaster.setFromCamera(pointerNDC, activeCamRef.current);
             if (raycaster.ray.intersectPlane(floorPlane, planeHit)) {
-              dragStateRef.current = {
-                active: true,
-                itemId: itemObj.id,
-                offsetX: itemObj.x - planeHit.x,
-                offsetZ: itemObj.z - planeHit.z,
-                moved: false,
-                lastX: itemObj.x,
-                lastZ: itemObj.z,
-                lastValidX: itemObj.x,
-                lastValidZ: itemObj.z,
-                colliding: false,
-                pointerDownX: ev.clientX,
-                pointerDownY: ev.clientY,
-              };
-              controls.enabled = false;
-              renderer.domElement.style.cursor = 'grabbing';
-              renderer.domElement.setPointerCapture(ev.pointerId);
+              if (isAlreadyInMulti) {
+                const movableItems = curItems.filter(
+                  (i) => curSelectedIds.includes(i.id) && !i.locked
+                );
+                const startPositions = movableItems.map((i) => ({
+                  id: i.id,
+                  x: i.x,
+                  z: i.z,
+                }));
+                dragStateRef.current = {
+                  active: true,
+                  itemId: itemObj.id,
+                  isMulti: true,
+                  clickedInMultiId: picked.itemId,
+                  clickedSurfaceId: picked.surfaceId,
+                  startPlaneX: planeHit.x,
+                  startPlaneZ: planeHit.z,
+                  startPositions,
+                  lastPositions: startPositions.map((p) => ({ ...p })),
+                  lastValidPositions: startPositions.map((p) => ({ ...p })),
+                  offsetX: itemObj.x - planeHit.x,
+                  offsetZ: itemObj.z - planeHit.z,
+                  moved: false,
+                  lastX: itemObj.x,
+                  lastZ: itemObj.z,
+                  lastValidX: itemObj.x,
+                  lastValidZ: itemObj.z,
+                  colliding: false,
+                  pointerDownX: ev.clientX,
+                  pointerDownY: ev.clientY,
+                };
+                controls.enabled = false;
+                renderer.domElement.style.cursor = movableItems.length > 0 ? 'grabbing' : 'default';
+                renderer.domElement.setPointerCapture(ev.pointerId);
+              } else if (!itemObj.locked) {
+                dragStateRef.current = {
+                  active: true,
+                  itemId: itemObj.id,
+                  isMulti: false,
+                  clickedInMultiId: null,
+                  clickedSurfaceId: null,
+                  startPlaneX: planeHit.x,
+                  startPlaneZ: planeHit.z,
+                  startPositions: [{ id: itemObj.id, x: itemObj.x, z: itemObj.z }],
+                  lastPositions: [{ id: itemObj.id, x: itemObj.x, z: itemObj.z }],
+                  lastValidPositions: [{ id: itemObj.id, x: itemObj.x, z: itemObj.z }],
+                  offsetX: itemObj.x - planeHit.x,
+                  offsetZ: itemObj.z - planeHit.z,
+                  moved: false,
+                  lastX: itemObj.x,
+                  lastZ: itemObj.z,
+                  lastValidX: itemObj.x,
+                  lastValidZ: itemObj.z,
+                  colliding: false,
+                  pointerDownX: ev.clientX,
+                  pointerDownY: ev.clientY,
+                };
+                controls.enabled = false;
+                renderer.domElement.style.cursor = 'grabbing';
+                renderer.domElement.setPointerCapture(ev.pointerId);
+              }
             }
           }
         } else if (picked?.kind === 'shell') {
@@ -903,6 +1049,26 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
       const onPointerMove = (ev: PointerEvent) => {
         updatePointerNDC(ev);
+
+        // Active Ctrl+drag marquee box selection
+        const marquee = marqueeStateRef.current;
+        if (marquee.active) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          const localX = Math.max(0, Math.min(rect.width, ev.clientX - rect.left));
+          const localY = Math.max(0, Math.min(rect.height, ev.clientY - rect.top));
+          marquee.currentX = localX;
+          marquee.currentY = localY;
+          const distPx = Math.hypot(localX - marquee.startX, localY - marquee.startY);
+          if (distPx >= 5 || marquee.dragging) {
+            marquee.dragging = true;
+            renderer.domElement.style.cursor = 'crosshair';
+            setMarqueeRect(
+              computeMarqueeRect(marquee.startX, marquee.startY, localX, localY)
+            );
+          }
+          return;
+        }
+
         const drag = dragStateRef.current;
         if (drag.active && drag.itemId && activeCamRef.current) {
           const distPx = Math.hypot(
@@ -913,7 +1079,75 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
           raycaster.setFromCamera(pointerNDC, activeCamRef.current);
           if (raycaster.ray.intersectPlane(floorPlane, planeHit)) {
-            const { config: cfg, items: curItems } = propsRef.current;
+            const {
+              config: cfg,
+              items: curItems,
+              onMoveItems: moveItems,
+            } = propsRef.current;
+
+            if (drag.isMulti) {
+              if (drag.startPositions.length === 0) return;
+              const deltaX = planeHit.x - drag.startPlaneX;
+              const deltaZ = planeHit.z - drag.startPlaneZ;
+              const nextPositions = computeMultiDragPositions(
+                drag.startPositions,
+                deltaX,
+                deltaZ,
+                cfg
+              );
+              const changed = nextPositions.some((p, idx) => {
+                const prev = drag.lastPositions[idx];
+                return !prev || p.x !== prev.x || p.z !== prev.z;
+              });
+              if (changed) {
+                drag.moved = true;
+                drag.lastPositions = nextPositions;
+
+                // Evaluate collisions against non-moving walls/shell walls using updated group positions
+                const nextPosMap = new Map(nextPositions.map((p) => [p.id, p]));
+                const simulatedItems = curItems.map((it) => {
+                  const np = nextPosMap.get(it.id);
+                  return np ? { ...it, x: np.x, z: np.z } : it;
+                });
+
+                let firstCollision: WallCollisionFeedback | null = null;
+                for (const np of nextPositions) {
+                  const simItem = simulatedItems.find((i) => i.id === np.id);
+                  if (!simItem) continue;
+                  const collision = checkWallCollision(simItem, np.x, np.z, cfg, simulatedItems);
+                  if (collision.collides) {
+                    const fallback =
+                      drag.lastValidPositions.find((p) => p.id === np.id) || {
+                        x: np.x,
+                        z: np.z,
+                      };
+                    firstCollision = {
+                      itemId: np.id,
+                      collidedShellSides: collision.collidedShellSides,
+                      collidedWallItemIds: collision.collidedWallItemIds,
+                      snapX: fallback.x,
+                      snapZ: fallback.z,
+                    };
+                    break;
+                  }
+                }
+
+                if (firstCollision) {
+                  drag.colliding = true;
+                  renderer.domElement.style.cursor = 'not-allowed';
+                  setWallCollision(firstCollision);
+                } else {
+                  drag.colliding = false;
+                  drag.lastValidPositions = nextPositions.map((p) => ({ ...p }));
+                  renderer.domElement.style.cursor = 'grabbing';
+                  setWallCollision((prev) => (prev ? null : prev));
+                }
+
+                markSceneDirty();
+                moveItems(nextPositions, false);
+              }
+              return;
+            }
             let nx = planeHit.x + drag.offsetX;
             let nz = planeHit.z + drag.offsetZ;
             if (cfg.snapToGrid) {
@@ -1016,6 +1250,9 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
             renderer.domElement.style.cursor = 'not-allowed';
             setHoverPaintLabel('Hover over any wall, counter, banner, or screen');
           }
+        } else if (ev.ctrlKey || ev.metaKey) {
+          setHoverPaintLabel(null);
+          renderer.domElement.style.cursor = 'crosshair';
         } else if (propsRef.current.navMode === 'pan' || propsRef.current.viewMode === '2d') {
           setHoverPaintLabel(null);
           if (propsRef.current.navMode === 'pan') {
@@ -1047,38 +1284,162 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         }
       };
 
+      const finishMarquee = (pointerId?: number) => {
+        const marquee = marqueeStateRef.current;
+        if (!marquee.active) return;
+
+        const {
+          items: curItems,
+          selectedItemIds: curSelectedIds,
+          onSelectItems: selectItems,
+          onToggleSelectItem: toggleSelectItem,
+          onSelectShellWall: selectShell,
+        } = propsRef.current;
+
+        if (marquee.dragging && activeCamRef.current) {
+          const boxRect = computeMarqueeRect(
+            marquee.startX,
+            marquee.startY,
+            marquee.currentX,
+            marquee.currentY
+          );
+          const rect = renderer.domElement.getBoundingClientRect();
+          const cam = activeCamRef.current;
+          const cornerVec = new THREE.Vector3();
+          const matchedIds: string[] = [];
+
+          for (const item of curItems) {
+            if (item.visible === false) continue;
+            const hw = item.dims.w / 2;
+            const hd = item.dims.d / 2;
+            const rad = (item.rotationY * Math.PI) / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minY = Infinity;
+            let maxY = -Infinity;
+            let visibleCornerCount = 0;
+
+            for (const lx of [-hw, hw]) {
+              for (const ly of [0, item.dims.h]) {
+                for (const lz of [-hd, hd]) {
+                  const wx = item.x + lx * cos + lz * sin;
+                  const wy = item.y + ly;
+                  const wz = item.z - lx * sin + lz * cos;
+                  cornerVec.set(wx, wy, wz).project(cam);
+                  if (cornerVec.z >= -1 && cornerVec.z <= 1) {
+                    const sx = (cornerVec.x * 0.5 + 0.5) * rect.width;
+                    const sy = (-cornerVec.y * 0.5 + 0.5) * rect.height;
+                    minX = Math.min(minX, sx);
+                    maxX = Math.max(maxX, sx);
+                    minY = Math.min(minY, sy);
+                    maxY = Math.max(maxY, sy);
+                    visibleCornerCount += 1;
+                  }
+                }
+              }
+            }
+
+            if (
+              visibleCornerCount > 0 &&
+              isScreenBoxIntersectingRect({ minX, minY, maxX, maxY }, boxRect)
+            ) {
+              matchedIds.push(item.id);
+            }
+          }
+
+          if (matchedIds.length > 0) {
+            selectShell(null);
+            selectItems(mergeSelection(curSelectedIds, matchedIds, true));
+          }
+        } else if (marquee.startedOnItemId) {
+          selectShell(null);
+          toggleSelectItem(marquee.startedOnItemId);
+        }
+
+        marqueeStateRef.current.active = false;
+        marqueeStateRef.current.dragging = false;
+        marqueeStateRef.current.startedOnItemId = null;
+        setMarqueeRect(null);
+        controls.enabled = true;
+        renderer.domElement.style.cursor = 'default';
+        if (typeof pointerId === 'number') {
+          try {
+            renderer.domElement.releasePointerCapture(pointerId);
+          } catch {
+            // ignore
+          }
+        }
+      };
+
       const finishDrag = (pointerId?: number) => {
+        if (marqueeStateRef.current.active) {
+          finishMarquee(pointerId);
+          return;
+        }
+
         const drag = dragStateRef.current;
         if (!drag.active) return;
 
-        if (drag.moved && drag.itemId) {
-          const { config: cfg, items: curItems, onMoveItem: moveItem } = propsRef.current;
-          const itemObj = curItems.find((i) => i.id === drag.itemId);
-          let finalX = drag.lastX;
-          let finalZ = drag.lastZ;
-          if (itemObj) {
-            const nearest = findNearestAllowedPosition(itemObj, drag.lastX, drag.lastZ, cfg, curItems, {
-              x: drag.lastValidX,
-              z: drag.lastValidZ,
-            });
-            finalX = nearest.x;
-            finalZ = nearest.z;
+        if (!drag.moved && drag.clickedInMultiId) {
+          // User clicked an item inside an existing multi-selection without dragging:
+          // collapse selection to that single item (standard editor behavior)
+          propsRef.current.onSelectItem(drag.clickedInMultiId, drag.clickedSurfaceId);
+        } else if (drag.moved && drag.itemId) {
+          const {
+            config: cfg,
+            items: curItems,
+            onMoveItem: moveItem,
+            onMoveItems: moveItems,
+          } = propsRef.current;
+
+          if (drag.isMulti) {
+            const finalPositions = drag.colliding
+              ? drag.lastValidPositions
+              : drag.lastPositions;
+            for (const pos of finalPositions) {
+              const cachedMesh = itemMeshCacheRef.current.get(pos.id);
+              const targetItem = curItems.find((i) => i.id === pos.id);
+              if (cachedMesh && targetItem) {
+                cachedMesh.group.position.set(pos.x, targetItem.y, pos.z);
+              }
+            }
+            markShadowsDirty();
+            markSceneDirty();
+            moveItems(finalPositions, true);
+          } else {
+            const itemObj = curItems.find((i) => i.id === drag.itemId);
+            let finalX = drag.lastX;
+            let finalZ = drag.lastZ;
+            if (itemObj) {
+              const nearest = findNearestAllowedPosition(itemObj, drag.lastX, drag.lastZ, cfg, curItems, {
+                x: drag.lastValidX,
+                z: drag.lastValidZ,
+              });
+              finalX = nearest.x;
+              finalZ = nearest.z;
+            }
+            // Snap imperative 3D meshes to final allowed position immediately before React commits
+            const cachedMesh = itemMeshCacheRef.current.get(drag.itemId);
+            if (cachedMesh && itemObj) {
+              cachedMesh.group.position.set(finalX, itemObj.y, finalZ);
+            }
+            if (selectionRingRef.current) {
+              selectionRingRef.current.position.set(finalX, 0.012, finalZ);
+            }
+            markShadowsDirty();
+            markSceneDirty();
+            moveItem(drag.itemId, finalX, finalZ, true);
           }
-          // Snap imperative 3D meshes to final allowed position immediately before React commits
-          const cachedMesh = itemMeshCacheRef.current.get(drag.itemId);
-          if (cachedMesh && itemObj) {
-            cachedMesh.group.position.set(finalX, itemObj.y, finalZ);
-          }
-          if (selectionRingRef.current) {
-            selectionRingRef.current.position.set(finalX, 0.012, finalZ);
-          }
-          markShadowsDirty();
-          markSceneDirty();
-          moveItem(drag.itemId, finalX, finalZ, true);
         }
 
         dragStateRef.current.active = false;
         dragStateRef.current.itemId = null;
+        dragStateRef.current.isMulti = false;
+        dragStateRef.current.clickedInMultiId = null;
+        dragStateRef.current.clickedSurfaceId = null;
         dragStateRef.current.colliding = false;
         setWallCollision(null);
         controls.enabled = true;
@@ -1094,6 +1455,11 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
       const onPointerUp = (ev: PointerEvent) => finishDrag(ev.pointerId);
       const onPointerCancel = (ev: PointerEvent) => finishDrag(ev.pointerId);
+      const onContextMenu = (ev: MouseEvent) => {
+        if (ev.ctrlKey) {
+          ev.preventDefault();
+        }
+      };
 
       const onContextLost = (ev: Event) => {
         ev.preventDefault();
@@ -1104,9 +1470,10 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         setTextureTick((t) => t + 1);
       };
 
-      renderer.domElement.addEventListener('pointerdown', onPointerDown);
+      renderer.domElement.addEventListener('pointerdown', onPointerDown, { capture: true });
       renderer.domElement.addEventListener('pointermove', onPointerMove);
       renderer.domElement.addEventListener('dblclick', onDoubleClick);
+      renderer.domElement.addEventListener('contextmenu', onContextMenu);
       renderer.domElement.addEventListener('webglcontextlost', onContextLost);
       renderer.domElement.addEventListener('webglcontextrestored', onContextRestored);
       window.addEventListener('pointerup', onPointerUp);
@@ -1343,9 +1710,10 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       return () => {
         cancelAnimationFrame(animId);
         ro.disconnect();
-        renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+        renderer.domElement.removeEventListener('pointerdown', onPointerDown, { capture: true });
         renderer.domElement.removeEventListener('pointermove', onPointerMove);
         renderer.domElement.removeEventListener('dblclick', onDoubleClick);
+        renderer.domElement.removeEventListener('contextmenu', onContextMenu);
         renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
         renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored);
         window.removeEventListener('pointerup', onPointerUp);
@@ -1881,7 +2249,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
       // Subtle structural dashed footprint markers for permanent fixtures
       for (const item of items) {
-        if (item.visible === false || !item.isPermanentFixture || item.id === selectedItemId) continue;
+        if (item.visible === false || !item.isPermanentFixture || selectedItemIds.includes(item.id)) continue;
         const pw = item.dims.w + 0.12;
         const pd = item.dims.d + 0.12;
         const fxGroup = new THREE.Group();
@@ -1927,117 +2295,159 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       );
       helpersGroup.add(borderLine);
 
-      // Selected Item Highlight Ring + Corner Ticks
-      if (selectedItemId) {
-        const sel = items.find((i) => i.id === selectedItemId);
-        if (sel && sel.visible !== false) {
-          const pad = 0.08;
-          const bw = sel.dims.w + pad * 2;
-          const bd = sel.dims.d + pad * 2;
-          const isWallColliding = wallCollision?.itemId === sel.id;
-          const isOob = compliance.outOfBoundsIds.includes(sel.id);
-          const selColor = isWallColliding ? '#EF4444' : isOob ? '#DC2626' : '#D95D39';
-          const activeDrag = dragStateRef.current;
-          const selX = activeDrag.active && activeDrag.itemId === sel.id ? activeDrag.lastX : sel.x;
-          const selZ = activeDrag.active && activeDrag.itemId === sel.id ? activeDrag.lastZ : sel.z;
+      // Selected Item Highlight Ring(s) + Corner Ticks
+      const selectedSet = new Set(selectedItemIds);
+      const visibleSelectedItems: StandItem[] = [];
+      const activeDrag = dragStateRef.current;
+      for (const selId of selectedItemIds) {
+        const sel = items.find((i) => i.id === selId);
+        if (!sel || sel.visible === false) continue;
+        visibleSelectedItems.push(sel);
 
-          const ringGroup = new THREE.Group();
-          ringGroup.position.set(selX, 0.012, selZ);
-          ringGroup.rotation.y = (sel.rotationY * Math.PI) / 180;
+        const pad = 0.08;
+        const bw = sel.dims.w + pad * 2;
+        const bd = sel.dims.d + pad * 2;
+        const isWallColliding = wallCollision?.itemId === sel.id;
+        const isOob = compliance.outOfBoundsIds.includes(sel.id);
+        const selColor = isWallColliding ? '#EF4444' : isOob ? '#DC2626' : '#D95D39';
+        const selX =
+          activeDrag.active && !activeDrag.isMulti && activeDrag.itemId === sel.id
+            ? activeDrag.lastX
+            : sel.x;
+        const selZ =
+          activeDrag.active && !activeDrag.isMulti && activeDrag.itemId === sel.id
+            ? activeDrag.lastZ
+            : sel.z;
 
-          const rectPts = [
-            new THREE.Vector3(-bw / 2, 0, -bd / 2),
-            new THREE.Vector3(bw / 2, 0, -bd / 2),
-            new THREE.Vector3(bw / 2, 0, bd / 2),
-            new THREE.Vector3(-bw / 2, 0, bd / 2),
-            new THREE.Vector3(-bw / 2, 0, -bd / 2),
+        const ringGroup = new THREE.Group();
+        ringGroup.position.set(selX, 0.012, selZ);
+        ringGroup.rotation.y = (sel.rotationY * Math.PI) / 180;
+        if (selectedItemIds.length === 1) {
+          selectionRingRef.current = ringGroup;
+        }
+
+        const rectPts = [
+          new THREE.Vector3(-bw / 2, 0, -bd / 2),
+          new THREE.Vector3(bw / 2, 0, -bd / 2),
+          new THREE.Vector3(bw / 2, 0, bd / 2),
+          new THREE.Vector3(-bw / 2, 0, bd / 2),
+          new THREE.Vector3(-bw / 2, 0, -bd / 2),
+        ];
+        ringGroup.add(
+          new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(rectPts),
+            new THREE.LineBasicMaterial({ color: selColor })
+          )
+        );
+
+        // Translucent selection footprint pad
+        const padMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(bw, bd),
+          new THREE.MeshBasicMaterial({
+            color: selColor,
+            transparent: true,
+            opacity: isWallColliding ? 0.34 : 0.14,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          })
+        );
+        padMesh.rotation.x = -Math.PI / 2;
+        ringGroup.add(padMesh);
+
+        // Forward direction chevron indicator (+Z)
+        const arrowMesh = new THREE.Mesh(
+          new THREE.ConeGeometry(0.065, 0.14, 3),
+          new THREE.MeshBasicMaterial({ color: selColor })
+        );
+        arrowMesh.rotation.x = Math.PI / 2;
+        arrowMesh.position.set(0, 0.02, bd / 2 + 0.1);
+        ringGroup.add(arrowMesh);
+
+        helpersGroup.add(ringGroup);
+
+        // Ghost preview showing the nearest allowed snap-back position on drop
+        if (isWallColliding && wallCollision) {
+          const snapGroup = new THREE.Group();
+          snapGroup.position.set(wallCollision.snapX, 0.016, wallCollision.snapZ);
+          snapGroup.rotation.y = (sel.rotationY * Math.PI) / 180;
+
+          const snapPts = [
+            new THREE.Vector3(-sel.dims.w / 2, 0, -sel.dims.d / 2),
+            new THREE.Vector3(sel.dims.w / 2, 0, -sel.dims.d / 2),
+            new THREE.Vector3(sel.dims.w / 2, 0, sel.dims.d / 2),
+            new THREE.Vector3(-sel.dims.w / 2, 0, sel.dims.d / 2),
+            new THREE.Vector3(-sel.dims.w / 2, 0, -sel.dims.d / 2),
           ];
-          ringGroup.add(
-            new THREE.Line(
-              new THREE.BufferGeometry().setFromPoints(rectPts),
-              new THREE.LineBasicMaterial({ color: selColor })
-            )
+          const snapOutline = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(snapPts),
+            new THREE.LineDashedMaterial({
+              color: '#10B981',
+              dashSize: 0.12,
+              gapSize: 0.08,
+            })
           );
+          snapOutline.computeLineDistances();
+          snapGroup.add(snapOutline);
 
-          // Translucent selection footprint pad
-          const padMesh = new THREE.Mesh(
-            new THREE.PlaneGeometry(bw, bd),
+          const snapPad = new THREE.Mesh(
+            new THREE.PlaneGeometry(sel.dims.w, sel.dims.d),
             new THREE.MeshBasicMaterial({
-              color: selColor,
+              color: '#10B981',
               transparent: true,
-              opacity: isWallColliding ? 0.34 : 0.14,
+              opacity: 0.14,
               side: THREE.DoubleSide,
               depthWrite: false,
             })
           );
-          padMesh.rotation.x = -Math.PI / 2;
-          ringGroup.add(padMesh);
+          snapPad.rotation.x = -Math.PI / 2;
+          snapGroup.add(snapPad);
+          helpersGroup.add(snapGroup);
 
-          // Forward direction chevron indicator (+Z)
-          const arrowMesh = new THREE.Mesh(
-            new THREE.ConeGeometry(0.065, 0.14, 3),
-            new THREE.MeshBasicMaterial({ color: selColor })
+          // Dashed guide line connecting dragged item to its snap-back destination
+          const guideLine = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([
+              new THREE.Vector3(sel.x, 0.02, sel.z),
+              new THREE.Vector3(wallCollision.snapX, 0.02, wallCollision.snapZ),
+            ]),
+            new THREE.LineDashedMaterial({
+              color: '#EF4444',
+              dashSize: 0.1,
+              gapSize: 0.07,
+            })
           );
-          arrowMesh.rotation.x = Math.PI / 2;
-          arrowMesh.position.set(0, 0.02, bd / 2 + 0.1);
-          ringGroup.add(arrowMesh);
+          guideLine.computeLineDistances();
+          helpersGroup.add(guideLine);
+        }
+      }
 
-          helpersGroup.add(ringGroup);
-          selectionRingRef.current = ringGroup;
-
-          // Ghost preview showing the nearest allowed snap-back position on drop
-          if (isWallColliding && wallCollision) {
-            const snapGroup = new THREE.Group();
-            snapGroup.position.set(wallCollision.snapX, 0.016, wallCollision.snapZ);
-            snapGroup.rotation.y = (sel.rotationY * Math.PI) / 180;
-
-            const snapPts = [
-              new THREE.Vector3(-sel.dims.w / 2, 0, -sel.dims.d / 2),
-              new THREE.Vector3(sel.dims.w / 2, 0, -sel.dims.d / 2),
-              new THREE.Vector3(sel.dims.w / 2, 0, sel.dims.d / 2),
-              new THREE.Vector3(-sel.dims.w / 2, 0, sel.dims.d / 2),
-              new THREE.Vector3(-sel.dims.w / 2, 0, -sel.dims.d / 2),
-            ];
-            const snapOutline = new THREE.Line(
-              new THREE.BufferGeometry().setFromPoints(snapPts),
-              new THREE.LineDashedMaterial({
-                color: '#10B981',
-                dashSize: 0.12,
-                gapSize: 0.08,
-              })
-            );
-            snapOutline.computeLineDistances();
-            snapGroup.add(snapOutline);
-
-            const snapPad = new THREE.Mesh(
-              new THREE.PlaneGeometry(sel.dims.w, sel.dims.d),
-              new THREE.MeshBasicMaterial({
-                color: '#10B981',
-                transparent: true,
-                opacity: 0.14,
-                side: THREE.DoubleSide,
-                depthWrite: false,
-              })
-            );
-            snapPad.rotation.x = -Math.PI / 2;
-            snapGroup.add(snapPad);
-            helpersGroup.add(snapGroup);
-
-            // Dashed guide line connecting dragged item to its snap-back destination
-            const guideLine = new THREE.Line(
-              new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(selX, 0.02, selZ),
-                new THREE.Vector3(wallCollision.snapX, 0.02, wallCollision.snapZ),
-              ]),
-              new THREE.LineDashedMaterial({
-                color: '#EF4444',
-                dashSize: 0.1,
-                gapSize: 0.07,
-              })
-            );
-            guideLine.computeLineDistances();
-            helpersGroup.add(guideLine);
-          }
+      // Dashed group bounding box when 2+ items are selected
+      if (visibleSelectedItems.length > 1) {
+        const groupBounds = computeGroupBounds(visibleSelectedItems);
+        if (groupBounds) {
+          const gPad = 0.14;
+          const gMinX = groupBounds.minX - gPad;
+          const gMaxX = groupBounds.maxX + gPad;
+          const gMinZ = groupBounds.minZ - gPad;
+          const gMaxZ = groupBounds.maxZ + gPad;
+          const groupPts = [
+            new THREE.Vector3(gMinX, 0.018, gMinZ),
+            new THREE.Vector3(gMaxX, 0.018, gMinZ),
+            new THREE.Vector3(gMaxX, 0.018, gMaxZ),
+            new THREE.Vector3(gMinX, 0.018, gMaxZ),
+            new THREE.Vector3(gMinX, 0.018, gMinZ),
+          ];
+          const groupLine = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(groupPts),
+            new THREE.LineDashedMaterial({
+              color: '#D95D39',
+              dashSize: 0.14,
+              gapSize: 0.09,
+              transparent: true,
+              opacity: 0.85,
+            })
+          );
+          groupLine.computeLineDistances();
+          helpersGroup.add(groupLine);
         }
       }
 
@@ -2067,7 +2477,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
       // Highlight out-of-bounds items with subtle red warning footprints
       for (const oobId of compliance.outOfBoundsIds) {
-        if (oobId === selectedItemId) continue;
+        if (selectedSet.has(oobId)) continue;
         const item = items.find((i) => i.id === oobId);
         if (!item) continue;
         const warnMesh = new THREE.Mesh(
@@ -2102,7 +2512,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         helpersGroup.add(ceilPlane);
       }
       markSceneDirty();
-    }, [config, items, selectedItemId, compliance, wallCollision, markSceneDirty]);
+    }, [config, items, selectedItemIds, compliance, wallCollision, markSceneDirty]);
 
     const projectClientToFloor = (clientX: number, clientY: number): { x: number; z: number } => {
       const renderer = rendererRef.current;
@@ -2259,6 +2669,20 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
               .
             </span>
           </div>
+        )}
+
+        {/* Ctrl+Drag Marquee Multi-Select Rectangle */}
+        {marqueeRect && (
+          <div
+            className="viewport-marquee-box"
+            aria-hidden="true"
+            style={{
+              left: `${marqueeRect.left}px`,
+              top: `${marqueeRect.top}px`,
+              width: `${marqueeRect.width}px`,
+              height: `${marqueeRect.height}px`,
+            }}
+          />
         )}
 
         {/* Drag-and-Drop 3D Model / Equipment Overlay */}

@@ -261,3 +261,107 @@
     font-size: 16px;
   }
 }
+
+/* Multi-selection inspector controls */
+.multi-align-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.multi-align-btn {
+  height: 30px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--ink-primary);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.multi-align-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.multi-align-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.multi-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.multi-select-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  padding: 2px 4px 2px 8px;
+}
+
+.multi-select-item-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-primary);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  padding: 5px 0;
+  cursor: pointer;
+}
+
+.multi-select-item-btn:hover {
+  color: var(--brand-accent);
+}
+
+.multi-select-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-select-lock-icon {
+  flex-shrink: 0;
+  opacity: 0.65;
+}
+
+.multi-select-remove-btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+
+.multi-select-remove-btn:hover {
+  background: var(--surface-hover);
+  color: var(--ink-primary);
+}
+
+.multi-select-tip {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-secondary);
+}
+

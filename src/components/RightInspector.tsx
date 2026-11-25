@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Copy,
   ImagePlus,
+  Layers,
   LayoutPanelTop,
   Lightbulb,
   Lock,
@@ -28,6 +29,7 @@ import type {
   SurfaceArtwork,
   VenueBrandingConfig,
 } from '../types/stand';
+import { computeGroupBounds, type AlignMode } from '../utils/multiSelect';
 import {
   clampVenueBrandingToDims,
   computeVenueFixtureBrandableAreaM2,
@@ -47,9 +49,12 @@ interface RightInspectorProps {
   config: StandConfig;
   onUpdateConfig: (patch: Partial<StandConfig>) => void;
   selectedItem: StandItem | null;
+  selectedItems?: StandItem[];
   selectedSurfaceId: string | null;
   selectedShellWall: ShellWallSide | null;
   onSelectShellWall: (side: ShellWallSide | null) => void;
+  onSelectSingleItem?: (id: string) => void;
+  onRemoveFromSelection?: (id: string) => void;
   onUpdateItem: (id: string, patch: Partial<StandItem>, commit?: boolean) => void;
   onUpdateItemArtwork: (
     itemId: string,
@@ -59,6 +64,11 @@ interface RightInspectorProps {
   onUpdateShellArtwork: (side: ShellWallSide, patch: Partial<SurfaceArtwork> | null) => void;
   onDuplicateItem: (id: string) => void;
   onDeleteItem: (id: string) => void;
+  onDuplicateSelected?: () => void;
+  onDeleteSelected?: () => void;
+  onRotateSelected?: (deltaDeg: number) => void;
+  onToggleLockSelected?: (locked: boolean) => void;
+  onAlignSelected?: (mode: AlignMode) => void;
   assets: BrandAsset[];
   onUploadAssetForSurface: (
     file: File,
@@ -86,14 +96,22 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
   config,
   onUpdateConfig,
   selectedItem,
+  selectedItems = [],
   selectedSurfaceId,
   selectedShellWall,
   onSelectShellWall,
+  onSelectSingleItem,
+  onRemoveFromSelection,
   onUpdateItem,
   onUpdateItemArtwork,
   onUpdateShellArtwork,
   onDuplicateItem,
   onDeleteItem,
+  onDuplicateSelected,
+  onDeleteSelected,
+  onRotateSelected,
+  onToggleLockSelected,
+  onAlignSelected,
   assets,
   onUploadAssetForSurface,
   compliance,
@@ -110,7 +128,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
 
   useEffect(() => {
     inspectorBodyRef.current?.scrollTo({ top: 0 });
-  }, [selectedItem?.id]);
+  }, [selectedItem?.id, selectedItems.length]);
   const uploadTargetRef = useRef<
     | { kind: 'item'; itemId: string; surfaceId: string }
     | { kind: 'shell'; side: ShellWallSide }
@@ -134,6 +152,170 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
     }
     e.target.value = '';
   };
+
+  // ==================== MULTI-SELECTION INSPECTOR ====================
+  if (selectedItems.length > 1) {
+    const bounds = computeGroupBounds(selectedItems);
+    const allLocked = selectedItems.every((i) => i.locked);
+    const unlockedCount = selectedItems.filter((i) => !i.locked).length;
+
+    return (
+      <aside className="right-inspector contextual-inspector" aria-label="Multi-selection inspector">
+        <div className="inspector-header">
+          <Layers className="inspector-heading-icon" size={22} aria-hidden="true" />
+          <div className="inspector-heading">
+            <h2>{selectedItems.length} items selected</h2>
+            <p className="inspector-kicker">
+              {bounds
+                ? `Group span ${formatLength(bounds.width, config.unit)} × ${formatLength(bounds.depth, config.unit)}`
+                : 'Multiple elements'}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="inspector-close"
+            onClick={onClose}
+            aria-label="Clear selection"
+          >
+            <X size={19} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="inspector-quickbar">
+          <button
+            type="button"
+            className="quick-action-btn"
+            disabled={unlockedCount === 0}
+            onClick={() => onRotateSelected?.(90)}
+            title="Rotate selected group 90° (R)"
+          >
+            <RotateCw size={13} /> 90°
+          </button>
+          <button
+            type="button"
+            className="quick-action-btn"
+            onClick={() => onDuplicateSelected?.()}
+            title="Duplicate selected items (Ctrl+D)"
+          >
+            <Copy size={13} /> Duplicate
+          </button>
+          <button
+            type="button"
+            className="quick-action-btn"
+            onClick={() => onToggleLockSelected?.(!allLocked)}
+            title={allLocked ? 'Unlock all selected items' : 'Lock all selected items'}
+          >
+            {allLocked ? <Unlock size={13} /> : <Lock size={13} />}
+            {allLocked ? 'Unlock' : 'Lock'}
+          </button>
+          <button
+            type="button"
+            className="quick-action-btn danger"
+            onClick={() => onDeleteSelected?.()}
+            title="Delete all selected items (Del)"
+            aria-label="Delete all selected items"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+
+        <div ref={inspectorBodyRef} className="inspector-body">
+          <div className="control-block">
+            <label className="block-label">Align Selection</label>
+            <div className="multi-align-grid">
+              <button
+                type="button"
+                className="multi-align-btn"
+                disabled={unlockedCount < 2}
+                onClick={() => onAlignSelected?.('left')}
+                title="Align left edges"
+              >
+                Left
+              </button>
+              <button
+                type="button"
+                className="multi-align-btn"
+                disabled={unlockedCount < 2}
+                onClick={() => onAlignSelected?.('center-x')}
+                title="Align horizontal centers"
+              >
+                Center X
+              </button>
+              <button
+                type="button"
+                className="multi-align-btn"
+                disabled={unlockedCount < 2}
+                onClick={() => onAlignSelected?.('right')}
+                title="Align right edges"
+              >
+                Right
+              </button>
+              <button
+                type="button"
+                className="multi-align-btn"
+                disabled={unlockedCount < 2}
+                onClick={() => onAlignSelected?.('back')}
+                title="Align back edges"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                className="multi-align-btn"
+                disabled={unlockedCount < 2}
+                onClick={() => onAlignSelected?.('center-z')}
+                title="Align depth centers"
+              >
+                Center Z
+              </button>
+              <button
+                type="button"
+                className="multi-align-btn"
+                disabled={unlockedCount < 2}
+                onClick={() => onAlignSelected?.('front')}
+                title="Align front edges"
+              >
+                Front
+              </button>
+            </div>
+          </div>
+
+          <div className="control-block">
+            <label className="block-label">Selected Equipment ({selectedItems.length})</label>
+            <div className="multi-select-list">
+              {selectedItems.map((item) => (
+                <div key={item.id} className="multi-select-row">
+                  <button
+                    type="button"
+                    className="multi-select-item-btn"
+                    onClick={() => onSelectSingleItem?.(item.id)}
+                    title="Inspect only this item"
+                  >
+                    <span className="multi-select-item-name">{item.name}</span>
+                    {item.locked && <Lock size={11} className="multi-select-lock-icon" />}
+                  </button>
+                  <button
+                    type="button"
+                    className="multi-select-remove-btn"
+                    onClick={() => onRemoveFromSelection?.(item.id)}
+                    title="Remove from selection"
+                    aria-label={`Remove ${item.name} from selection`}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="multi-select-tip">
+            Drag any selected item to move the group together. Use <strong>Ctrl+click</strong> to
+            toggle items or <strong>Ctrl+drag</strong> to box-select more.
+          </p>
+        </div>
+      </aside>
+    );
+  }
 
   // ==================== SHELL WALL INSPECTOR ====================
   if (selectedShellWall && !selectedItem) {

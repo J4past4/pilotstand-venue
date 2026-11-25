@@ -62,6 +62,12 @@ import { applyAgentActions } from './agent/actionExecutor';
 import { sendStandAgentPrompt } from './agent/agentClient';
 import { findNearestAllowedPosition } from './utils/wallCollision';
 import {
+  computeAlignmentUpdates,
+  computeGroupRotationUpdates,
+  toggleSelection,
+  type AlignMode,
+} from './utils/multiSelect';
+import {
   canRedoHistory,
   canUndoHistory,
   createHistoryState,
@@ -270,11 +276,18 @@ function App({
   const [standDetailsOpen, setStandDetailsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('3d');
   const [viewportNavMode, setViewportNavMode] = useState<ViewportNavMode>('select');
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const selectedItemId = selectedItemIds.length === 1 ? selectedItemIds[0] : null;
+  const toggleSelectItem = useCallback((id: string) => {
+    setSelectedSurfaceId(null);
+    setSelectedShellWall(null);
+    setStandDetailsOpen(false);
+    setSelectedItemIds((prev) => toggleSelection(prev, id));
+  }, []);
   const [selectedSurfaceId, setSelectedSurfaceId] = useState<string | null>(null);
   const [selectedShellWall, setSelectedShellWall] = useState<ShellWallSide | null>(null);
   const [paintAssetId, setPaintAssetId] = useState<string | null>(null);
-  const [clipboardItem, setClipboardItem] = useState<StandItem | null>(null);
+  const [clipboardItems, setClipboardItems] = useState<StandItem[]>([]);
   const pasteCountRef = useRef<number>(0);
   const [currency, setCurrency] = useState<CurrencyCode>('GBP');
   const [pricingMode, setPricingMode] = useState<'hire' | 'buy'>('hire');
@@ -397,7 +410,7 @@ function App({
       if (!snapshot) return prev;
       setConfig(snapshot.config);
       setItems(snapshot.items);
-      setSelectedItemId((cur) => (cur && snapshot.items.some((i) => i.id === cur) ? cur : null));
+      setSelectedItemIds((cur) => cur.filter((id) => snapshot.items.some((i) => i.id === id)));
       notify('Undid last change');
       return nextState;
     });
@@ -409,7 +422,7 @@ function App({
       if (!snapshot) return prev;
       setConfig(snapshot.config);
       setItems(snapshot.items);
-      setSelectedItemId((cur) => (cur && snapshot.items.some((i) => i.id === cur) ? cur : null));
+      setSelectedItemIds((cur) => cur.filter((id) => snapshot.items.some((i) => i.id === id)));
       notify('Redid change');
       return nextState;
     });
@@ -550,7 +563,7 @@ function App({
       const nextItems = [...items, newItem];
       setItems(nextItems);
       setRailPanelOpen(false);
-      setSelectedItemId(newItem.id);
+      setSelectedItemIds([newItem.id]);
       setSelectedSurfaceId(isVenueFixture ? null : def.surfaces[0]?.id || null);
       setSelectedShellWall(null);
       pushHistory(config, nextItems);
@@ -601,7 +614,7 @@ function App({
       const nextItems = [...items, newItem];
       setItems(nextItems);
       setRailPanelOpen(false);
-      setSelectedItemId(newItem.id);
+      setSelectedItemIds([newItem.id]);
       setSelectedSurfaceId(null);
       setSelectedShellWall(null);
       pushHistory(config, nextItems);
@@ -700,7 +713,7 @@ function App({
       const nextItems = [...items, newItem];
       setItems(nextItems);
       setRailPanelOpen(false);
-      setSelectedItemId(newItem.id);
+      setSelectedItemIds([newItem.id]);
       setSelectedSurfaceId(null);
       setSelectedShellWall(null);
       pushHistory(config, nextItems);
@@ -833,6 +846,22 @@ function App({
     [config, pushHistory]
   );
 
+  const moveItems = useCallback(
+    (updates: Array<{ id: string; x: number; z: number }>, commit: boolean) => {
+      if (updates.length === 0) return;
+      const updateMap = new Map(updates.map((u) => [u.id, u]));
+      setItems((prev) => {
+        const next = prev.map((it) => {
+          const u = updateMap.get(it.id);
+          return u ? { ...it, x: u.x, z: u.z } : it;
+        });
+        if (commit) pushHistory(config, next);
+        return next;
+      });
+    },
+    [config, pushHistory]
+  );
+
   const updateItemArtwork = useCallback(
     (itemId: string, surfaceId: string, patch: Partial<SurfaceArtwork>) => {
       setItems((prev) => {
@@ -888,103 +917,224 @@ function App({
     [items, pushHistory]
   );
 
+  const duplicateItems = useCallback(
+    (ids: string[]) => {
+      const sources = items.filter((i) => ids.includes(i.id));
+      if (sources.length === 0) return;
+      const runningItems = [...items];
+      const copies: StandItem[] = [];
+      for (const src of sources) {
+        const copy: StandItem = {
+          ...JSON.parse(JSON.stringify(src)),
+          id: createItemId(src.catalogId),
+          x: Number((src.x + 0.35).toFixed(2)),
+          z: Number((src.z + 0.25).toFixed(2)),
+          locked: false,
+        };
+        const resolved = findNearestAllowedPosition(copy, copy.x, copy.z, config, runningItems);
+        copy.x = resolved.x;
+        copy.z = resolved.z;
+        copies.push(copy);
+        runningItems.push(copy);
+      }
+      setItems(runningItems);
+      setSelectedItemIds(copies.map((c) => c.id));
+      setSelectedSurfaceId(null);
+      setSelectedShellWall(null);
+      pushHistory(config, runningItems);
+      notify(
+        copies.length === 1 ? `Duplicated ${sources[0].name}` : `Duplicated ${copies.length} items`
+      );
+    },
+    [items, config, pushHistory, notify]
+  );
+
   const duplicateItem = useCallback(
     (id: string) => {
-      const src = items.find((i) => i.id === id);
-      if (!src) return;
-      const copy: StandItem = {
-        ...JSON.parse(JSON.stringify(src)),
-        id: createItemId(src.catalogId),
-        x: Number((src.x + 0.35).toFixed(2)),
-        z: Number((src.z + 0.25).toFixed(2)),
-        locked: false,
-      };
-      const resolved = findNearestAllowedPosition(copy, copy.x, copy.z, config, items);
-      copy.x = resolved.x;
-      copy.z = resolved.z;
-      const nextItems = [...items, copy];
+      duplicateItems([id]);
+    },
+    [duplicateItems]
+  );
+
+  const deleteItems = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      const nextItems = items.filter((i) => !idSet.has(i.id));
       setItems(nextItems);
-      setSelectedItemId(copy.id);
+      setSelectedItemIds((prev) => prev.filter((id) => !idSet.has(id)));
+      setSelectedSurfaceId(null);
       pushHistory(config, nextItems);
-      notify(`Duplicated ${src.name}`);
+      notify(
+        ids.length === 1
+          ? 'Removed equipment from stand'
+          : `Removed ${ids.length} items from stand`
+      );
     },
     [items, config, pushHistory, notify]
   );
 
   const deleteItem = useCallback(
     (id: string) => {
-      const nextItems = items.filter((i) => i.id !== id);
-      setItems(nextItems);
-      if (selectedItemId === id) {
-        setSelectedItemId(null);
-        setSelectedSurfaceId(null);
-      }
-      pushHistory(config, nextItems);
-      notify('Removed equipment from stand');
+      deleteItems([id]);
     },
-    [items, selectedItemId, config, pushHistory, notify]
+    [deleteItems]
   );
 
   const copySelectedItem = useCallback(() => {
-    if (!selectedItemId) return;
-    const src = items.find((i) => i.id === selectedItemId);
-    if (!src) return;
-    setClipboardItem(JSON.parse(JSON.stringify(src)) as StandItem);
+    if (selectedItemIds.length === 0) return;
+    const sources = items.filter((i) => selectedItemIds.includes(i.id));
+    if (sources.length === 0) return;
+    setClipboardItems(JSON.parse(JSON.stringify(sources)) as StandItem[]);
     pasteCountRef.current = 0;
-    notify(`Copied ${src.name}`);
-  }, [items, selectedItemId, notify]);
+    notify(
+      sources.length === 1 ? `Copied ${sources[0].name}` : `Copied ${sources.length} items`
+    );
+  }, [items, selectedItemIds, notify]);
 
   const cutSelectedItem = useCallback(() => {
-    if (!selectedItemId) return;
-    const src = items.find((i) => i.id === selectedItemId);
-    if (!src) return;
-    setClipboardItem(JSON.parse(JSON.stringify(src)) as StandItem);
+    if (selectedItemIds.length === 0) return;
+    const sources = items.filter((i) => selectedItemIds.includes(i.id));
+    if (sources.length === 0) return;
+    setClipboardItems(JSON.parse(JSON.stringify(sources)) as StandItem[]);
     pasteCountRef.current = 0;
-    const nextItems = items.filter((i) => i.id !== selectedItemId);
+    const idSet = new Set(selectedItemIds);
+    const nextItems = items.filter((i) => !idSet.has(i.id));
     setItems(nextItems);
-    setSelectedItemId(null);
+    setSelectedItemIds([]);
     setSelectedSurfaceId(null);
     pushHistory(config, nextItems);
-    notify(`Cut ${src.name}`);
-  }, [items, selectedItemId, config, pushHistory, notify]);
+    notify(sources.length === 1 ? `Cut ${sources[0].name}` : `Cut ${sources.length} items`);
+  }, [items, selectedItemIds, config, pushHistory, notify]);
 
   const pasteClipboardItem = useCallback(() => {
-    if (!clipboardItem) return;
+    if (clipboardItems.length === 0) return;
     pasteCountRef.current += 1;
     const step = pasteCountRef.current;
-    const copy: StandItem = {
-      ...(JSON.parse(JSON.stringify(clipboardItem)) as StandItem),
-      id: createItemId(clipboardItem.catalogId),
-      x: Number((clipboardItem.x + 0.35 * step).toFixed(2)),
-      z: Number((clipboardItem.z + 0.25 * step).toFixed(2)),
-      locked: false,
-    };
-    const resolved = findNearestAllowedPosition(copy, copy.x, copy.z, config, items);
-    copy.x = resolved.x;
-    copy.z = resolved.z;
-    const nextItems = [...items, copy];
-    setItems(nextItems);
-    setSelectedItemId(copy.id);
+    const runningItems = [...items];
+    const pasted: StandItem[] = [];
+    for (const src of clipboardItems) {
+      const copy: StandItem = {
+        ...(JSON.parse(JSON.stringify(src)) as StandItem),
+        id: createItemId(src.catalogId),
+        x: Number((src.x + 0.35 * step).toFixed(2)),
+        z: Number((src.z + 0.25 * step).toFixed(2)),
+        locked: false,
+      };
+      const resolved = findNearestAllowedPosition(copy, copy.x, copy.z, config, runningItems);
+      copy.x = resolved.x;
+      copy.z = resolved.z;
+      pasted.push(copy);
+      runningItems.push(copy);
+    }
+    setItems(runningItems);
+    setSelectedItemIds(pasted.map((p) => p.id));
+    setSelectedSurfaceId(null);
     setSelectedShellWall(null);
-    pushHistory(config, nextItems);
-    notify(`Pasted ${clipboardItem.name}`);
-  }, [clipboardItem, config, items, pushHistory, notify]);
+    pushHistory(config, runningItems);
+    notify(
+      pasted.length === 1 ? `Pasted ${clipboardItems[0].name}` : `Pasted ${pasted.length} items`
+    );
+  }, [clipboardItems, config, items, pushHistory, notify]);
 
   const nudgeSelectedItem = useCallback(
     (dx: number, dz: number) => {
-      if (!selectedItemId) return;
-      const cur = items.find((i) => i.id === selectedItemId);
-      if (!cur || cur.locked) return;
-      updateItem(
-        cur.id,
-        {
-          x: Number((cur.x + dx).toFixed(3)),
-          z: Number((cur.z + dz).toFixed(3)),
-        },
-        true
+      if (selectedItemIds.length === 0) return;
+      const targets = items.filter((i) => selectedItemIds.includes(i.id) && !i.locked);
+      if (targets.length === 0) return;
+      if (targets.length === 1) {
+        const cur = targets[0];
+        updateItem(
+          cur.id,
+          {
+            x: Number((cur.x + dx).toFixed(3)),
+            z: Number((cur.z + dz).toFixed(3)),
+          },
+          true
+        );
+        return;
+      }
+      const nextItems = items.map((it) => {
+        if (!selectedItemIds.includes(it.id) || it.locked) return it;
+        const nx = Number((it.x + dx).toFixed(3));
+        const nz = Number((it.z + dz).toFixed(3));
+        const resolved = findNearestAllowedPosition(it, nx, nz, config, items, {
+          x: it.x,
+          z: it.z,
+        });
+        return { ...it, x: resolved.x, z: resolved.z };
+      });
+      setItems(nextItems);
+      pushHistory(config, nextItems);
+    },
+    [selectedItemIds, items, config, updateItem, pushHistory]
+  );
+
+  const rotateSelectedItems = useCallback(
+    (deltaDeg: number) => {
+      const updates = computeGroupRotationUpdates(items, selectedItemIds, deltaDeg);
+      if (updates.length === 0) return;
+      const updateMap = new Map(updates.map((u) => [u.id, u]));
+      setItems((prev) => {
+        const next = prev.map((it) => {
+          const u = updateMap.get(it.id);
+          if (!u) return it;
+          const updated = { ...it, x: u.x, z: u.z, rotationY: u.rotationY };
+          const resolved = findNearestAllowedPosition(
+            updated,
+            updated.x,
+            updated.z,
+            config,
+            prev,
+            { x: it.x, z: it.z }
+          );
+          return { ...updated, x: resolved.x, z: resolved.z };
+        });
+        pushHistory(config, next);
+        return next;
+      });
+    },
+    [items, selectedItemIds, config, pushHistory]
+  );
+
+  const alignSelectedItems = useCallback(
+    (mode: AlignMode) => {
+      const updates = computeAlignmentUpdates(items, selectedItemIds, mode);
+      if (updates.length === 0) return;
+      const updateMap = new Map(updates.map((u) => [u.id, u]));
+      setItems((prev) => {
+        const next = prev.map((it) => {
+          const u = updateMap.get(it.id);
+          if (!u) return it;
+          const resolved = findNearestAllowedPosition(it, u.x, u.z, config, prev, {
+            x: it.x,
+            z: it.z,
+          });
+          return { ...it, x: resolved.x, z: resolved.z };
+        });
+        pushHistory(config, next);
+        return next;
+      });
+    },
+    [items, selectedItemIds, config, pushHistory]
+  );
+
+  const toggleLockSelectedItems = useCallback(
+    (locked: boolean) => {
+      if (selectedItemIds.length === 0) return;
+      const idSet = new Set(selectedItemIds);
+      setItems((prev) => {
+        const next = prev.map((it) => (idSet.has(it.id) ? { ...it, locked } : it));
+        pushHistory(config, next);
+        return next;
+      });
+      notify(
+        locked
+          ? `Locked ${selectedItemIds.length} items`
+          : `Unlocked ${selectedItemIds.length} items`
       );
     },
-    [selectedItemId, items, updateItem]
+    [selectedItemIds, config, pushHistory, notify]
   );
 
   const handleUploadAssets = useCallback(
@@ -1067,7 +1217,7 @@ function App({
       const inst = instantiateTemplate(template);
       setConfig(inst.config);
       setItems(inst.items);
-      setSelectedItemId(null);
+      setSelectedItemIds([]);
       setSelectedSurfaceId(null);
       setSelectedShellWall(null);
       setPaintAssetId(null);
@@ -1089,7 +1239,7 @@ function App({
       };
       setConfig(nextCfg);
       setItems([]);
-      setSelectedItemId(null);
+      setSelectedItemIds([]);
       setSelectedShellWall(null);
       pushHistory(nextCfg, []);
       setTimeout(() => viewportRef.current?.setCameraPreset('isometric', true), 40);
@@ -1293,7 +1443,7 @@ function App({
         setRailPanelOpen(false);
         setStandDetailsOpen(false);
         setPaintAssetId(null);
-        setSelectedItemId(null);
+        setSelectedItemIds([]);
         setSelectedShellWall(null);
         return;
       }
@@ -1319,6 +1469,8 @@ function App({
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
 
+      const hasSelection = selectedItemIds.length > 0;
+
       if (mod && key === 'z') {
         e.preventDefault();
         if (e.shiftKey) handleRedo();
@@ -1326,38 +1478,42 @@ function App({
       } else if (mod && key === 'y') {
         e.preventDefault();
         handleRedo();
-      } else if (mod && key === 'c' && selectedItemId) {
+      } else if (mod && key === 'a') {
+        e.preventDefault();
+        const visibleIds = items.filter((i) => i.visible !== false).map((i) => i.id);
+        setSelectedItemIds(visibleIds);
+        setSelectedSurfaceId(null);
+        setSelectedShellWall(null);
+        setStandDetailsOpen(false);
+        if (visibleIds.length > 0) {
+          notify(`Selected all ${visibleIds.length} items`);
+        }
+      } else if (mod && key === 'c' && hasSelection) {
         e.preventDefault();
         copySelectedItem();
-      } else if (mod && key === 'x' && selectedItemId) {
+      } else if (mod && key === 'x' && hasSelection) {
         e.preventDefault();
         cutSelectedItem();
-      } else if (mod && key === 'v' && clipboardItem) {
+      } else if (mod && key === 'v' && clipboardItems.length > 0) {
         e.preventDefault();
         pasteClipboardItem();
-      } else if (mod && key === 'd' && selectedItemId) {
+      } else if (mod && key === 'd' && hasSelection) {
         e.preventDefault();
-        duplicateItem(selectedItemId);
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedItemId) {
+        duplicateItems(selectedItemIds);
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && hasSelection) {
         e.preventDefault();
-        deleteItem(selectedItemId);
-      } else if (!mod && key === 'r' && selectedItemId) {
+        deleteItems(selectedItemIds);
+      } else if (!mod && key === 'r' && hasSelection) {
         e.preventDefault();
-        const cur = itemsRef.current.find((i) => i.id === selectedItemId);
-        if (cur && !cur.locked) {
-          const delta = e.shiftKey ? -90 : 90;
-          updateItem(cur.id, { rotationY: (cur.rotationY + delta + 360) % 360 }, true);
-        }
-      } else if (!mod && (e.key === '[' || e.key === ']') && selectedItemId) {
+        const delta = e.shiftKey ? -90 : 90;
+        rotateSelectedItems(delta);
+      } else if (!mod && (e.key === '[' || e.key === ']') && hasSelection) {
         e.preventDefault();
-        const cur = itemsRef.current.find((i) => i.id === selectedItemId);
-        if (cur && !cur.locked) {
-          const delta = e.key === '[' ? -15 : 15;
-          updateItem(cur.id, { rotationY: (cur.rotationY + delta + 360) % 360 }, true);
-        }
+        const delta = e.key === '[' ? -15 : 15;
+        rotateSelectedItems(delta);
       } else if (
         !mod &&
-        selectedItemId &&
+        hasSelection &&
         (e.key === 'ArrowLeft' ||
           e.key === 'ArrowRight' ||
           e.key === 'ArrowUp' ||
@@ -1399,19 +1555,21 @@ function App({
     showAssetLibrary,
     handleUndo,
     handleRedo,
-    selectedItemId,
-    clipboardItem,
+    selectedItemIds,
+    clipboardItems,
     copySelectedItem,
     cutSelectedItem,
     pasteClipboardItem,
-    duplicateItem,
-    deleteItem,
+    duplicateItems,
+    deleteItems,
     nudgeSelectedItem,
+    rotateSelectedItems,
+    items,
     config.snapToGrid,
     config.gridStep,
     viewMode,
     viewportNavMode,
-    updateItem,
+    notify,
     showExportModal,
     showEstimateModal,
     showProjectsModal,
@@ -1422,9 +1580,15 @@ function App({
     showAgentDrawer,
   ]);
 
+  const selectedItems = useMemo(() => {
+    if (selectedItemIds.length === 0) return [];
+    const byId = new Map(items.map((i) => [i.id, i]));
+    return selectedItemIds.map((id) => byId.get(id)).filter(Boolean) as StandItem[];
+  }, [items, selectedItemIds]);
+
   const selectedItem = useMemo(
-    () => items.find((i) => i.id === selectedItemId) || null,
-    [items, selectedItemId]
+    () => (selectedItems.length === 1 ? selectedItems[0] : null),
+    [selectedItems]
   );
 
   const triggerCamera = useCallback(
@@ -1487,7 +1651,7 @@ function App({
         if (exec.mutated) {
           setConfig(exec.nextConfig);
           setItems(exec.nextItems);
-          setSelectedItemId(null);
+          setSelectedItemIds([]);
           setSelectedSurfaceId(null);
           setSelectedShellWall(null);
           pushHistory(exec.nextConfig, exec.nextItems);
@@ -1593,7 +1757,7 @@ function App({
         [...built.uploadedAssets, ...prev].forEach((a) => map.set(a.id, a));
         return Array.from(map.values());
       });
-      setSelectedItemId(null);
+      setSelectedItemIds([]);
       setSelectedSurfaceId(null);
       setSelectedShellWall(null);
       setPaintAssetId(null);
@@ -1616,7 +1780,7 @@ function App({
     setConfig(inst.config);
     setItems(inst.items);
     setCustomAssets([]);
-    setSelectedItemId(null);
+    setSelectedItemIds([]);
     setSelectedSurfaceId(null);
     setSelectedShellWall(null);
     setPaintAssetId(null);
@@ -1636,7 +1800,7 @@ function App({
       setConfig(proj.config);
       setItems(proj.items);
       setCustomAssets(proj.customAssets || []);
-      setSelectedItemId(null);
+      setSelectedItemIds([]);
       setSelectedSurfaceId(null);
       setSelectedShellWall(null);
       setStandDetailsOpen(false);
@@ -2023,13 +2187,13 @@ function App({
         canRedo={canRedo}
         onUndo={handleUndo}
         onRedo={handleRedo}
-        canCopy={Boolean(selectedItemId)}
-        canPaste={Boolean(clipboardItem)}
+        canCopy={selectedItemIds.length > 0}
+        canPaste={clipboardItems.length > 0}
         onCopy={copySelectedItem}
         onCut={cutSelectedItem}
         onPaste={pasteClipboardItem}
         onDuplicate={() => {
-          if (selectedItemId) duplicateItem(selectedItemId);
+          if (selectedItemIds.length > 0) duplicateItems(selectedItemIds);
         }}
         estimatedTotalGbp={estimate.grandTotalGbp}
         currency={currency}
@@ -2083,11 +2247,15 @@ function App({
           config={config}
           onUpdateConfig={updateConfig}
           items={items}
-          selectedItemId={selectedItemId}
-          onSelectItem={(id) => {
-            setRailPanelOpen(false);
-            setSelectedItemId(id);
-            setSelectedShellWall(null);
+          selectedItemIds={selectedItemIds}
+          onSelectItem={(id, additive) => {
+            if (additive) {
+              toggleSelectItem(id);
+            } else {
+              setRailPanelOpen(false);
+              setSelectedItemIds([id]);
+              setSelectedShellWall(null);
+            }
           }}
           onAddCatalogItem={addCatalogItem}
           onDuplicateItem={duplicateItem}
@@ -2135,7 +2303,7 @@ function App({
             items={items}
             assetsMap={assetsMap}
             modelsVersion={modelsVersion}
-            selectedItemId={selectedItemId}
+            selectedItemIds={selectedItemIds}
             selectedShellWall={selectedShellWall}
             viewMode={viewMode}
             navMode={viewportNavMode}
@@ -2147,11 +2315,22 @@ function App({
             onSelectItem={(itemId, surfaceId) => {
               setRailPanelOpen(false);
               setStandDetailsOpen(false);
-              setSelectedItemId(itemId);
+              setSelectedItemIds(itemId ? [itemId] : []);
               setSelectedSurfaceId(surfaceId || null);
+            }}
+            onSelectItems={(itemIds) => {
+              setRailPanelOpen(false);
+              setStandDetailsOpen(false);
+              setSelectedItemIds(itemIds);
+              setSelectedSurfaceId(null);
+            }}
+            onToggleSelectItem={(itemId) => {
+              setRailPanelOpen(false);
+              toggleSelectItem(itemId);
             }}
             onSelectShellWall={setSelectedShellWall}
             onMoveItem={moveItem}
+            onMoveItems={moveItems}
             onPaintSurface={handlePaintSurface}
             onDropCatalogItem={(catalogId, x, z) => addCatalogItem(catalogId, x, z)}
             onDropCustomModelAsset={(rawModelPayload, x, z) => {
@@ -2179,7 +2358,7 @@ function App({
           {/* Top-Left Floating Space & Compliance HUD */}
           <div className="viewport-hud-top">
             <button className="stand-details-toggle" onClick={() => {
-              setSelectedItemId(null);
+              setSelectedItemIds([]);
               setSelectedShellWall(null);
               setRailPanelOpen(false);
               setStandDetailsOpen((open) => !open);
@@ -2213,6 +2392,14 @@ function App({
                 </>
               )}
             </div>
+
+            {selectedItems.length > 1 && (
+              <div className="hud-multiselect-pill" role="status">
+                <strong>{selectedItems.length} selected</strong>
+                <span className="hud-sep">·</span>
+                <span>Drag to move</span>
+              </div>
+            )}
           </div>
 
           {/* Bottom-Center Floating Camera & Viewport Navigation Dock */}
@@ -2222,7 +2409,7 @@ function App({
               className={`nav-mode-btn ${viewportNavMode === 'select' ? 'active' : ''}`}
               aria-pressed={viewportNavMode === 'select'}
               onClick={() => setViewportNavMode('select')}
-              title="Select & Move items (V) — drag empty space to orbit"
+              title="Select & Move items (V) — Ctrl+click or Ctrl+drag to multi-select"
               aria-label="Select and move mode"
             >
               <MousePointer2 size={14} />
@@ -2300,7 +2487,13 @@ function App({
             <button
               type="button"
               onClick={() => viewportRef.current?.frameSelected()}
-              title={selectedItemId ? 'Frame selected item (F)' : 'Fit stand to view (F)'}
+              title={
+                selectedItemIds.length > 1
+                  ? `Frame ${selectedItemIds.length} selected items (F)`
+                  : selectedItemId
+                    ? 'Frame selected item (F)'
+                    : 'Fit stand to view (F)'
+              }
               aria-label="Frame selection"
             >
               <Focus size={14} />
@@ -2354,18 +2547,31 @@ function App({
           {toast && <div role="status" className="studio-toast">{toast}</div>}
         </section>
 
-        {(selectedItem || selectedShellWall || standDetailsOpen) && <RightInspector
+        {(selectedItems.length > 0 || selectedShellWall || standDetailsOpen) && <RightInspector
           config={config}
           onUpdateConfig={updateConfig}
           selectedItem={selectedItem}
+          selectedItems={selectedItems}
           selectedSurfaceId={selectedSurfaceId}
           selectedShellWall={selectedShellWall}
           onSelectShellWall={setSelectedShellWall}
+          onSelectSingleItem={(id) => {
+            setSelectedItemIds([id]);
+            setSelectedSurfaceId(null);
+          }}
+          onRemoveFromSelection={(id) => {
+            setSelectedItemIds((prev) => prev.filter((x) => x !== id));
+          }}
           onUpdateItem={updateItem}
           onUpdateItemArtwork={updateItemArtwork}
           onUpdateShellArtwork={updateShellArtwork}
           onDuplicateItem={duplicateItem}
           onDeleteItem={deleteItem}
+          onDuplicateSelected={() => duplicateItems(selectedItemIds)}
+          onDeleteSelected={() => deleteItems(selectedItemIds)}
+          onRotateSelected={rotateSelectedItems}
+          onToggleLockSelected={toggleLockSelectedItems}
+          onAlignSelected={alignSelectedItems}
           assets={allAssets}
           onUploadAssetForSurface={handleUploadAssetForSurface}
           compliance={compliance}
@@ -2375,7 +2581,7 @@ function App({
           }}
           onEditCustomBuiltAsset={handleEditCustomBuiltAsset}
           onClose={() => {
-            setSelectedItemId(null);
+            setSelectedItemIds([]);
             setSelectedSurfaceId(null);
             setSelectedShellWall(null);
             setStandDetailsOpen(false);
@@ -2467,7 +2673,7 @@ function App({
               return Array.from(merged.values());
             });
           }
-          setSelectedItemId(null);
+          setSelectedItemIds([]);
           setSelectedShellWall(null);
           resetHistory(proj.config, proj.items);
           notify(`Loaded "${proj.name}"`);

@@ -52,8 +52,8 @@ interface LeftSidebarProps {
   config: StandConfig;
   onUpdateConfig: (patch: Partial<StandConfig>) => void;
   items: StandItem[];
-  selectedItemId: string | null;
-  onSelectItem: (id: string) => void;
+  selectedItemIds: string[];
+  onSelectItem: (id: string, additive?: boolean) => void;
   onAddCatalogItem: (catalogId: string) => void;
   onDuplicateItem: (id: string) => void;
   onDeleteItem: (id: string) => void;
@@ -119,7 +119,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = React.memo(({
   config,
   onUpdateConfig,
   items,
-  selectedItemId,
+  selectedItemIds,
   onSelectItem,
   onAddCatalogItem,
   onDuplicateItem,
@@ -1028,18 +1028,19 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = React.memo(({
                   </div>
                 ) : (
                   items.map((item) => {
-                    const selected = item.id === selectedItemId;
+                    const selected = selectedItemIds.includes(item.id);
                     return (
                       <div
                         key={item.id}
                         className={`layer-row ${selected ? 'selected' : ''}`}
                       >
                         <button
-                        type="button"
-                        className="layer-name rail-layer-select"
-                        aria-current={selected ? 'true' : undefined}
-                        onClick={() => onSelectItem(item.id)}
-                      >
+                          type="button"
+                          className="layer-name rail-layer-select"
+                          aria-current={selected ? 'true' : undefined}
+                          title="Click to select · Ctrl+click to add/remove from selection"
+                          onClick={(e) => onSelectItem(item.id, e.ctrlKey || e.metaKey)}
+                        >
                           <span>{item.name}</span>
                           {item.isPermanentFixture && (
                             <span
