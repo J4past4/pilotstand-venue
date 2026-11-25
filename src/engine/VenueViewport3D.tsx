@@ -668,6 +668,7 @@ export const VenueViewport3D: React.FC<VenueViewport3DProps> = ({
   cameraModeRef.current = cameraMode;
   const showVisitorFlowRef = useRef<boolean>(showVisitorFlow);
   showVisitorFlowRef.current = showVisitorFlow;
+  const touchWalkRef = useRef({ fwd: false, back: false, left: false, right: false });
 
   const onSelectStandRef = useRef(onSelectStand);
   onSelectStandRef.current = onSelectStand;
@@ -1077,8 +1078,18 @@ export const VenueViewport3D: React.FC<VenueViewport3DProps> = ({
         banner.position.set(0, stageH + 0.55, d / 2 - 0.25);
         sGroup.add(banner);
       } else {
-        // SOLD STAND — Real Researched Brand Identity 3D Booth!
-        const brand = getExhibitorBrandProfile(stand.exhibitorName, stand.sector);
+        // SOLD STAND — Real Researched or Live-Scraped Brand Identity 3D Booth!
+        const baseBrand = getExhibitorBrandProfile(stand.exhibitorName, stand.sector);
+        const brand: ExhibitorBrandProfile = stand.customBrand
+          ? {
+              ...baseBrand,
+              company: stand.exhibitorName || baseBrand.company,
+              primaryColor: stand.customBrand.primaryColor,
+              accentColor: stand.customBrand.accentColor,
+              tagline: stand.customBrand.tagline,
+              website: stand.customBrand.website,
+            }
+          : baseBrand;
         const booth = buildBrandedExhibitionStand(stand, brand, sharedMats, pickableMeshes);
         booth.position.set(cx, 0, cz);
         scene.add(booth);
@@ -1399,16 +1410,17 @@ export const VenueViewport3D: React.FC<VenueViewport3DProps> = ({
         forward.set(-Math.sin(yaw), 0, -Math.cos(yaw)).normalize();
         right.set(Math.cos(yaw), 0, -Math.sin(yaw)).normalize();
 
-        if (keysPressed.has('KeyW') || keysPressed.has('ArrowUp')) {
+        const tw = touchWalkRef.current;
+        if (keysPressed.has('KeyW') || keysPressed.has('ArrowUp') || tw.fwd) {
           camera.position.addScaledVector(forward, speed * dt);
         }
-        if (keysPressed.has('KeyS') || keysPressed.has('ArrowDown')) {
+        if (keysPressed.has('KeyS') || keysPressed.has('ArrowDown') || tw.back) {
           camera.position.addScaledVector(forward, -speed * dt);
         }
-        if (keysPressed.has('KeyA') || keysPressed.has('ArrowLeft')) {
+        if (keysPressed.has('KeyA') || keysPressed.has('ArrowLeft') || tw.left) {
           camera.position.addScaledVector(right, -speed * dt);
         }
-        if (keysPressed.has('KeyD') || keysPressed.has('ArrowRight')) {
+        if (keysPressed.has('KeyD') || keysPressed.has('ArrowRight') || tw.right) {
           camera.position.addScaledVector(right, speed * dt);
         }
 
@@ -1646,21 +1658,74 @@ export const VenueViewport3D: React.FC<VenueViewport3DProps> = ({
     }
   }, [focusTrigger, cameraMode, selectedStandId, venue.stands]);
 
+  const bindTouchDir = (dir: 'fwd' | 'back' | 'left' | 'right') => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      e.stopPropagation();
+      touchWalkRef.current[dir] = true;
+    },
+    onPointerUp: () => {
+      touchWalkRef.current[dir] = false;
+    },
+    onPointerLeave: () => {
+      touchWalkRef.current[dir] = false;
+    },
+    onPointerCancel: () => {
+      touchWalkRef.current[dir] = false;
+    },
+  });
+
   return (
     <div className="venue-viewport3d-root" ref={mountRef}>
       {cameraMode === 'walk' && (
-        <div className="venue-walk-hud">
-          <span>
-            <strong>NEC Halls 6–8 Eye-Level Walkthrough (1.68m)</strong>
-          </span>
-          <span>
-            • <kbd>W</kbd>
-            <kbd>A</kbd>
-            <kbd>S</kbd>
-            <kbd>D</kbd> / Arrows to walk aisles
-          </span>
-          <span>• Drag to look around</span>
-        </div>
+        <>
+          <div className="venue-walk-hud">
+            <span>
+              <strong>{venue.hallName} • Eye-Level (1.68m)</strong>
+            </span>
+            <span className="venue-walk-hud-keys">
+              • <kbd>W</kbd>
+              <kbd>A</kbd>
+              <kbd>S</kbd>
+              <kbd>D</kbd> or Touch Pad to walk
+            </span>
+            <span>• Drag to look</span>
+          </div>
+
+          <div className="venue-touch-dpad" aria-label="Touch Walkthrough Controls">
+            <button
+              type="button"
+              className="dpad-btn dpad-up"
+              aria-label="Walk Forward"
+              {...bindTouchDir('fwd')}
+            >
+              ▲
+            </button>
+            <button
+              type="button"
+              className="dpad-btn dpad-left"
+              aria-label="Strafe Left"
+              {...bindTouchDir('left')}
+            >
+              ◀
+            </button>
+            <button
+              type="button"
+              className="dpad-btn dpad-down"
+              aria-label="Walk Backward"
+              {...bindTouchDir('back')}
+            >
+              ▼
+            </button>
+            <button
+              type="button"
+              className="dpad-btn dpad-right"
+              aria-label="Strafe Right"
+              {...bindTouchDir('right')}
+            >
+              ▶
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

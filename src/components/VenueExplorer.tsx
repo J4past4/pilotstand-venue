@@ -17,6 +17,7 @@ import {
   Radar,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Star,
   Target,
@@ -25,12 +26,15 @@ import {
 } from 'lucide-react';
 import { BrandMark } from './BrandMark';
 import { VenueMap2D } from './VenueMap2D';
+import { OrganizerStudioModal } from './OrganizerStudioModal';
 import { VenueViewport3D, type TestFitBrandConfig } from '../engine/VenueViewport3D';
 import { VENUE_STATUS_COLORS } from '../data/packagingInnovationsVenue';
 import { getExhibitorBrandProfile } from '../data/exhibitorBrands';
 import type {
   ExhibitionVenue,
+  OrganizerBrandTheme,
   StandAnalytics,
+  StandCustomBrand,
   VenueFilterState,
   VenueLayerVisibility,
   VenueStand,
@@ -96,11 +100,14 @@ const DEFAULT_LAYERS: VenueLayerVisibility = {
 };
 
 export const VenueExplorer: React.FC<VenueExplorerProps> = ({
-  venue,
+  venue: initialVenue,
   onDesignStand,
   onOpenStandDesigner,
   onOpenProjectsDashboard,
 }) => {
+  const [venue, setVenue] = useState<ExhibitionVenue>(initialVenue);
+  const [studioOpen, setStudioOpen] = useState(false);
+  const [mobileSheet, setMobileSheet] = useState<'none' | 'filters' | 'inspector'>('none');
   const [displayMode, setDisplayMode] = useState<VenueDisplayMode>('3d');
   const [filters, setFilters] = useState<VenueFilterState>(DEFAULT_FILTERS);
   const [layers, setLayers] = useState<VenueLayerVisibility>(DEFAULT_LAYERS);
@@ -274,8 +281,51 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
     setSelectedStandId(standId);
     if (walk) {
       setDisplayMode('walk');
+      setMobileSheet('none');
     }
     setFocusTrigger({ standId, walk, seq: Date.now() });
+  };
+
+  const handleLoadVenue = (nextVenue: ExhibitionVenue) => {
+    setVenue(nextVenue);
+    setFilters(DEFAULT_FILTERS);
+    setPinnedCompetitorIds(new Set());
+    setCompetitorSector('none');
+    const firstAvail = nextVenue.stands.find((s) => s.status === 'available') || nextVenue.stands[0];
+    setSelectedStandId(firstAvail?.id || null);
+    setShortlistIds(new Set(firstAvail ? [firstAvail.id] : []));
+    setFocusTrigger(null);
+  };
+
+  const handleUpdateTheme = (
+    theme: OrganizerBrandTheme,
+    showName?: string,
+    venueLocation?: string
+  ) => {
+    setVenue((prev) => ({
+      ...prev,
+      name: showName?.trim() || prev.name,
+      venueLocation: venueLocation?.trim() || prev.venueLocation,
+      organizer: theme.organizerName || prev.organizer,
+      brandTheme: theme,
+    }));
+  };
+
+  const handleApplyStandBrand = (
+    standId: string,
+    exhibitorName: string,
+    brand: StandCustomBrand
+  ) => {
+    setVenue((prev) => ({
+      ...prev,
+      stands: prev.stands.map((s) =>
+        s.id === standId
+          ? { ...s, status: 'sold', exhibitorName, customBrand: brand }
+          : s
+      ),
+    }));
+    setSelectedStandId(standId);
+    setFocusTrigger({ standId, walk: false, seq: Date.now() });
   };
 
   const handleSubmitReservation = (e: React.FormEvent) => {
@@ -295,15 +345,28 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
   const isAvailableOnly =
     filters.statuses.length === 1 && filters.statuses[0] === 'available';
 
+  const shellThemeStyle = useMemo(
+    () =>
+      ({
+        ...(venue.brandTheme?.primaryColor
+          ? { '--brand-primary': venue.brandTheme.primaryColor }
+          : {}),
+        ...(venue.brandTheme?.accentColor
+          ? { '--brand-accent': venue.brandTheme.accentColor }
+          : {}),
+      }) as React.CSSProperties,
+    [venue.brandTheme]
+  );
+
   return (
-    <div className="venue-shell">
+    <div className="venue-shell" style={shellThemeStyle}>
       {/* ==================== TOP HEADER ==================== */}
       <header className="venue-topbar">
         <div className="venue-topbar-left">
           <div className="venue-brand-pill">
             <BrandMark size={26} />
-            <span>PilotStand</span>
-            <span className="venue-brand-badge">Venue</span>
+            <span>{venue.brandTheme?.organizerName || 'PilotStand'}</span>
+            <span className="venue-brand-badge">{venue.brandTheme?.badgeText || 'Venue'}</span>
           </div>
           <div className="venue-event-divider" />
           <div className="venue-event-meta">
@@ -354,6 +417,15 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
           <button
             type="button"
             className="venue-btn"
+            onClick={() => setStudioOpen(true)}
+            title="Switch shows, import CSV/JSON floorplan, auto-scrape exhibitor brands & white-label embed"
+          >
+            <Building2 size={14} />
+            <span>Organizer Studio</span>
+          </button>
+          <button
+            type="button"
+            className="venue-btn"
             onClick={() => setCompareOpen(true)}
             title="Compare shortlisted stands side-by-side"
           >
@@ -384,7 +456,13 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
       {/* ==================== WORKSPACE ==================== */}
       <div className="venue-workspace">
         {/* LEFT FILTER & DISCOVERY SIDEBAR */}
-        <aside className="venue-sidebar">
+        <aside className={`venue-sidebar ${mobileSheet === 'filters' ? 'mobile-open' : ''}`}>
+          <div className="venue-mobile-drawer-close">
+            <span>Filters & Stands ({matchingStands.length})</span>
+            <button type="button" className="venue-btn" onClick={() => setMobileSheet('none')}>
+              <X size={13} /> Done
+            </button>
+          </div>
           <div className="venue-stats-strip">
             <div className="venue-stat-box">
               <span className="venue-stat-val available">{inventoryStats.availableCount}</span>
@@ -704,7 +782,13 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
         </main>
 
         {/* RIGHT STAND INSPECTOR & B2B SALES PANEL */}
-        <aside className="venue-inspector">
+        <aside className={`venue-inspector ${mobileSheet === 'inspector' ? 'mobile-open' : ''}`}>
+          <div className="venue-mobile-drawer-close">
+            <span>{selectedStand ? `Stand ${selectedStand.id}` : 'Stand Inspector'}</span>
+            <button type="button" className="venue-btn" onClick={() => setMobileSheet('none')}>
+              <X size={13} /> Close
+            </button>
+          </div>
           {selectedStand && selectedAnalytics ? (
             <>
               <div className="venue-inspector-scroll">
@@ -1398,6 +1482,57 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
           </div>
         </div>
       )}
+      {/* ==================== MOBILE BOTTOM BAR ==================== */}
+      <nav className="venue-mobile-bar" aria-label="Mobile Navigation">
+        <button
+          type="button"
+          className={`venue-mobile-tab ${mobileSheet === 'filters' ? 'active' : ''}`}
+          onClick={() => setMobileSheet((m) => (m === 'filters' ? 'none' : 'filters'))}
+        >
+          <SlidersHorizontal size={17} />
+          <span>Filters</span>
+        </button>
+        <button
+          type="button"
+          className={`venue-mobile-tab ${mobileSheet === 'inspector' ? 'active' : ''}`}
+          onClick={() => setMobileSheet((m) => (m === 'inspector' ? 'none' : 'inspector'))}
+        >
+          <Sparkles size={17} />
+          <span>{selectedStand ? `Stand ${selectedStand.id}` : 'Details'}</span>
+        </button>
+        <button
+          type="button"
+          className={`venue-mobile-tab ${displayMode === 'walk' ? 'active' : ''}`}
+          onClick={() => {
+            setMobileSheet('none');
+            setDisplayMode((d) => (d === 'walk' ? '3d' : 'walk'));
+          }}
+        >
+          <Footprints size={17} />
+          <span>{displayMode === 'walk' ? '3D Orbit' : 'Walk'}</span>
+        </button>
+        <button
+          type="button"
+          className="venue-mobile-tab"
+          onClick={() => {
+            setMobileSheet('none');
+            setStudioOpen(true);
+          }}
+        >
+          <Building2 size={17} />
+          <span>Organizer</span>
+        </button>
+      </nav>
+
+      {/* ==================== ORGANIZER STUDIO MODAL ==================== */}
+      <OrganizerStudioModal
+        open={studioOpen}
+        venue={venue}
+        onClose={() => setStudioOpen(false)}
+        onLoadVenue={handleLoadVenue}
+        onUpdateTheme={handleUpdateTheme}
+        onApplyStandBrand={handleApplyStandBrand}
+      />
     </div>
   );
 };

@@ -887,6 +887,57 @@
   background: var(--surface-1);
 }
 
+/* ==================== TOUCH WALK D-PAD ==================== */
+.venue-touch-dpad {
+  position: absolute;
+  left: 18px;
+  bottom: 22px;
+  width: 132px;
+  height: 132px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 5px;
+  z-index: 16;
+  user-select: none;
+  touch-action: none;
+}
+
+.dpad-btn {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(17, 19, 21, 0.78);
+  color: #ffffff;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow-md);
+  touch-action: none;
+}
+
+.dpad-btn:active {
+  background: var(--brand-accent);
+  transform: scale(0.95);
+}
+
+.dpad-up { grid-column: 2; grid-row: 1; }
+.dpad-left { grid-column: 1; grid-row: 2; }
+.dpad-right { grid-column: 3; grid-row: 2; }
+.dpad-down { grid-column: 2; grid-row: 3; }
+
+/* ==================== MOBILE BOTTOM BAR ==================== */
+.venue-mobile-bar {
+  display: none;
+}
+
+.venue-mobile-drawer-close {
+  display: none;
+}
+
 @media (max-width: 1080px) {
   .venue-sidebar {
     width: 268px;
@@ -898,3 +949,98 @@
     display: none;
   }
 }
+
+@media (max-width: 860px) {
+  .venue-topbar {
+    height: 50px;
+    padding: 0 10px;
+    gap: 6px;
+  }
+
+  .venue-topbar-right .venue-btn span {
+    display: none;
+  }
+
+  .venue-mode-btn span {
+    display: none;
+  }
+
+  .venue-sidebar,
+  .venue-inspector {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 56px;
+    top: auto;
+    width: 100%;
+    max-height: 72vh;
+    border-radius: 16px 16px 0 0;
+    border: none;
+    border-top: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-lg);
+    transform: translateY(115%);
+    transition: transform 0.22s ease;
+    z-index: 40;
+  }
+
+  .venue-sidebar.mobile-open,
+  .venue-inspector.mobile-open {
+    transform: translateY(0);
+  }
+
+  .venue-mobile-drawer-close {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 13px;
+    font-weight: 800;
+    background: var(--surface-1);
+    border-radius: 16px 16px 0 0;
+  }
+
+  .venue-mobile-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    height: 56px;
+    background: var(--surface-0);
+    border-top: 1px solid var(--border-subtle);
+    padding: 0 8px;
+    flex-shrink: 0;
+    z-index: 45;
+  }
+
+  .venue-mobile-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border: none;
+    background: transparent;
+    color: var(--ink-secondary);
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 6px 4px;
+    cursor: pointer;
+  }
+
+  .venue-mobile-tab.active {
+    color: var(--brand-accent);
+  }
+
+  .venue-walk-hud-keys {
+    display: none;
+  }
+
+  .venue-touch-dpad {
+    bottom: 14px;
+    left: 12px;
+    width: 118px;
+    height: 118px;
+  }
+}
+

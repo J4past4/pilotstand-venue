@@ -32,6 +32,21 @@ export interface VenueZone {
   labelPos: { x: number; z: number };
 }
 
+export interface StandCustomBrand {
+  primaryColor: string;
+  accentColor: string;
+  tagline: string;
+  website: string;
+  logoUrl?: string;
+}
+
+export interface OrganizerBrandTheme {
+  organizerName: string;
+  primaryColor: string;
+  accentColor: string;
+  badgeText?: string;
+}
+
 export interface VenueStand {
   id: string;
   zoneId: string;
@@ -54,6 +69,8 @@ export interface VenueStand {
   notes?: string;
   /** Optional subtitle for feature areas (e.g. sponsor name) */
   sponsor?: string;
+  /** Optional live-scraped or organizer-customized brand override for booked stands */
+  customBrand?: StandCustomBrand;
 }
 
 export interface VenuePillar {
@@ -111,6 +128,7 @@ export interface ExhibitionVenue {
   currency: 'GBP' | 'USD' | 'EUR';
   defaultPricePerSqmGbp: number;
   shellSchemeSurchargePerSqmGbp: number;
+  brandTheme?: OrganizerBrandTheme;
   zones: VenueZone[];
   stands: VenueStand[];
   pillars: VenuePillar[];
