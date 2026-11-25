@@ -16,6 +16,7 @@ import {
   LayoutTemplate,
   LogOut,
   Magnet,
+  Map as MapIcon,
   MessageSquarePlus,
   Monitor,
   Moon,
@@ -57,6 +58,7 @@ interface TopBarProps {
   onNewProject?: () => void;
   onOpenLoadModal?: () => void;
   onGoToDashboard?: () => void;
+  onOpenVenueExplorer?: () => void;
   viewMode: ViewMode;
   onChangeViewMode: (mode: ViewMode) => void;
   config: StandConfig;
@@ -114,6 +116,7 @@ export const TopBar: React.FC<TopBarProps> = React.memo(({
   onNewProject,
   onOpenLoadModal,
   onGoToDashboard,
+  onOpenVenueExplorer,
   viewMode,
   onChangeViewMode,
   config,
@@ -215,6 +218,24 @@ export const TopBar: React.FC<TopBarProps> = React.memo(({
           </div>
         </button>
         <div className="topbar-right">
+          {onOpenVenueExplorer && (
+            <button
+              id="btn-hall-floorplan"
+              className="ghost-btn topbar-collapse-label"
+              onClick={onOpenVenueExplorer}
+              title="Back to Interactive Exhibition Hall Floorplan"
+              aria-label="Hall Floorplan"
+              style={{
+                borderColor: 'rgba(255, 77, 46, 0.35)',
+                background: 'var(--brand-accent-soft)',
+                color: 'var(--brand-accent)',
+                fontWeight: 700,
+              }}
+            >
+              <MapIcon size={14} />
+              <span>Hall Floorplan</span>
+            </button>
+          )}
           <button
             id="btn-brand-setup"
             className="ghost-btn topbar-collapse-label topbar-secondary-desktop"

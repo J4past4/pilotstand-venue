@@ -1,0 +1,900 @@
+.venue-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  background: var(--surface-1);
+  color: var(--ink-primary);
+  overflow: hidden;
+}
+
+/* ==================== TOP BAR ==================== */
+.venue-topbar {
+  height: 56px;
+  background: var(--surface-0);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  gap: 12px;
+  flex-shrink: 0;
+  z-index: 25;
+}
+
+.venue-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.venue-brand-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  color: var(--ink-primary);
+  flex-shrink: 0;
+}
+
+.venue-brand-badge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--brand-accent-soft);
+  color: var(--brand-accent);
+}
+
+.venue-event-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.venue-event-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.venue-event-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.venue-event-sub {
+  font-size: 11px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.venue-mode-segmented {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-2);
+  padding: 3px;
+  border-radius: 9px;
+  border: 1px solid var(--border-subtle);
+  gap: 2px;
+}
+
+.venue-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--ink-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  white-space: nowrap;
+}
+
+.venue-mode-btn:hover {
+  color: var(--ink-primary);
+}
+
+.venue-mode-btn.active {
+  background: var(--surface-0);
+  color: var(--ink-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.venue-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.venue-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-0);
+  color: var(--ink-primary);
+  white-space: nowrap;
+}
+
+.venue-btn:hover {
+  background: var(--surface-1);
+  border-color: var(--border-strong);
+}
+
+.venue-btn.primary {
+  background: var(--brand-accent);
+  border-color: var(--brand-accent);
+  color: #ffffff;
+}
+
+.venue-btn.primary:hover {
+  background: #e63e20;
+  border-color: #e63e20;
+}
+
+.venue-btn.dark {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #ffffff;
+}
+
+.venue-btn.dark:hover {
+  background: var(--brand-primary-hover);
+}
+
+.venue-btn.full {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+
+/* ==================== MAIN WORKSPACE ==================== */
+.venue-workspace {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ==================== LEFT SIDEBAR ==================== */
+.venue-sidebar {
+  width: 316px;
+  background: var(--surface-0);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex-shrink: 0;
+  z-index: 15;
+}
+
+.venue-stats-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+}
+
+.venue-stat-box {
+  background: var(--surface-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.venue-stat-val {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink-primary);
+  line-height: 1.1;
+}
+
+.venue-stat-val.available {
+  color: #15803d;
+}
+
+.venue-stat-lbl {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  margin-top: 2px;
+}
+
+.venue-sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.venue-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.venue-search-box svg {
+  position: absolute;
+  left: 10px;
+  color: var(--ink-muted);
+  pointer-events: none;
+}
+
+.venue-search-box input {
+  width: 100%;
+  padding: 8px 10px 8px 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-0);
+  font-size: 12.5px;
+  color: var(--ink-primary);
+  outline: none;
+}
+
+.venue-search-box input:focus {
+  border-color: var(--brand-primary);
+}
+
+.venue-filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.venue-section-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.venue-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.venue-chip {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  color: var(--ink-secondary);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.venue-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--ink-primary);
+}
+
+.venue-chip.active {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #ffffff;
+}
+
+.venue-chip.danger.active {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+.venue-select {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-0);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-primary);
+}
+
+.venue-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-primary);
+  padding: 6px 9px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.venue-toggle-row input {
+  accent-color: var(--brand-accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.venue-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.venue-stand-card {
+  text-align: left;
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-0);
+  border-radius: 9px;
+  padding: 9px 10px;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.venue-stand-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-1);
+}
+
+.venue-stand-card.selected {
+  border-color: var(--brand-accent);
+  background: var(--brand-accent-soft);
+  box-shadow: 0 0 0 1px var(--brand-accent);
+}
+
+.venue-stand-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.venue-stand-id {
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--ink-primary);
+}
+
+.venue-stand-meta {
+  font-size: 11px;
+  color: var(--ink-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.status-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.status-pill.status-available {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-pill.status-sold {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.status-pill.status-reserved {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.status-pill.status-feature {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.match-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #15803d;
+  background: #ecfdf3;
+  padding: 1px 6px;
+  border-radius: 5px;
+}
+
+/* ==================== CENTER VIEWPORT ==================== */
+.venue-center {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: #e6e9ef;
+  overflow: hidden;
+}
+
+.venue-map2d-root {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  background: #eef1f5;
+}
+
+.venue-map2d-root.is-panning {
+  cursor: grabbing;
+}
+
+.venue-map2d-svg {
+  display: block;
+}
+
+.venue-map2d-stand {
+  cursor: pointer;
+  transition: opacity 0.14s ease;
+}
+
+.venue-map-legend {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 7px 11px;
+  box-shadow: var(--shadow-sm);
+  z-index: 10;
+}
+
+.legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.legend-chip i {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+}
+
+.venue-map-controls {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  z-index: 10;
+}
+
+.venue-map-controls button {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--ink-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+
+.venue-map-controls button:hover {
+  background: var(--surface-0);
+  border-color: var(--border-strong);
+}
+
+.venue-hover-tooltip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 20;
+  width: 230px;
+  background: rgba(17, 19, 21, 0.94);
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 9px 11px;
+  box-shadow: var(--shadow-md);
+  font-size: 11.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tooltip-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.tooltip-company {
+  font-weight: 700;
+  color: #fde68a;
+}
+
+.tooltip-meta {
+  color: rgba(255, 255, 255, 0.78);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tooltip-price {
+  color: #86efac;
+  margin-top: 2px;
+}
+
+.tooltip-warn {
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+.venue-viewport3d-root {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.venue-walk-hud {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(17, 19, 21, 0.88);
+  color: #ffffff;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: var(--shadow-md);
+  z-index: 12;
+  white-space: nowrap;
+}
+
+.venue-walk-hud kbd {
+  background: rgba(255, 255, 255, 0.18);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin: 0 1px;
+}
+
+/* ==================== RIGHT INSPECTOR ==================== */
+.venue-inspector {
+  width: 338px;
+  background: var(--surface-0);
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex-shrink: 0;
+  z-index: 15;
+}
+
+.venue-inspector-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.venue-inspector-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.venue-inspector-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.venue-inspector-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.venue-zone-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-secondary);
+}
+
+.venue-zone-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.venue-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.venue-metric-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.venue-metric-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.venue-metric-value {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink-primary);
+}
+
+.venue-alert-card {
+  border-radius: 9px;
+  padding: 9px 11px;
+  font-size: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.4;
+}
+
+.venue-alert-card.ok {
+  background: #ecfdf3;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+.venue-alert-card.warn {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+.venue-intel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.venue-intel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 6px 9px;
+  background: var(--surface-1);
+  border-radius: 7px;
+  gap: 8px;
+}
+
+.venue-intel-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink-secondary);
+  min-width: 0;
+}
+
+.venue-intel-val {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--ink-primary);
+  flex-shrink: 0;
+}
+
+.footfall-bar-track {
+  height: 7px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.footfall-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f59e0b, #16a34a);
+}
+
+.venue-neighbor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.venue-neighbor-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  font-size: 11.5px;
+  background: var(--surface-0);
+}
+
+.venue-neighbor-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.venue-neighbor-name {
+  font-weight: 700;
+  color: var(--ink-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.venue-neighbor-sub {
+  font-size: 10.5px;
+  color: var(--ink-muted);
+}
+
+.venue-inspector-actions {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-0);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ==================== COMPARE MODAL ==================== */
+.venue-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 19, 21, 0.56);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  padding: 20px;
+}
+
+.venue-compare-modal {
+  width: min(940px, 96vw);
+  max-height: 85vh;
+  background: var(--surface-0);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.venue-compare-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.venue-compare-header h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+}
+
+.venue-compare-body {
+  padding: 16px 18px;
+  overflow: auto;
+}
+
+.venue-compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.venue-compare-table th,
+.venue-compare-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+}
+
+.venue-compare-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+  background: var(--surface-1);
+}
+
+@media (max-width: 1080px) {
+  .venue-sidebar {
+    width: 268px;
+  }
+  .venue-inspector {
+    width: 290px;
+  }
+  .venue-event-meta {
+    display: none;
+  }
+}
