@@ -3,25 +3,31 @@ import {
   AlertTriangle,
   ArrowRight,
   Box,
+  Building2,
   CheckCircle2,
   Compass,
   DoorOpen,
+  ExternalLink,
   Eye,
   Flame,
   FolderOpen,
   Footprints,
   Layers,
   Map as MapIcon,
+  Radar,
   Search,
+  ShieldCheck,
   Sparkles,
   Star,
   Target,
+  Waves,
   X,
 } from 'lucide-react';
 import { BrandMark } from './BrandMark';
 import { VenueMap2D } from './VenueMap2D';
-import { VenueViewport3D } from '../engine/VenueViewport3D';
+import { VenueViewport3D, type TestFitBrandConfig } from '../engine/VenueViewport3D';
 import { VENUE_STATUS_COLORS } from '../data/packagingInnovationsVenue';
+import { getExhibitorBrandProfile } from '../data/exhibitorBrands';
 import type {
   ExhibitionVenue,
   StandAnalytics,
@@ -54,6 +60,20 @@ interface VenueExplorerProps {
   onOpenProjectsDashboard: () => void;
 }
 
+interface UpsellOption {
+  id: string;
+  label: string;
+  priceGbp: number;
+}
+
+const ORGANIZER_UPSELLS: UpsellOption[] = [
+  { id: 'power-3kw', label: '3kW / 16A Power Supply', priceGbp: 420 },
+  { id: 'rigging', label: 'Overhead Banner Rigging Point', priceGbp: 680 },
+  { id: 'fibre', label: 'Dedicated 100Mbps Fibre Line', priceGbp: 550 },
+  { id: 'scanners', label: 'Lead Capture Scanners (×2)', priceGbp: 295 },
+  { id: 'av-furniture', label: 'Lounge Furniture & 55" 4K AV Pack', priceGbp: 890 },
+];
+
 const DEFAULT_FILTERS: VenueFilterState = {
   search: '',
   statuses: ['available', 'sold', 'reserved', 'feature'],
@@ -81,14 +101,18 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
   onOpenStandDesigner,
   onOpenProjectsDashboard,
 }) => {
-  const [displayMode, setDisplayMode] = useState<VenueDisplayMode>('2d');
+  const [displayMode, setDisplayMode] = useState<VenueDisplayMode>('3d');
   const [filters, setFilters] = useState<VenueFilterState>(DEFAULT_FILTERS);
   const [layers, setLayers] = useState<VenueLayerVisibility>(DEFAULT_LAYERS);
+  const [showSightlines, setShowSightlines] = useState<boolean>(false);
+  const [showVisitorFlow, setShowVisitorFlow] = useState<boolean>(true);
   const [selectedStandId, setSelectedStandId] = useState<string | null>('AC72');
   const [hoveredStandId, setHoveredStandId] = useState<string | null>(null);
   const [pinnedCompetitorIds, setPinnedCompetitorIds] = useState<Set<string>>(() => new Set());
   const [competitorSector, setCompetitorSector] = useState<string>('none');
-  const [shortlistIds, setShortlistIds] = useState<Set<string>>(() => new Set(['AC72', 'K130', 'W64']));
+  const [shortlistIds, setShortlistIds] = useState<Set<string>>(
+    () => new Set(['AC72', 'K130', 'W64'])
+  );
   const [compareOpen, setCompareOpen] = useState(false);
   const [focusTrigger, setFocusTrigger] = useState<{
     standId: string;
@@ -96,9 +120,32 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
     seq: number;
   } | null>(null);
 
+  // Live "Test-Fit Your Brand" preview directly inside the 3D NEC Hall
+  const [testFit, setTestFit] = useState<TestFitBrandConfig>({
+    enabled: false,
+    companyName: 'Your Brand UK',
+    tagline: 'Sustainable Packaging Innovation',
+    primaryColor: '#0f172a',
+    accentColor: '#ff4d2e',
+    packageTier: 'flagship',
+  });
+
+  // Organizer Upsell Package & 48h Stand Hold Reservation state
+  const [shellSchemeSelected, setShellSchemeSelected] = useState<boolean>(true);
+  const [selectedUpsells, setSelectedUpsells] = useState<Set<string>>(
+    () => new Set(['power-3kw', 'scanners'])
+  );
+  const [reserveOpen, setReserveOpen] = useState(false);
+  const [reserveForm, setReserveForm] = useState({
+    company: '',
+    contactName: '',
+    email: '',
+    phone: '',
+  });
+  const [reserveRef, setReserveRef] = useState<string | null>(null);
+
   const sectors = useMemo(() => getUniqueSectors(venue), [venue]);
 
-  // Combined competitor set (manual pins + sector watchlist)
   const competitorStandIds = useMemo(() => {
     const set = new Set<string>(pinnedCompetitorIds);
     if (competitorSector !== 'none') {
@@ -111,7 +158,6 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
     return set;
   }, [pinnedCompetitorIds, competitorSector, venue.stands]);
 
-  // Precompute analytics for all stands
   const analyticsMap = useMemo(() => {
     const map = new Map<string, StandAnalytics>();
     for (const s of venue.stands) {
@@ -130,27 +176,22 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
     [matchingStands]
   );
 
-  // Inventory summary stats
   const inventoryStats = useMemo(() => {
     let availableCount = 0;
     let availableArea = 0;
     let soldCount = 0;
-    let reservedCount = 0;
     for (const s of venue.stands) {
       if (s.status === 'available') {
         availableCount += 1;
         availableArea += s.width * s.depth;
       } else if (s.status === 'sold') {
         soldCount += 1;
-      } else if (s.status === 'reserved') {
-        reservedCount += 1;
       }
     }
     return {
       availableCount,
       availableArea: Math.round(availableArea),
       soldCount,
-      reservedCount,
     };
   }, [venue.stands]);
 
@@ -163,6 +204,24 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
   const selectedZone = selectedStand
     ? venue.zones.find((z) => z.id === selectedStand.zoneId) || null
     : null;
+  const selectedBrandProfile =
+    selectedStand && selectedStand.status === 'sold'
+      ? getExhibitorBrandProfile(selectedStand.exhibitorName, selectedStand.sector)
+      : null;
+
+  const upsellTotalGbp = useMemo(() => {
+    let sum = 0;
+    for (const u of ORGANIZER_UPSELLS) {
+      if (selectedUpsells.has(u.id)) sum += u.priceGbp;
+    }
+    return sum;
+  }, [selectedUpsells]);
+
+  const packageGrandTotalGbp = selectedAnalytics
+    ? (shellSchemeSelected
+        ? selectedAnalytics.shellSchemePriceGbp
+        : selectedAnalytics.spaceOnlyPriceGbp) + upsellTotalGbp
+    : 0;
 
   const toggleStatusFilter = (status: VenueStandStatus) => {
     setFilters((prev) => {
@@ -187,11 +246,8 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
   const toggleShortlist = (standId: string) => {
     setShortlistIds((prev) => {
       const next = new Set(prev);
-      if (next.has(standId)) {
-        next.delete(standId);
-      } else if (next.size < 4) {
-        next.add(standId);
-      }
+      if (next.has(standId)) next.delete(standId);
+      else if (next.size < 4) next.add(standId);
       return next;
     });
   };
@@ -205,12 +261,30 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
     });
   };
 
+  const toggleUpsell = (id: string) => {
+    setSelectedUpsells((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const handleSelectAndFocus = (standId: string, walk = false) => {
     setSelectedStandId(standId);
     if (walk) {
       setDisplayMode('walk');
     }
     setFocusTrigger({ standId, walk, seq: Date.now() });
+  };
+
+  const handleSubmitReservation = (e: React.FormEvent) => {
+    e.preventDefault();
+    const ref = `NEC-PI26-${selectedStand?.id || 'STAND'}-${Math.random()
+      .toString(36)
+      .slice(2, 6)
+      .toUpperCase()}`;
+    setReserveRef(ref);
   };
 
   const shortlistedStands = useMemo(
@@ -242,7 +316,7 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
           </div>
         </div>
 
-        {/* 2D / 3D / Eye-Level Mode Switcher */}
+        {/* 2D / 3D / Walkthrough Mode Switcher */}
         <div className="venue-mode-segmented" role="tablist" aria-label="Hall View Mode">
           <button
             type="button"
@@ -327,18 +401,16 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
           </div>
 
           <div className="venue-sidebar-scroll">
-            {/* Search */}
             <div className="venue-search-box">
               <Search size={14} />
               <input
                 type="text"
                 value={filters.search}
                 onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-                placeholder="Search stand (AC72) or exhibitor (Amcor)..."
+                placeholder="Search stand (AC72) or brand (Amcor)..."
               />
             </div>
 
-            {/* Status & Quick Available Toggle */}
             <div className="venue-filter-section">
               <div className="venue-section-label">
                 <span>Stand Availability</span>
@@ -372,7 +444,6 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
               </div>
             </div>
 
-            {/* Zone Filter */}
             <div className="venue-filter-section">
               <div className="venue-section-label">Exhibition Zone</div>
               <select
@@ -389,7 +460,6 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
               </select>
             </div>
 
-            {/* Stand Size & Open Sides */}
             <div className="venue-filter-section">
               <div className="venue-section-label">Stand Size (m²)</div>
               <div className="venue-chip-row">
@@ -422,7 +492,7 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
             </div>
 
             <div className="venue-filter-section">
-              <div className="venue-section-label">Open Sides (Visibility)</div>
+              <div className="venue-section-label">Open Sides & Obstructions</div>
               <div className="venue-chip-row">
                 {(['all', 1, 2, 3, 4] as const).map((os) => (
                   <button
@@ -447,7 +517,7 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
               </label>
             </div>
 
-            {/* Competitor Watchlist */}
+            {/* Competitor Radar */}
             <div className="venue-filter-section">
               <div className="venue-section-label">
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -473,11 +543,11 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
               </select>
             </div>
 
-            {/* Map Layers */}
+            {/* Intelligence & Venue Layers */}
             <div className="venue-filter-section">
               <div className="venue-section-label">
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <Layers size={12} /> Hall Map Layers
+                  <Layers size={12} /> Intelligence Layers
                 </span>
               </div>
               <div className="venue-chip-row">
@@ -486,7 +556,7 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
                   className={`venue-chip ${layers.pillars ? 'active' : ''}`}
                   onClick={() => setLayers((l) => ({ ...l, pillars: !l.pillars }))}
                 >
-                  Pillars
+                  NEC Pillars
                 </button>
                 <button
                   type="button"
@@ -497,19 +567,28 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
                 </button>
                 <button
                   type="button"
+                  className={`venue-chip ${showSightlines ? 'active' : ''}`}
+                  onClick={() => setShowSightlines((v) => !v)}
+                  title="Cast 3D sightline rays from entrances & boulevards to check obstructions"
+                >
+                  <Radar size={11} /> Sightlines
+                </button>
+                <button
+                  type="button"
+                  className={`venue-chip ${showVisitorFlow ? 'active' : ''}`}
+                  onClick={() => setShowVisitorFlow((v) => !v)}
+                  title="Animate visitor traffic flowing from NEC Atrium Entrances"
+                >
+                  <Waves size={11} /> Visitor Flow
+                </button>
+                <button
+                  type="button"
                   className={`venue-chip ${layers.footfallHeatmap ? 'active' : ''}`}
                   onClick={() =>
                     setLayers((l) => ({ ...l, footfallHeatmap: !l.footfallHeatmap }))
                   }
                 >
-                  <Flame size={11} /> Footfall
-                </button>
-                <button
-                  type="button"
-                  className={`venue-chip ${layers.aisleWidths ? 'active' : ''}`}
-                  onClick={() => setLayers((l) => ({ ...l, aisleWidths: !l.aisleWidths }))}
-                >
-                  Aisles
+                  <Flame size={11} /> Heatmap
                 </button>
               </div>
             </div>
@@ -580,7 +659,7 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
                       </div>
                       {a.obstructingPillars.length > 0 && (
                         <div style={{ fontSize: 10.5, color: '#b45309', fontWeight: 700 }}>
-                          ⚠ Pillar obstruction
+                          ⚠ NEC pillar obstruction
                         </div>
                       )}
                     </button>
@@ -615,18 +694,20 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
               competitorStandIds={competitorStandIds}
               layers={layers}
               cameraMode={displayMode === 'walk' ? 'walk' : 'orbit'}
+              testFit={testFit}
+              showSightlines={showSightlines}
+              showVisitorFlow={showVisitorFlow}
               onSelectStand={(id) => setSelectedStandId(id)}
               focusTrigger={focusTrigger}
             />
           )}
         </main>
 
-        {/* RIGHT STAND INSPECTOR */}
+        {/* RIGHT STAND INSPECTOR & B2B SALES PANEL */}
         <aside className="venue-inspector">
           {selectedStand && selectedAnalytics ? (
             <>
               <div className="venue-inspector-scroll">
-                {/* Header */}
                 <div className="venue-inspector-header">
                   <div className="venue-inspector-title-row">
                     <h2 className="venue-inspector-title">Stand {selectedStand.id}</h2>
@@ -634,23 +715,68 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
                       {VENUE_STATUS_COLORS[selectedStand.status]?.label || selectedStand.status}
                     </span>
                   </div>
-                  {selectedStand.exhibitorName && (
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-primary)' }}>
-                      {selectedStand.exhibitorName}
-                      {selectedStand.sector && (
-                        <span
+
+                  {/* Researched Brand Identity Card for Booked Stands */}
+                  {selectedBrandProfile && (
+                    <div
+                      style={{
+                        borderRadius: 9,
+                        overflow: 'hidden',
+                        border: '1px solid var(--border-subtle)',
+                        background: 'var(--surface-1)',
+                        marginTop: 4,
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: 6,
+                          background: `linear-gradient(90deg, ${selectedBrandProfile.primaryColor}, ${selectedBrandProfile.accentColor})`,
+                        }}
+                      />
+                      <div style={{ padding: '9px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ fontWeight: 800, fontSize: 14 }}>
+                          {selectedBrandProfile.company}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--ink-secondary)', lineHeight: 1.35 }}>
+                          {selectedBrandProfile.tagline}
+                        </div>
+                        {selectedBrandProfile.highlights && (
+                          <div style={{ fontSize: 11, color: 'var(--ink-muted)', lineHeight: 1.35 }}>
+                            {selectedBrandProfile.highlights}
+                          </div>
+                        )}
+                        <a
+                          href={selectedBrandProfile.website}
+                          target="_blank"
+                          rel="noreferrer"
                           style={{
-                            display: 'block',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
                             fontSize: 11.5,
-                            fontWeight: 500,
-                            color: 'var(--ink-muted)',
+                            fontWeight: 700,
+                            color: '#1d4ed8',
+                            textDecoration: 'none',
+                            marginTop: 2,
                           }}
                         >
-                          Sector: {selectedStand.sector}
+                          <Building2 size={12} /> Visit Official Website <ExternalLink size={11} />
+                        </a>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedStand.status === 'feature' && selectedStand.exhibitorName && (
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>
+                      {selectedStand.exhibitorName}
+                      {selectedStand.sponsor && (
+                        <span style={{ display: 'block', fontSize: 11.5, color: 'var(--ink-muted)' }}>
+                          Sponsored by {selectedStand.sponsor}
                         </span>
                       )}
                     </div>
                   )}
+
                   {selectedZone && (
                     <div className="venue-zone-pill">
                       <span
@@ -662,7 +788,7 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
                   )}
                 </div>
 
-                {/* Key Dimensions & Pricing */}
+                {/* Dimensions & Pricing Grid */}
                 <div className="venue-metrics-grid">
                   <div className="venue-metric-card">
                     <span className="venue-metric-label">Footprint</span>
@@ -692,22 +818,93 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
                   </div>
                 </div>
 
+                {/* Live "Test-Fit Your Brand" Studio inside the 3D NEC Hall */}
                 {selectedStand.status === 'available' && (
                   <div
                     style={{
-                      fontSize: 11.5,
-                      color: 'var(--ink-secondary)',
-                      background: 'var(--surface-1)',
-                      padding: '8px 10px',
-                      borderRadius: 8,
-                      border: '1px solid var(--border-subtle)',
+                      background: '#fff7f5',
+                      border: '1px solid rgba(255, 77, 46, 0.35)',
+                      borderRadius: 10,
+                      padding: 10,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
                     }}
                   >
-                    Turnkey Shell Scheme Est.:{' '}
-                    <strong className="mono-num">
-                      {formatGbp(selectedAnalytics.shellSchemePriceGbp)}
-                    </strong>{' '}
-                    <span style={{ color: 'var(--ink-muted)' }}>(incl. walls, carpet & fascia)</span>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: '#111315',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <Sparkles size={13} color="#ff4d2e" /> Live Test-Fit Your Brand in 3D
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={testFit.enabled}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setTestFit((t) => ({ ...t, enabled: checked }));
+                          if (checked && displayMode === '2d') setDisplayMode('3d');
+                        }}
+                        style={{ accentColor: '#ff4d2e', width: 16, height: 16 }}
+                      />
+                    </label>
+                    {testFit.enabled && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <input
+                          type="text"
+                          value={testFit.companyName}
+                          onChange={(e) =>
+                            setTestFit((t) => ({ ...t, companyName: e.target.value }))
+                          }
+                          placeholder="Your Company Name"
+                          className="venue-select"
+                        />
+                        <input
+                          type="text"
+                          value={testFit.tagline}
+                          onChange={(e) =>
+                            setTestFit((t) => ({ ...t, tagline: e.target.value }))
+                          }
+                          placeholder="Stand Tagline"
+                          className="venue-select"
+                        />
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <label style={{ fontSize: 11, fontWeight: 600 }}>
+                            Brand:
+                            <input
+                              type="color"
+                              value={testFit.primaryColor}
+                              onChange={(e) =>
+                                setTestFit((t) => ({ ...t, primaryColor: e.target.value }))
+                              }
+                              style={{ marginLeft: 4, width: 24, height: 22, border: 'none' }}
+                            />
+                          </label>
+                          <select
+                            className="venue-select"
+                            value={testFit.packageTier}
+                            onChange={(e) =>
+                              setTestFit((t) => ({
+                                ...t,
+                                packageTier: e.target.value as TestFitBrandConfig['packageTier'],
+                              }))
+                            }
+                          >
+                            <option value="shell">Shell Scheme Booth</option>
+                            <option value="modular">Executive Modular</option>
+                            <option value="flagship">Flagship + Hanging Cube</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -716,10 +913,9 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
                   <div className="venue-alert-card warn">
                     <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
                     <div>
-                      <strong>Structural Pillar Obstruction</strong>
+                      <strong>NEC Structural Column Obstruction</strong>
                       <div style={{ marginTop: 2 }}>
                         {selectedAnalytics.obstructingPillars.map((p) => p.label).join(', ')}.
-                        Inspect in Eye-Level Walkthrough before booking.
                       </div>
                     </div>
                   </div>
@@ -729,21 +925,64 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
                     <div>
                       <strong>Clear Pillar-Free Plot</strong>
                       <div style={{ marginTop: 1 }}>
-                        No structural columns inside this footprint. Unobstructed aisle sightlines.
+                        Unobstructed aisle sightlines across all {selectedStand.openSides} open sides.
                       </div>
                     </div>
                   </div>
                 )}
 
-                {selectedStand.notes && (
-                  <div style={{ fontSize: 12, color: 'var(--ink-secondary)', lineHeight: 1.45 }}>
-                    {selectedStand.notes}
+                {/* Organizer Upsells & Turnkey Package Configurator */}
+                {selectedStand.status === 'available' && (
+                  <div className="venue-filter-section">
+                    <div className="venue-section-label">
+                      <span>Organizer Package & Upsells</span>
+                      <span className="mono-num" style={{ color: '#111315' }}>
+                        {formatGbp(packageGrandTotalGbp)}
+                      </span>
+                    </div>
+                    <div className="venue-chip-row">
+                      <button
+                        type="button"
+                        className={`venue-chip ${!shellSchemeSelected ? 'active' : ''}`}
+                        onClick={() => setShellSchemeSelected(false)}
+                      >
+                        Space Only
+                      </button>
+                      <button
+                        type="button"
+                        className={`venue-chip ${shellSchemeSelected ? 'active' : ''}`}
+                        onClick={() => setShellSchemeSelected(true)}
+                      >
+                        Turnkey Shell (+£85/m²)
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {ORGANIZER_UPSELLS.map((u) => (
+                        <label
+                          key={u.id}
+                          className="venue-toggle-row"
+                          style={{ padding: '5px 8px', fontSize: 11.5 }}
+                        >
+                          <span>
+                            {u.label}{' '}
+                            <strong className="mono-num" style={{ color: 'var(--ink-muted)' }}>
+                              +{formatGbp(u.priceGbp)}
+                            </strong>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={selectedUpsells.has(u.id)}
+                            onChange={() => toggleUpsell(u.id)}
+                          />
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 )}
 
                 {/* Location & Footfall Intelligence */}
                 <div className="venue-filter-section">
-                  <div className="venue-section-label">Location & Footfall Intel</div>
+                  <div className="venue-section-label">NEC Location & Footfall Intel</div>
                   <div
                     style={{
                       background: 'var(--surface-1)',
@@ -818,7 +1057,7 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
                   </div>
                 </div>
 
-                {/* Nearby Exhibitors */}
+                {/* Nearby Confirmed Exhibitors */}
                 {selectedAnalytics.neighboringExhibitors.length > 0 && (
                   <div className="venue-filter-section">
                     <div className="venue-section-label">Nearby Confirmed Exhibitors</div>
@@ -843,7 +1082,6 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
                               type="button"
                               className={`venue-chip danger ${isPinned ? 'active' : ''}`}
                               onClick={() => togglePinCompetitor(nb.standId)}
-                              title="Flag as competitor on the hall map"
                             >
                               {isPinned ? 'Competitor' : 'Flag'}
                             </button>
@@ -858,34 +1096,49 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
               {/* Action Buttons */}
               <div className="venue-inspector-actions">
                 {selectedStand.status === 'available' && (
-                  <button
-                    type="button"
-                    className="venue-btn primary full"
-                    onClick={() =>
-                      onDesignStand({
-                        stand: selectedStand,
-                        analytics: selectedAnalytics,
-                        venue,
-                      })
-                    }
-                  >
-                    <Sparkles size={15} />
-                    <span>Design Stand {selectedStand.id} in 3D</span>
-                    <ArrowRight size={14} />
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="venue-btn primary full"
+                      onClick={() =>
+                        onDesignStand({
+                          stand: selectedStand,
+                          analytics: selectedAnalytics,
+                          venue,
+                        })
+                      }
+                    >
+                      <Sparkles size={15} />
+                      <span>Design Stand {selectedStand.id} in Full 3D</span>
+                      <ArrowRight size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="venue-btn dark full"
+                      onClick={() => {
+                        setReserveRef(null);
+                        setReserveOpen(true);
+                      }}
+                    >
+                      <ShieldCheck size={14} />
+                      <span>
+                        Reserve 48h Hold ({formatGbp(packageGrandTotalGbp)})
+                      </span>
+                    </button>
+                  </>
                 )}
 
-                <button
-                  type="button"
-                  className="venue-btn dark full"
-                  onClick={() => handleSelectAndFocus(selectedStand.id, true)}
-                >
-                  <Eye size={14} />
-                  <span>Walk to Stand (1.68m Eye-Level)</span>
-                </button>
-
                 <div style={{ display: 'flex', gap: 6 }}>
-                  {selectedStand.status === 'available' && (
+                  <button
+                    type="button"
+                    className="venue-btn full"
+                    onClick={() => handleSelectAndFocus(selectedStand.id, true)}
+                  >
+                    <Eye size={14} />
+                    <span>Walk (1.68m)</span>
+                  </button>
+
+                  {selectedStand.status === 'available' ? (
                     <button
                       type="button"
                       className="venue-btn full"
@@ -900,9 +1153,7 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
                         {shortlistIds.has(selectedStand.id) ? 'Shortlisted' : 'Shortlist'}
                       </span>
                     </button>
-                  )}
-
-                  {selectedStand.status === 'sold' && (
+                  ) : selectedStand.status === 'sold' ? (
                     <button
                       type="button"
                       className="venue-btn full"
@@ -910,23 +1161,144 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
                     >
                       <Target size={14} color="#dc2626" />
                       <span>
-                        {pinnedCompetitorIds.has(selectedStand.id)
-                          ? 'Unflag Competitor'
-                          : 'Track as Competitor'}
+                        {pinnedCompetitorIds.has(selectedStand.id) ? 'Unflag' : 'Track Rival'}
                       </span>
                     </button>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </>
           ) : (
             <div style={{ padding: 24, color: 'var(--ink-muted)', fontSize: 13 }}>
-              Click any stand on the floorplan to inspect dimensions, pillar obstructions, footfall,
-              neighboring competitors, and launch the 3D Stand Designer.
+              Click any stand on the NEC Halls 6–8 floorplan to inspect dimensions, real exhibitor
+              branding, pillar obstructions, sightlines, and launch the 3D Stand Designer.
             </div>
           )}
         </aside>
       </div>
+
+      {/* ==================== 48-HOUR STAND RESERVATION MODAL ==================== */}
+      {reserveOpen && selectedStand && selectedAnalytics && (
+        <div className="venue-modal-backdrop" onClick={() => setReserveOpen(false)}>
+          <div
+            className="venue-compare-modal"
+            style={{ width: 'min(520px, 95vw)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="venue-compare-header">
+              <h3>Reserve 48-Hour Option — Stand {selectedStand.id}</h3>
+              <button
+                type="button"
+                className="venue-btn"
+                onClick={() => setReserveOpen(false)}
+              >
+                <X size={14} /> Close
+              </button>
+            </div>
+            <div className="venue-compare-body">
+              {reserveRef ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div className="venue-alert-card ok">
+                    <CheckCircle2 size={18} style={{ flexShrink: 0 }} />
+                    <div>
+                      <strong>48-Hour Stand Hold Requested!</strong>
+                      <div style={{ marginTop: 4 }}>
+                        Reference: <strong className="mono-num">{reserveRef}</strong>
+                      </div>
+                    </div>
+                  </div>
+                  <p style={{ fontSize: 13, color: 'var(--ink-secondary)', margin: 0 }}>
+                    The {venue.organizer} commercial team has received your specification for{' '}
+                    <strong>
+                      Stand {selectedStand.id} ({selectedStand.width}m × {selectedStand.depth}m,{' '}
+                      {selectedAnalytics.areaM2}m²)
+                    </strong>{' '}
+                    with estimated total{' '}
+                    <strong className="mono-num">{formatGbp(packageGrandTotalGbp)}</strong>.
+                  </p>
+                  <button
+                    type="button"
+                    className="venue-btn primary full"
+                    onClick={() => {
+                      setReserveOpen(false);
+                      onDesignStand({
+                        stand: selectedStand,
+                        analytics: selectedAnalytics,
+                        venue,
+                      });
+                    }}
+                  >
+                    <Sparkles size={14} /> Start Designing Stand {selectedStand.id} in 3D Now
+                  </button>
+                </div>
+              ) : (
+                <form
+                  onSubmit={handleSubmitReservation}
+                  style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+                >
+                  <div
+                    style={{
+                      background: 'var(--surface-1)',
+                      padding: 10,
+                      borderRadius: 9,
+                      border: '1px solid var(--border-subtle)',
+                      fontSize: 12.5,
+                    }}
+                  >
+                    <div>
+                      <strong>
+                        Stand {selectedStand.id} — {selectedStand.width}m × {selectedStand.depth}m (
+                        {selectedAnalytics.areaM2}m²)
+                      </strong>
+                    </div>
+                    <div style={{ color: 'var(--ink-secondary)', marginTop: 3 }}>
+                      {shellSchemeSelected ? 'Turnkey Shell Scheme' : 'Space Only'} +{' '}
+                      {selectedUpsells.size} organizer add-on(s) • Total:{' '}
+                      <strong className="mono-num">{formatGbp(packageGrandTotalGbp)}</strong>
+                    </div>
+                  </div>
+                  <input
+                    required
+                    type="text"
+                    className="venue-select"
+                    placeholder="Company Name *"
+                    value={reserveForm.company}
+                    onChange={(e) => setReserveForm((f) => ({ ...f, company: e.target.value }))}
+                  />
+                  <input
+                    required
+                    type="text"
+                    className="venue-select"
+                    placeholder="Your Full Name *"
+                    value={reserveForm.contactName}
+                    onChange={(e) =>
+                      setReserveForm((f) => ({ ...f, contactName: e.target.value }))
+                    }
+                  />
+                  <input
+                    required
+                    type="email"
+                    className="venue-select"
+                    placeholder="Work Email *"
+                    value={reserveForm.email}
+                    onChange={(e) => setReserveForm((f) => ({ ...f, email: e.target.value }))}
+                  />
+                  <input
+                    type="tel"
+                    className="venue-select"
+                    placeholder="Direct Phone (optional)"
+                    value={reserveForm.phone}
+                    onChange={(e) => setReserveForm((f) => ({ ...f, phone: e.target.value }))}
+                  />
+                  <button type="submit" className="venue-btn primary full">
+                    <ShieldCheck size={14} /> Request 48-Hour Stand Hold
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ==================== SIDE-BY-SIDE COMPARE MODAL ==================== */}
       {compareOpen && (
@@ -982,15 +1354,14 @@ export const VenueExplorer: React.FC<VenueExplorerProps> = ({
                           </td>
                           <td>
                             {a.obstructingPillars.length > 0 ? (
-                              <span style={{ color: '#b45309', fontWeight: 700 }}>
-                                ⚠ Pillar
-                              </span>
+                              <span style={{ color: '#b45309', fontWeight: 700 }}>⚠ Pillar</span>
                             ) : (
                               <span style={{ color: '#15803d', fontWeight: 700 }}>Clear</span>
                             )}
                           </td>
                           <td className="mono-num">
-                            {a.nearestEntrance?.distanceM ?? '—'}m / {a.nearestToilet?.distanceM ?? '—'}m
+                            {a.nearestEntrance?.distanceM ?? '—'}m /{' '}
+                            {a.nearestToilet?.distanceM ?? '—'}m
                           </td>
                           <td className="mono-num">
                             <strong>{formatGbp(a.spaceOnlyPriceGbp)}</strong>
