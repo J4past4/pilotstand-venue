@@ -15,6 +15,7 @@ import {
   LogOut,
   Magnet,
   Moon,
+  MoreHorizontal,
   Palette,
   Redo2,
   Ruler,
@@ -110,17 +111,25 @@ export const TopBar: React.FC<TopBarProps> = ({
   const estimateTotal = formatMoney(estimatedTotalGbp, currency);
   const [editingName, setEditingName] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const viewMenuRef = useRef<HTMLDivElement | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!viewMenuOpen) return;
+    if (!viewMenuOpen && !moreMenuOpen) return;
     const handleOutside = (e: MouseEvent) => {
-      if (viewMenuRef.current && !viewMenuRef.current.contains(e.target as Node)) {
+      if (viewMenuOpen && viewMenuRef.current && !viewMenuRef.current.contains(e.target as Node)) {
         setViewMenuOpen(false);
+      }
+      if (moreMenuOpen && moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuOpen(false);
       }
     };
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setViewMenuOpen(false);
+      if (e.key === 'Escape') {
+        setViewMenuOpen(false);
+        setMoreMenuOpen(false);
+      }
     };
     window.addEventListener('mousedown', handleOutside);
     window.addEventListener('keydown', handleEsc);
@@ -128,7 +137,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       window.removeEventListener('mousedown', handleOutside);
       window.removeEventListener('keydown', handleEsc);
     };
-  }, [viewMenuOpen]);
+  }, [viewMenuOpen, moreMenuOpen]);
 
   return (
     <header className="studio-topbar" id="studio-topbar">
@@ -151,7 +160,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <div className="topbar-right">
           <button
             id="btn-brand-setup"
-            className="ghost-btn topbar-collapse-label"
+            className="ghost-btn topbar-collapse-label topbar-secondary-desktop"
             onClick={onOpenSetupGuide}
             title="Open Brand Kit & Stand Setup Guide"
             aria-label="Brand Setup"
@@ -172,7 +181,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
           <button
             id="btn-projects"
-            className="ghost-btn topbar-collapse-label"
+            className="ghost-btn topbar-collapse-label topbar-secondary-desktop"
             onClick={onOpenProjects}
             title="Saved Projects"
           >
@@ -181,7 +190,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
           <button
             id="btn-templates"
-            className="ghost-btn topbar-collapse-label"
+            className="ghost-btn topbar-collapse-label topbar-secondary-desktop"
             onClick={onOpenTemplates}
             title="Stand Templates"
           >
@@ -206,7 +215,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <button
               id="btn-for-suppliers"
               type="button"
-              className="topbar-supplier-btn topbar-collapse-label"
+              className="topbar-supplier-btn topbar-collapse-label topbar-secondary-desktop"
               onClick={onOpenSupplierModal}
               title="List your 3D exhibition products in the planner"
             >
@@ -218,7 +227,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <button
               id="btn-launch-insights"
               type="button"
-              className="topbar-supplier-btn topbar-collapse-label"
+              className="topbar-supplier-btn topbar-collapse-label topbar-secondary-desktop"
               onClick={onOpenAdminInsights}
               title="View public launch signups, supplier inquiries, and BOM traction"
             >
@@ -230,7 +239,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <button
               id="btn-free-account"
               type="button"
-              className="topbar-free-signup-btn"
+              className="topbar-free-signup-btn topbar-secondary-desktop"
               onClick={onOpenPublicAuth}
               title="Create a free account or sign in to save & export"
             >
@@ -239,7 +248,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             </button>
           )}
           {betaUser && onSignOut && (
-            <div className="beta-user-pill" title={`Signed in as ${betaUser.email}`}>
+            <div className="beta-user-pill topbar-secondary-desktop" title={`Signed in as ${betaUser.email}`}>
               <span className="beta-user-pill-name">{betaUser.name}</span>
               <button
                 type="button"
@@ -252,6 +261,127 @@ export const TopBar: React.FC<TopBarProps> = ({
               </button>
             </div>
           )}
+
+          {/* Responsive overflow menu for compact laptops, tablets & mobile */}
+          <div className="topbar-more-wrap" ref={moreMenuRef}>
+            <button
+              id="btn-topbar-more"
+              type="button"
+              className={`ghost-btn topbar-more-btn ${moreMenuOpen ? 'active' : ''}`}
+              onClick={() => setMoreMenuOpen((v) => !v)}
+              aria-expanded={moreMenuOpen}
+              aria-haspopup="menu"
+              aria-label="More studio actions"
+              title="More studio actions"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            {moreMenuOpen && (
+              <div className="topbar-more-popover" role="menu" aria-label="More studio actions">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="topbar-more-item"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    onOpenProjects();
+                  }}
+                >
+                  <FolderOpen size={14} />
+                  <span>Projects</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="topbar-more-item"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    onOpenTemplates();
+                  }}
+                >
+                  <LayoutTemplate size={14} />
+                  <span>Templates</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="topbar-more-item"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    onOpenSetupGuide();
+                  }}
+                >
+                  <Palette size={14} />
+                  <span>Brand Setup</span>
+                </button>
+                {onOpenSupplierModal && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="topbar-more-item"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      onOpenSupplierModal();
+                    }}
+                  >
+                    <Store size={14} />
+                    <span>For Suppliers</span>
+                  </button>
+                )}
+                {betaUser?.role === 'admin' && onOpenAdminInsights && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="topbar-more-item"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      onOpenAdminInsights();
+                    }}
+                  >
+                    <BarChart3 size={14} />
+                    <span>Insights</span>
+                  </button>
+                )}
+                {publicLaunch && !betaUser && onOpenPublicAuth && (
+                  <>
+                    <div className="topbar-more-divider" />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="topbar-more-item highlight"
+                      onClick={() => {
+                        setMoreMenuOpen(false);
+                        onOpenPublicAuth();
+                      }}
+                    >
+                      <UserPlus size={14} />
+                      <span>Free Account</span>
+                    </button>
+                  </>
+                )}
+                {betaUser && onSignOut && (
+                  <>
+                    <div className="topbar-more-divider" />
+                    <div className="topbar-more-user">
+                      <span>{betaUser.name}</span>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="topbar-more-signout"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          onSignOut();
+                        }}
+                      >
+                        <LogOut size={13} />
+                        <span>Sign out</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -304,7 +434,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               <Redo2 size={15} />
             </button>
             {onCopy && onCut && onPaste && onDuplicate && (
-              <>
+              <span className="topbar-clipboard-group">
                 <span className="topbar-icon-sep" aria-hidden="true" />
                 <button
                   id="btn-copy"
@@ -346,7 +476,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 >
                   <CopyPlus size={14} />
                 </button>
-              </>
+              </span>
             )}
           </div>
         </div>

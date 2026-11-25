@@ -1,35 +1,38 @@
+/* Desktop, laptop & tablet (>= 768px): docked flex sibling so 3D canvas, camera dock & HUD reflow cleanly with zero overlap */
 .right-inspector.contextual-inspector {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 30;
-  width: clamp(300px, 25vw, 394px);
-  height: auto;
+  position: relative;
+  flex: 0 0 clamp(260px, 23vw, 348px);
+  width: clamp(260px, 23vw, 348px);
+  max-width: 36vw;
+  min-width: 0;
+  height: 100%;
+  z-index: 25;
+  overflow-x: hidden;
   background: var(--surface-0);
   color: var(--ink-primary);
   border-left: 1px solid var(--border-subtle);
-  box-shadow: -10px 0 32px rgba(15, 23, 42, 0.12);
-  animation: inspectorSlideOver 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  box-shadow: -6px 0 22px rgba(15, 23, 42, 0.06);
+  animation: inspectorDockIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes inspectorSlideOver {
+@keyframes inspectorDockIn {
   from {
-    transform: translateX(100%);
-    opacity: 0.7;
+    opacity: 0.65;
+    transform: translateX(16px);
   }
   to {
-    transform: translateX(0);
     opacity: 1;
+    transform: translateX(0);
   }
 }
 
 .contextual-inspector .inspector-header {
   align-items: center;
   justify-content: flex-start;
-  gap: 12px;
-  padding: 18px 18px 14px;
+  gap: 10px;
+  padding: 14px 14px 10px;
   border-bottom: 0;
+  min-width: 0;
 }
 
 .contextual-inspector .inspector-heading-icon {
@@ -42,14 +45,14 @@
 }
 
 .contextual-inspector .inspector-header h2 {
-  font-size: 18px;
+  font-size: clamp(15px, 1.25vw, 17px);
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
 .contextual-inspector .inspector-kicker {
-  margin: 3px 0 0;
-  font-size: 12px;
+  margin: 2px 0 0;
+  font-size: 11.5px;
   font-weight: 500;
   letter-spacing: normal;
   text-transform: none;
@@ -58,10 +61,10 @@
 
 .inspector-close {
   display: grid;
-  flex: 0 0 38px;
+  flex: 0 0 34px;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -74,29 +77,37 @@
 }
 
 .contextual-inspector .inspector-quickbar {
-  gap: 6px;
-  padding: 0 18px 12px;
+  gap: 5px;
+  padding: 0 14px 10px;
   border-bottom: 0;
   background: transparent;
+  min-width: 0;
 }
 
 .contextual-inspector .quick-action-btn {
-  height: 34px;
+  height: 32px;
+  min-width: 0;
+  padding: 0 6px;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .contextual-inspector .quick-action-btn.danger {
-  flex-basis: 36px;
+  flex: 0 0 34px;
 }
 
 .inspector-sections {
   display: flex;
-  margin: 0 18px;
+  margin: 0 14px;
   border-bottom: 1px solid var(--border-subtle);
+  min-width: 0;
 }
 
 .inspector-sections button {
   flex: 1 1 auto;
-  padding: 10px 4px;
+  min-width: 0;
+  padding: 9px 4px;
   border: 0;
   border-bottom: 2px solid transparent;
   color: var(--ink-primary);
@@ -104,6 +115,7 @@
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .inspector-sections button:hover {
@@ -118,13 +130,17 @@
 
 .contextual-inspector .inspector-body {
   min-height: 0;
+  min-width: 0;
   gap: 0;
-  padding: 4px 18px 18px;
+  padding: 4px 14px 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
 }
 
 .contextual-inspector .inspector-body > * {
   flex-shrink: 0;
+  max-width: 100%;
 }
 
 .contextual-inspector .inspector-body > :not(.inspector-section) {
@@ -132,8 +148,9 @@
 }
 
 .inspector-section {
-  padding: 16px 0;
+  padding: 14px 0;
   border-bottom: 1px solid var(--border-subtle);
+  min-width: 0;
 }
 
 .inspector-section:last-child {
@@ -142,7 +159,7 @@
 
 .inspector-section-title {
   margin: 0 0 10px;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 750;
   line-height: 1.3;
 }
@@ -154,23 +171,26 @@
 .inspector-dimensions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
   margin: 0;
 }
 
 .inspector-dimensions dt {
   margin-bottom: 4px;
   color: var(--ink-secondary);
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
 .inspector-dimensions dd {
   margin: 0;
-  padding: 7px 8px;
+  padding: 6px 6px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  font-size: 12px;
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .inspector-dimensions + .control-block {
@@ -182,31 +202,46 @@
   color: var(--ink-primary);
 }
 
-@media (max-width: 900px) {
+/* Mobile & narrow screens (<= 767px): modern bottom sheet with comfortable touch targets */
+@media (max-width: 767px) {
   .right-inspector.contextual-inspector {
     position: absolute;
     top: auto;
     right: 0;
     bottom: 0;
     left: 0;
+    flex: none;
     width: 100%;
-    height: min(60%, 480px);
-    min-height: min(230px, 68%);
+    max-width: 100%;
+    height: min(54dvh, 420px);
+    min-height: min(220px, 60dvh);
+    z-index: 35;
     border: 1px solid var(--border-subtle);
     border-radius: 16px 16px 0 0;
     box-shadow: var(--shadow-lg);
     animation: none;
   }
 
+  .right-inspector.contextual-inspector::before {
+    content: '';
+    display: block;
+    width: 36px;
+    height: 4px;
+    border-radius: 99px;
+    background: var(--border-strong);
+    margin: 8px auto 0;
+    flex-shrink: 0;
+  }
+
   .contextual-inspector .inspector-header {
-    padding-top: 12px;
+    padding-top: 8px;
     padding-bottom: 8px;
   }
 
   .contextual-inspector .inspector-close,
   .contextual-inspector .quick-action-btn {
-    min-width: 44px;
-    min-height: 44px;
+    min-width: 40px;
+    min-height: 40px;
   }
 
   .contextual-inspector .inspector-quickbar {
@@ -215,11 +250,11 @@
 
   .contextual-inspector .inspector-sections button,
   .contextual-inspector :is(.fit-btn, .upload-inline-btn, .secondary-btn) {
-    min-height: 40px;
+    min-height: 38px;
   }
 
   .contextual-inspector .num-field input {
-    min-height: 40px;
+    min-height: 38px;
     font-size: 16px;
   }
 }

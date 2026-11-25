@@ -11,9 +11,13 @@
 
 #studio-topbar {
   display: block;
+  width: 100%;
+  max-width: 100%;
   height: auto;
   padding: 0;
   border-bottom: 0;
+  position: relative;
+  z-index: 40;
 }
 
 #studio-topbar .topbar-global,
@@ -21,9 +25,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  min-height: 56px;
-  padding: 8px 22px;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 50px;
+  padding: 6px 18px;
+}
+
+#studio-topbar .topbar-workspace {
+  min-height: 46px;
 }
 
 #studio-topbar .topbar-global,
@@ -37,6 +47,7 @@
   gap: 5px;
   padding: 3px 5px 3px 0;
   flex-shrink: 0;
+  min-width: 0;
 }
 
 #studio-topbar .brand-lockup:hover {
@@ -48,30 +59,37 @@
   background: transparent;
   color: #d36938;
   box-shadow: none;
-  width: 25px;
+  width: 24px;
 }
 
 #studio-topbar .brand-text-group {
   flex-direction: row;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
 }
 
 #studio-topbar .brand-wordmark,
 .setup-page .setup-header .setup-brand-name {
   color: var(--header-ink);
-  font-size: 24px;
+  font-size: clamp(18px, 1.8vw, 22px);
   letter-spacing: -0.045em;
 }
 
 #studio-topbar .brand-submark {
   border-inline-start: 1px solid var(--header-line);
-  padding: 5px 0 5px 16px;
+  padding: 4px 0 4px 14px;
   color: var(--header-muted);
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
+}
+
+#studio-topbar .topbar-right {
+  min-width: 0;
+  flex: 0 1 auto;
+  justify-content: flex-end;
+  gap: 5px;
 }
 
 #studio-topbar .topbar-right :is(.ghost-btn, .agent-toggle-btn, .estimate-pill-btn) {
@@ -82,7 +100,8 @@
 }
 
 #studio-topbar .topbar-right :is(.ghost-btn, .agent-toggle-btn, .estimate-pill-btn):hover,
-#studio-topbar .topbar-right .agent-toggle-btn.active {
+#studio-topbar .topbar-right .agent-toggle-btn.active,
+#studio-topbar .topbar-right .topbar-more-btn.active {
   border-color: var(--header-line);
   background: var(--header-hover);
   color: var(--header-ink);
@@ -94,8 +113,8 @@
 }
 
 #studio-topbar #btn-export {
-  min-height: 36px;
-  padding-inline: 14px;
+  min-height: 34px;
+  padding-inline: 12px;
   background: var(--header-accent);
   border-color: var(--header-accent);
   color: #fff;
@@ -107,9 +126,120 @@
   border-color: var(--header-accent-hover);
 }
 
+/* Overflow "More" menu (hidden on wide desktops where all actions fit) */
+#studio-topbar .topbar-more-wrap {
+  position: relative;
+  display: none;
+  flex-shrink: 0;
+}
+
+#studio-topbar .topbar-more-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--header-ink);
+}
+
+.topbar-more-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 210px;
+  padding: 6px;
+  background: var(--surface-0);
+  color: var(--ink-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 60;
+}
+
+.topbar-more-item {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-primary);
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.14s ease;
+}
+
+.topbar-more-item:hover {
+  background: var(--surface-hover);
+}
+
+.topbar-more-item.highlight {
+  color: #ac4822;
+  font-weight: 600;
+}
+
+.topbar-more-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 2px;
+}
+
+.topbar-more-user {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.topbar-more-signout {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  color: var(--ink-primary);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.topbar-more-signout:hover {
+  background: var(--surface-2);
+}
+
 #studio-topbar .topbar-workspace {
   background: var(--surface-1);
   border-bottom: 1px solid var(--border-subtle);
+}
+
+#studio-topbar .topbar-left {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  gap: 8px;
+}
+
+#studio-topbar .topbar-center {
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+#studio-topbar .topbar-clipboard-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
 #studio-topbar .project-name-btn {
@@ -117,15 +247,18 @@
   align-items: center;
   gap: 6px;
   flex: 0 1 auto;
-  min-width: 0;
-  max-width: 350px;
+  min-width: 72px;
+  max-width: clamp(120px, 26vw, 310px);
   padding-inline: 0 5px;
-  font: 800 18px/1.2 var(--font-display);
+  font: 800 clamp(14px, 1.35vw, 17px)/1.2 var(--font-display);
   letter-spacing: -0.03em;
 }
 
 #studio-topbar .project-name-text {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #studio-topbar .project-name-btn svg {
@@ -145,7 +278,7 @@
 
 #studio-topbar .seg-btn {
   min-height: 29px;
-  padding-inline: 11px;
+  padding-inline: 10px;
 }
 
 #studio-topbar .seg-btn.active {
@@ -200,9 +333,50 @@
   margin-block: auto;
 }
 
-@media (max-width: 1180px) {
+/* Standard & compact laptops (1120px - 1380px): keep all actions visible cleanly */
+@media (max-width: 1380px) {
+  #studio-topbar .topbar-global,
+  #studio-topbar .topbar-workspace {
+    padding-inline: 14px;
+  }
+
+  #studio-topbar .brand-submark {
+    display: none;
+  }
+
   #studio-topbar .topbar-collapse-label {
     padding-inline: 8px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 1220px) {
+  #studio-topbar .topbar-collapse-label span {
+    display: none;
+  }
+}
+
+/* Narrow laptops & tablets (< 1120px): fold secondary global nav into clean More menu */
+@media (max-width: 1120px) {
+  #studio-topbar .topbar-secondary-desktop {
+    display: none !important;
+  }
+
+  #studio-topbar .topbar-more-wrap {
+    display: inline-flex;
+  }
+}
+
+/* Compact screens (< 860px): move clipboard buttons to keyboard/inspector so View & 3D/Plan/Visitor always fit */
+@media (max-width: 860px) {
+  #studio-topbar .topbar-clipboard-group {
+    display: none;
+  }
+
+  #studio-topbar .topbar-global,
+  #studio-topbar .topbar-workspace {
+    padding-inline: 10px;
+    gap: 6px;
   }
 }
 
@@ -210,17 +384,13 @@
   #studio-topbar .topbar-global,
   #studio-topbar .topbar-workspace,
   .setup-page .setup-header {
-    min-height: 48px;
-    padding-inline: 9px;
-    gap: 6px;
-  }
-
-  #studio-topbar .brand-submark {
-    display: none;
+    min-height: 44px;
+    padding-inline: 8px;
+    gap: 5px;
   }
 
   #studio-topbar .topbar-right {
-    gap: 2px;
+    gap: 3px;
   }
 
   #studio-topbar .topbar-left {
@@ -228,33 +398,48 @@
   }
 
   #studio-topbar .topbar-center {
-    gap: 5px;
+    gap: 4px;
+  }
+
+  #studio-topbar #btn-view-options span {
+    display: none;
+  }
+
+  #studio-topbar #btn-view-options {
+    padding-inline: 7px;
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 520px) {
   #studio-topbar .topbar-collapse-label,
   #studio-topbar .estimate-pill-btn,
   #studio-topbar #btn-export {
-    padding-inline: 5px;
+    padding-inline: 7px;
   }
 
   #studio-topbar .estimate-pill-btn span,
   #studio-topbar .seg-btn svg,
-  #studio-topbar .tool-chip svg:first-child {
+  #studio-topbar .tool-chip svg:last-child {
     display: none;
   }
 
   #studio-topbar .seg-btn {
-    padding-inline: 6px;
+    padding-inline: 7px;
+    font-size: 11.5px;
+  }
+
+  #studio-topbar #btn-export span {
+    display: none;
   }
 
   #studio-topbar .project-name-btn {
-    font-size: 14px;
+    font-size: 13.5px;
+    min-width: 56px;
   }
 
   #studio-topbar .topbar-icon-group .icon-btn {
-    width: 25px;
+    width: 26px;
+    height: 26px;
   }
 }
 
@@ -274,10 +459,23 @@
   }
 
   #studio-topbar .topbar-right {
-    gap: 0;
+    gap: 1px;
+  }
+}
+
+/* Short laptop viewports (e.g. 1366x768 / 1280x720 / 1024x600) */
+@media (max-height: 700px) {
+  #studio-topbar .topbar-global {
+    min-height: 44px;
+    padding-block: 4px;
   }
 
-  #studio-topbar #btn-export svg {
-    display: none;
+  #studio-topbar .topbar-workspace {
+    min-height: 42px;
+    padding-block: 4px;
+  }
+
+  #studio-topbar #btn-export {
+    min-height: 30px;
   }
 }

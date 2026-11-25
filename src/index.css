@@ -2229,34 +2229,10 @@ select {
   line-height: 1.4;
 }
 
-/* Responsive polish for narrower laptops */
+/* Responsive rail/inspector/stage rules are defined in sidebar.css, inspector.css, and the Canvas workspace layer below */
 @media (max-width: 1180px) {
   .topbar-toggles {
     display: none;
-  }
-  .left-studio-rail {
-    width: 300px;
-  }
-  .right-inspector {
-    width: 280px;
-  }
-}
-
-@media (max-width: 900px) {
-  .studio-workspace {
-    flex-direction: column;
-  }
-  .left-studio-rail {
-    width: 100%;
-    height: 240px;
-    border-right: none;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-  .right-inspector {
-    width: 100%;
-    height: 240px;
-    border-left: none;
-    border-top: 1px solid var(--border-subtle);
   }
 }
 
@@ -5723,9 +5699,12 @@ select {
 }
 
 
-/* Canvas workspace */
+/* Canvas workspace — Modern Container-Query Responsive Layout */
 .studio-app-shell {
+  width: 100%;
+  max-width: 100vw;
   height: 100dvh;
+  overflow: hidden;
   --surface-0: #fffdfa;
   --surface-1: #f6f3ee;
   --ink-primary: #182838;
@@ -5733,6 +5712,7 @@ select {
   --ink-muted: #626e78;
   --border-subtle: #e1dcd4;
   --bg-canvas: #ece8e1;
+  --hud-bar-height: 44px;
 }
 .studio-app-shell :focus-visible {
   outline: 3px solid #2a729c;
@@ -5743,18 +5723,27 @@ select {
   overflow: hidden;
   flex-direction: row;
   isolation: isolate;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.viewport-stage {
+  container-type: inline-size;
+  container-name: stage;
 }
 .viewport-stage .viewport-canvas-wrap {
-  height: calc(100% - 48px);
+  height: calc(100% - var(--hud-bar-height));
 }
 .viewport-stage .viewport-hud-top {
   inset: auto 0 0;
-  min-height: 48px;
-  padding: 5px 16px;
+  height: var(--hud-bar-height);
+  min-height: var(--hud-bar-height);
+  padding: 4px 14px;
   background: var(--surface-0);
   border-top: 1px solid var(--border-subtle);
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 10px;
+  flex-wrap: nowrap;
+  overflow: hidden;
   pointer-events: auto;
 }
 .viewport-hud-top .hud-space-pill,
@@ -5763,62 +5752,144 @@ select {
   border: 0;
   box-shadow: none;
   padding: 0;
-  font-size: 13px;
+  font-size: 12.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
-.viewport-hud-top .hud-space-pill { backdrop-filter: none; }
+.viewport-hud-top .hud-space-pill {
+  backdrop-filter: none;
+  min-width: 0;
+  overflow: hidden;
+}
+.viewport-hud-top .hud-aisle-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .stand-details-toggle {
   order: 1;
   margin-left: auto;
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   background: var(--surface-0);
-  padding: 6px 9px;
+  padding: 5px 9px;
   color: var(--ink-primary);
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
 }
-.stand-details-toggle:hover { background: var(--surface-1); }
+.stand-details-toggle:hover {
+  background: var(--surface-1);
+}
 .viewport-stage .viewport-camera-dock {
-  bottom: 62px;
-  border-radius: 9px;
+  bottom: calc(var(--hud-bar-height) + 12px);
+  border-radius: 10px;
   padding: 4px;
   max-width: calc(100% - 16px);
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 .viewport-camera-dock button {
-  min-height: 34px;
-  font-size: 13px;
+  min-height: 32px;
+  font-size: 12.5px;
   border-radius: 6px;
+  flex-shrink: 0;
 }
-.viewport-stage .agent-drawer { top: 12px; bottom: 58px; }
-.viewport-stage .studio-toast { bottom: 114px; }
-@media (max-width: 700px) {
-  .viewport-stage .viewport-hud-top { padding: 6px 8px; gap: 6px; }
-  .viewport-hud-top .hud-space-pill { display: none; }
-  .viewport-hud-top .hud-compliance-pill { font-size: 12px; }
-  .viewport-stage .viewport-camera-dock { left: 8px; transform: none; }
+.camera-preset-select {
+  display: none;
 }
-@media (max-width: 720px) {
-  .studio-workspace { flex-direction: column; }
+.viewport-stage .agent-drawer {
+  top: 12px;
+  bottom: calc(var(--hud-bar-height) + 12px);
+  right: 12px;
+  width: min(344px, calc(100% - 24px));
 }
-.camera-preset-select { display: none; }
-@media (max-width: 700px) {
-  .viewport-stage .viewport-camera-dock {
-    left: 50%;
-    transform: translateX(-50%);
-    width: max-content;
+.viewport-stage .studio-toast {
+  bottom: calc(var(--hud-bar-height) + 64px);
+}
+
+/* Container queries adapt the floating camera dock & bottom HUD to the LIVE canvas width
+   (automatically responding to Left Rail, docked Right Inspector, tablet, or mobile) */
+@container stage (max-width: 780px) {
+  .viewport-camera-dock .dock-walkthrough-label {
+    display: none;
   }
-  .viewport-camera-dock .camera-preset-button { display: none; }
+  .viewport-camera-dock button {
+    padding: 5px 7px;
+    font-size: 12px;
+  }
+}
+
+@container stage (max-width: 660px) {
+  .viewport-camera-dock .camera-preset-button {
+    display: none;
+  }
   .viewport-camera-dock .camera-preset-select {
     display: block;
-    min-height: 38px;
-    border: 0;
-    background: transparent;
+    min-height: 32px;
+    padding: 0 6px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    background: var(--surface-1);
     color: var(--ink-primary);
-    font-size: 13px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
   }
-  .viewport-camera-dock button { min-width: 34px; min-height: 38px; }
+}
+
+@container stage (max-width: 580px) {
+  .viewport-hud-top .hud-aisle-segment {
+    display: none;
+  }
+  .viewport-stage .viewport-hud-top {
+    padding-inline: 10px;
+    gap: 8px;
+  }
+}
+
+@container stage (max-width: 440px) {
+  .viewport-hud-top .hud-space-pill {
+    display: none;
+  }
+  .viewport-hud-top .hud-compliance-pill {
+    font-size: 12px;
+  }
+  .viewport-camera-dock {
+    padding: 3px;
+    gap: 1px;
+  }
+  .viewport-camera-dock button {
+    padding: 4px 6px;
+    min-width: 30px;
+    min-height: 34px;
+  }
+  .viewport-camera-dock .dock-divider {
+    margin: 0 1px;
+  }
+}
+
+@media (max-width: 720px) {
+  .studio-workspace {
+    flex-direction: column;
+  }
+}
+
+/* Compact vertical density for short laptop viewports (e.g. 1366x768, 1280x720, 1024x600) */
+@media (max-height: 700px) {
+  .studio-app-shell {
+    --hud-bar-height: 38px;
+  }
+  .viewport-stage .viewport-camera-dock {
+    bottom: calc(var(--hud-bar-height) + 8px);
+    padding: 3px;
+  }
+  .viewport-camera-dock button {
+    min-height: 30px;
+  }
 }

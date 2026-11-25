@@ -1875,8 +1875,10 @@ function App({
               </strong>
               <span className="hud-sep">·</span>
               <span className="mono-num">{formatArea(compliance.areaM2, config.unit)}</span>
-              <span className="hud-sep">·</span>
-              <span>{openSidesBadge}</span>
+              <span className="hud-aisle-segment">
+                <span className="hud-sep">·</span>
+                <span>{openSidesBadge}</span>
+              </span>
             </div>
 
             <div className={`hud-compliance-pill ${compliance.isCompliant ? 'ok' : 'warn'}`}>
@@ -1939,7 +1941,7 @@ function App({
               value=""
               onChange={(event) => triggerCamera(event.target.value as CameraPreset)}
             >
-              <option value="" disabled>Camera angle</option>
+              <option value="" disabled>Angle</option>
               <option value="isometric">Isometric</option>
               <option value="front">Front</option>
               <option value="back">Back</option>
@@ -1997,9 +1999,9 @@ function App({
               <RotateCcw size={14} />
             </button>
             <div className="dock-divider" />
-            <button onClick={startWalkthrough} title="Watch guided walkthrough — build a stand step by step">
+            <button onClick={startWalkthrough} title="Watch guided walkthrough — build a stand step by step" aria-label="Walkthrough">
               <Play size={13} />
-              <span>Walkthrough</span>
+              <span className="dock-walkthrough-label">Walkthrough</span>
             </button>
             <button onClick={handleDownloadPng} title="Download high-res PNG render" aria-label="Snapshot">
               <Camera size={14} />
