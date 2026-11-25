@@ -44,7 +44,9 @@ export interface AllowedPositionResult {
 }
 
 export function isSolidWallItem(item: StandItem): boolean {
-  return item.visible !== false && SOLID_WALL_CATALOG_IDS.has(item.catalogId);
+  if (item.visible === false) return false;
+  if (item.isPermanentFixture && item.y < 1.5) return true;
+  return SOLID_WALL_CATALOG_IDS.has(item.catalogId);
 }
 
 function round3(n: number): number {
@@ -141,7 +143,7 @@ function getShellWallBounds(
   config: StandConfig,
   clearance: number
 ): { minX: number; maxX: number; minZ: number } {
-  if (!config.showShellWalls || config.openSides >= 4) {
+  if (item.isPermanentFixture || !config.showShellWalls || config.openSides >= 4) {
     return { minX: -Infinity, maxX: Infinity, minZ: -Infinity };
   }
 
@@ -204,7 +206,7 @@ export function checkWallCollision(
   const collidedShellSides: ShellWallSide[] = [];
   const collidedWallItemIds: string[] = [];
 
-  if (config.showShellWalls && config.openSides < 4) {
+  if (!item.isPermanentFixture && config.showShellWalls && config.openSides < 4) {
     const { minX, maxX, minZ } = getShellWallBounds(item, config, 0);
     if (candidateZ < minZ - COLLISION_EPS) {
       collidedShellSides.push('back');

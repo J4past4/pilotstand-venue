@@ -20,11 +20,26 @@ import type {
   ArtworkFit,
   BrandAsset,
   ComplianceReport,
+  FixtureBrandFace,
+  FixtureOwner,
   ShellWallSide,
   StandConfig,
   StandItem,
   SurfaceArtwork,
+  VenueBrandingConfig,
 } from '../types/stand';
+import {
+  clampVenueBrandingToDims,
+  computeVenueFixtureBrandableAreaM2,
+  createDefaultVenueBranding,
+  getAvailableFacesForFixture,
+  getEffectiveFaceZoneWidth,
+  getFaceLabel,
+  getMaxZoneWidthForFixture,
+  isItemBrandingAllowed,
+  isVenueFixtureCatalogId,
+  isVenuePermanentFixture,
+} from '../utils/fixtures';
 import { formatArea, formatLength } from '../utils/pricing';
 import './inspector.css';
 
@@ -254,6 +269,49 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
     const def = CATALOG_MAP[selectedItem.catalogId];
     const isOutOfBounds = compliance.outOfBoundsIds.includes(selectedItem.id);
     const isOverHeight = compliance.overHeightIds.includes(selectedItem.id);
+    const isPermanent = Boolean(selectedItem.isPermanentFixture);
+    const isVenueFixture = isVenuePermanentFixture(selectedItem);
+    const venueBranding: VenueBrandingConfig =
+      selectedItem.venueBranding ??
+      createDefaultVenueBranding(selectedItem.dims, selectedItem.catalogId);
+    const availableFixtureFaces = getAvailableFacesForFixture(selectedItem);
+    const maxZoneW = getMaxZoneWidthForFixture(selectedItem.dims, selectedItem.catalogId);
+    const venueBrandableAreaM2 = computeVenueFixtureBrandableAreaM2(selectedItem);
+    const canShowArtwork = isVenueFixture
+      ? Boolean(venueBranding.allowed)
+      : Boolean(def && def.surfaces.length > 0);
+
+    const updateVenueBranding = (patch: Partial<VenueBrandingConfig>, commit = true) => {
+      const merged = clampVenueBrandingToDims(
+        { ...venueBranding, ...patch },
+        selectedItem.dims,
+        selectedItem.catalogId
+      );
+      onUpdateItem(selectedItem.id, { venueBranding: merged }, commit);
+    };
+
+    const toggleFixtureFace = (face: FixtureBrandFace) => {
+      const current = venueBranding.allowedFaces || ['front'];
+      const exists = current.includes(face);
+      const next = exists
+        ? current.length > 1
+          ? current.filter((f) => f !== face)
+          : current
+        : [...current, face];
+      updateVenueBranding({ allowedFaces: next }, true);
+    };
+
+    const updateFixtureDims = (nextDims: { w: number; h: number; d: number }, commit = false) => {
+      const patch: Partial<StandItem> = { dims: nextDims };
+      if (selectedItem.venueBranding) {
+        patch.venueBranding = clampVenueBrandingToDims(
+          selectedItem.venueBranding,
+          nextDims,
+          selectedItem.catalogId
+        );
+      }
+      onUpdateItem(selectedItem.id, patch, commit);
+    };
 
     return (
       <aside className="right-inspector contextual-inspector" id="item-inspector" aria-label="Selected item inspector">
@@ -269,7 +327,14 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
           <Box className="inspector-heading-icon" size={24} aria-hidden="true" />
           <div className="inspector-heading">
             <h2>{selectedItem.name}</h2>
-            <p className="inspector-kicker">{def?.category || 'Equipment'} · Selected</p>
+            <p className="inspector-kicker">
+              {isVenueFixture
+                ? 'Permanent Venue Fixture'
+                : isPermanent
+                  ? 'Own Permanent Fixture'
+                  : def?.category || 'Equipment'}{' '}
+              · Selected
+            </p>
           </div>
           <button
             type="button"
@@ -328,9 +393,10 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
         </div>
 
         <nav className="inspector-sections" aria-label="Item properties">
+          <button type="button" onClick={() => scrollToSection('item-fixture')}>Fixture</button>
           <button type="button" onClick={() => scrollToSection('item-size')}>Size</button>
           <button type="button" onClick={() => scrollToSection('item-finish')}>Finish</button>
-          {def && def.surfaces.length > 0 && (
+          {canShowArtwork && (
             <button type="button" onClick={() => scrollToSection('item-artwork')}>Artwork</button>
           )}
           <button type="button" onClick={() => scrollToSection('item-position')}>Position</button>
@@ -350,6 +416,275 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
               </div>
             </div>
           )}
+
+          {/* ==================== PERMANENT FIXTURE & VENUE BRANDING ==================== */}
+          <section id="item-fixture" className="inspector-section">
+            <h3 className="inspector-section-title">Site Fixture &amp; Branding Rules</h3>
+            <div className="control-block" style={{ marginBottom: 0 }}>
+              <div className="toggle-row compact" style={{ marginTop: 0 }}>
+                <div>
+                  <div className="toggle-title">Permanent Stand-Location Fixture</div>
+                  <div className="toggle-sub">
+                    Fixed to this stand location; preserved across new design variations &amp; allowed on outer meter grid
+                  </div>
+                </div>
+                <input
+                  id="toggle-permanent-fixture"
+                  type="checkbox"
+                  className="studio-switch"
+                  checked={isPermanent}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    const owner: FixtureOwner =
+                      selectedItem.fixtureOwner ??
+                      (isVenueFixtureCatalogId(selectedItem.catalogId) ? 'venue' : 'venue');
+                    onUpdateItem(
+                      selectedItem.id,
+                      {
+                        isPermanentFixture: checked,
+                        fixtureOwner: checked ? owner : undefined,
+                        venueBranding:
+                          checked && owner === 'venue'
+                            ? selectedItem.venueBranding ??
+                              createDefaultVenueBranding(selectedItem.dims, selectedItem.catalogId)
+                            : selectedItem.venueBranding,
+                      },
+                      true
+                    );
+                  }}
+                />
+              </div>
+
+              {isPermanent && (
+                <div className="fixture-rules-panel">
+                  <label className="block-label" style={{ marginTop: 10 }}>
+                    Fixture Ownership
+                  </label>
+                  <div className="fit-btn-row">
+                    <button
+                      type="button"
+                      id="fixture-owner-venue"
+                      className={`fit-btn ${isVenueFixture ? 'active' : ''}`}
+                      onClick={() =>
+                        onUpdateItem(
+                          selectedItem.id,
+                          {
+                            fixtureOwner: 'venue',
+                            venueBranding:
+                              selectedItem.venueBranding ??
+                              createDefaultVenueBranding(selectedItem.dims, selectedItem.catalogId),
+                          },
+                          true
+                        )
+                      }
+                    >
+                      Exhibition / Venue
+                    </button>
+                    <button
+                      type="button"
+                      id="fixture-owner-own"
+                      className={`fit-btn ${!isVenueFixture ? 'active' : ''}`}
+                      onClick={() =>
+                        onUpdateItem(selectedItem.id, { fixtureOwner: 'own' }, true)
+                      }
+                    >
+                      Own Fixed Asset
+                    </button>
+                  </div>
+
+                  {isVenueFixture && (
+                    <div className="venue-branding-rules">
+                      <div className="toggle-row compact" style={{ marginTop: 10 }}>
+                        <div>
+                          <div className="toggle-title">Allow Branding on Venue Fixture?</div>
+                          <div className="toggle-sub">
+                            Specify whether organizer permits graphics on this permanent feature
+                          </div>
+                        </div>
+                        <input
+                          id="toggle-venue-branding-allowed"
+                          type="checkbox"
+                          className="studio-switch"
+                          checked={Boolean(venueBranding.allowed)}
+                          onChange={(e) =>
+                            updateVenueBranding({ allowed: e.target.checked }, true)
+                          }
+                        />
+                      </div>
+
+                      {!venueBranding.allowed ? (
+                        <div className="fixture-branding-status restricted">
+                          Branding not permitted — excluded from print area &amp; Click-to-Brand.
+                        </div>
+                      ) : (
+                        <div className="venue-brand-area-controls">
+                          <div className="print-spec-banner" style={{ marginTop: 8, marginBottom: 8 }}>
+                            <span>Permitted Brandable Area</span>
+                            <strong className="mono-num">
+                              {venueBrandableAreaM2.toFixed(2)} m² ({venueBranding.allowedFaces.length}{' '}
+                              {venueBranding.allowedFaces.length === 1 ? 'face' : 'faces'})
+                            </strong>
+                          </div>
+
+                          {availableFixtureFaces.length > 1 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <label className="block-label">Permitted Faces</label>
+                              <div className="fit-btn-row">
+                                {availableFixtureFaces.map((face) => (
+                                  <button
+                                    key={face}
+                                    type="button"
+                                    id={`venue-face-${face}`}
+                                    className={`fit-btn ${
+                                      venueBranding.allowedFaces.includes(face) ? 'active' : ''
+                                    }`}
+                                    onClick={() => toggleFixtureFace(face)}
+                                  >
+                                    {face.charAt(0).toUpperCase() + face.slice(1)}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div style={{ marginBottom: 8 }}>
+                            <label className="block-label">Brandable Zone Presets</label>
+                            <div className="fit-btn-row">
+                              <button
+                                type="button"
+                                className="fit-btn"
+                                onClick={() =>
+                                  updateVenueBranding({
+                                    zoneWidthM: maxZoneW,
+                                    zoneHeightM: Number(selectedItem.dims.h.toFixed(2)),
+                                    zoneBottomM: 0,
+                                  })
+                                }
+                              >
+                                Full Face
+                              </button>
+                              <button
+                                type="button"
+                                className="fit-btn"
+                                onClick={() => {
+                                  const h = Math.min(1.6, selectedItem.dims.h);
+                                  const b = Math.min(0.8, Math.max(0, selectedItem.dims.h - h));
+                                  updateVenueBranding({
+                                    zoneWidthM: maxZoneW,
+                                    zoneHeightM: Number(h.toFixed(2)),
+                                    zoneBottomM: Number(b.toFixed(2)),
+                                  });
+                                }}
+                              >
+                                Eye-Level
+                              </button>
+                              <button
+                                type="button"
+                                className="fit-btn"
+                                onClick={() => {
+                                  const h = Math.min(1.2, selectedItem.dims.h);
+                                  const b = Math.max(0, selectedItem.dims.h - h - 0.2);
+                                  updateVenueBranding({
+                                    zoneWidthM: maxZoneW,
+                                    zoneHeightM: Number(h.toFixed(2)),
+                                    zoneBottomM: Number(b.toFixed(2)),
+                                  });
+                                }}
+                              >
+                                Upper Band
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="slider-row">
+                            <div className="slider-header">
+                              <span>
+                                {selectedItem.catalogId === 'venue-pillar-round'
+                                  ? 'Brandable Wrap Width'
+                                  : 'Brandable Width'}
+                              </span>
+                              <span className="mono-num">
+                                {formatLength(venueBranding.zoneWidthM, config.unit)}
+                              </span>
+                            </div>
+                            <input
+                              id="venue-brand-width-slider"
+                              type="range"
+                              min={0.1}
+                              max={maxZoneW}
+                              step={0.05}
+                              value={Math.min(maxZoneW, venueBranding.zoneWidthM)}
+                              onChange={(e) =>
+                                updateVenueBranding({ zoneWidthM: parseFloat(e.target.value) }, false)
+                              }
+                              onPointerUp={() => updateVenueBranding({}, true)}
+                            />
+                          </div>
+
+                          <div className="slider-row">
+                            <div className="slider-header">
+                              <span>Brandable Height</span>
+                              <span className="mono-num">
+                                {formatLength(venueBranding.zoneHeightM, config.unit)}
+                              </span>
+                            </div>
+                            <input
+                              id="venue-brand-height-slider"
+                              type="range"
+                              min={0.1}
+                              max={Number(selectedItem.dims.h.toFixed(2))}
+                              step={0.05}
+                              value={Math.min(selectedItem.dims.h, venueBranding.zoneHeightM)}
+                              onChange={(e) =>
+                                updateVenueBranding({ zoneHeightM: parseFloat(e.target.value) }, false)
+                              }
+                              onPointerUp={() => updateVenueBranding({}, true)}
+                            />
+                          </div>
+
+                          <div className="slider-row">
+                            <div className="slider-header">
+                              <span>Bottom Elevation</span>
+                              <span className="mono-num">
+                                {formatLength(venueBranding.zoneBottomM, config.unit)}
+                              </span>
+                            </div>
+                            <input
+                              id="venue-brand-bottom-slider"
+                              type="range"
+                              min={0}
+                              max={Math.max(0, Number((selectedItem.dims.h - venueBranding.zoneHeightM).toFixed(2)))}
+                              step={0.05}
+                              value={Math.min(
+                                Math.max(0, selectedItem.dims.h - venueBranding.zoneHeightM),
+                                venueBranding.zoneBottomM
+                              )}
+                              onChange={(e) =>
+                                updateVenueBranding({ zoneBottomM: parseFloat(e.target.value) }, false)
+                              }
+                              onPointerUp={() => updateVenueBranding({}, true)}
+                            />
+                          </div>
+
+                          <input
+                            id="venue-brand-notes-input"
+                            type="text"
+                            className="text-input"
+                            style={{ marginTop: 8 }}
+                            placeholder="Venue branding rules (e.g. magnetic wrap only, no drilling)"
+                            value={venueBranding.notes || ''}
+                            onChange={(e) =>
+                              updateVenueBranding({ notes: e.target.value }, true)
+                            }
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
 
           <section id="item-size" className="inspector-section">
             <h3 className="inspector-section-title">Size</h3>
@@ -408,23 +743,16 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       const nw = parseFloat(e.target.value);
                       if (selectedItem.lockAspect !== false) {
                         const ratio = nw / Math.max(0.05, selectedItem.dims.w);
-                        onUpdateItem(
-                          selectedItem.id,
+                        updateFixtureDims(
                           {
-                            dims: {
-                              w: nw,
-                              h: Number((selectedItem.dims.h * ratio).toFixed(2)),
-                              d: Number((selectedItem.dims.d * ratio).toFixed(2)),
-                            },
+                            w: nw,
+                            h: Number((selectedItem.dims.h * ratio).toFixed(2)),
+                            d: Number((selectedItem.dims.d * ratio).toFixed(2)),
                           },
                           false
                         );
                       } else {
-                        onUpdateItem(
-                          selectedItem.id,
-                          { dims: { ...selectedItem.dims, w: nw } },
-                          false
-                        );
+                        updateFixtureDims({ ...selectedItem.dims, w: nw }, false);
                       }
                     }}
                   />
@@ -445,23 +773,16 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       const nh = parseFloat(e.target.value);
                       if (selectedItem.lockAspect !== false) {
                         const ratio = nh / Math.max(0.05, selectedItem.dims.h);
-                        onUpdateItem(
-                          selectedItem.id,
+                        updateFixtureDims(
                           {
-                            dims: {
-                              w: Number((selectedItem.dims.w * ratio).toFixed(2)),
-                              h: nh,
-                              d: Number((selectedItem.dims.d * ratio).toFixed(2)),
-                            },
+                            w: Number((selectedItem.dims.w * ratio).toFixed(2)),
+                            h: nh,
+                            d: Number((selectedItem.dims.d * ratio).toFixed(2)),
                           },
                           false
                         );
                       } else {
-                        onUpdateItem(
-                          selectedItem.id,
-                          { dims: { ...selectedItem.dims, h: nh } },
-                          false
-                        );
+                        updateFixtureDims({ ...selectedItem.dims, h: nh }, false);
                       }
                     }}
                   />
@@ -482,23 +803,16 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       const nd = parseFloat(e.target.value);
                       if (selectedItem.lockAspect !== false) {
                         const ratio = nd / Math.max(0.05, selectedItem.dims.d);
-                        onUpdateItem(
-                          selectedItem.id,
+                        updateFixtureDims(
                           {
-                            dims: {
-                              w: Number((selectedItem.dims.w * ratio).toFixed(2)),
-                              h: Number((selectedItem.dims.h * ratio).toFixed(2)),
-                              d: nd,
-                            },
+                            w: Number((selectedItem.dims.w * ratio).toFixed(2)),
+                            h: Number((selectedItem.dims.h * ratio).toFixed(2)),
+                            d: nd,
                           },
                           false
                         );
                       } else {
-                        onUpdateItem(
-                          selectedItem.id,
-                          { dims: { ...selectedItem.dims, d: nd } },
-                          false
-                        );
+                        updateFixtureDims({ ...selectedItem.dims, d: nd }, false);
                       }
                     }}
                   />
@@ -602,15 +916,40 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                     max={def.maxDims.w}
                     step={0.05}
                     value={selectedItem.dims.w}
-                    onChange={(e) =>
-                      onUpdateItem(
-                        selectedItem.id,
-                        { dims: { ...selectedItem.dims, w: parseFloat(e.target.value) } },
-                        false
-                      )
-                    }
+                    onChange={(e) => {
+                      const nw = parseFloat(e.target.value);
+                      const nextDims =
+                        selectedItem.catalogId === 'venue-pillar-round'
+                          ? { ...selectedItem.dims, w: nw, d: nw }
+                          : { ...selectedItem.dims, w: nw };
+                      updateFixtureDims(nextDims, false);
+                    }}
                   />
                 </div>
+                {isVenueFixtureCatalogId(selectedItem.catalogId) &&
+                  selectedItem.catalogId !== 'venue-pillar-round' && (
+                    <div className="slider-row">
+                      <div className="slider-header">
+                        <span>Depth</span>
+                        <span className="mono-num">
+                          {formatLength(selectedItem.dims.d, config.unit)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={def.minDims.d}
+                        max={def.maxDims.d}
+                        step={0.05}
+                        value={selectedItem.dims.d}
+                        onChange={(e) =>
+                          updateFixtureDims(
+                            { ...selectedItem.dims, d: parseFloat(e.target.value) },
+                            false
+                          )
+                        }
+                      />
+                    </div>
+                  )}
                 <div className="slider-row">
                   <div className="slider-header">
                     <span>Height</span>
@@ -623,9 +962,8 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                     step={0.05}
                     value={selectedItem.dims.h}
                     onChange={(e) =>
-                      onUpdateItem(
-                        selectedItem.id,
-                        { dims: { ...selectedItem.dims, h: parseFloat(e.target.value) } },
+                      updateFixtureDims(
+                        { ...selectedItem.dims, h: parseFloat(e.target.value) },
                         false
                       )
                     }
@@ -672,22 +1010,39 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
             </div>
           </section>
 
-          {def && def.surfaces.length > 0 && (
+          {canShowArtwork && isItemBrandingAllowed(selectedItem) && (
             <section id="item-artwork" className="inspector-section">
               <div className="control-label-row">
-                <h3 className="inspector-section-title">Artwork</h3>
+                <h3 className="inspector-section-title">
+                  {isVenueFixture ? 'Permitted Venue Artwork' : 'Artwork'}
+                </h3>
                 <Sparkles size={13} className="accent-icon" />
               </div>
 
-              {def.surfaces.map((zone) => {
+              {(isVenueFixture
+                ? venueBranding.allowedFaces.map((face) => ({
+                    id: face,
+                    label: getFaceLabel(selectedItem.catalogId, face),
+                    printW: Math.round(getEffectiveFaceZoneWidth(selectedItem, face) * 1000),
+                    printH: Math.round(Math.min(selectedItem.dims.h, venueBranding.zoneHeightM) * 1000),
+                  }))
+                : (def?.surfaces || []).map((zone) => {
+                    const scaleW = selectedItem.dims.w / (def?.defaultDims.w || 1);
+                    const scaleH = selectedItem.dims.h / (def?.defaultDims.h || 1);
+                    return {
+                      id: zone.id,
+                      label: zone.label,
+                      printW: Math.round(zone.widthMm * scaleW),
+                      printH: Math.round(zone.heightMm * scaleH),
+                    };
+                  })
+              ).map((zone) => {
                 const art: SurfaceArtwork = {
                   ...DEFAULT_ART,
                   ...(selectedItem.artwork[zone.id] || { bgColor: config.primaryColor }),
                 };
-                const scaleW = selectedItem.dims.w / def.defaultDims.w;
-                const scaleH = selectedItem.dims.h / def.defaultDims.h;
-                const printW = Math.round(zone.widthMm * scaleW);
-                const printH = Math.round(zone.heightMm * scaleH);
+                const printW = zone.printW;
+                const printH = zone.printH;
                 const isFocused = selectedSurfaceId === zone.id;
 
                 return (

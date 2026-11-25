@@ -19,9 +19,20 @@ import type {
   ViewMode,
   ViewportNavMode,
 } from '../types/stand';
-import { buildBoothShell, buildScaleFigures, buildStandItemMesh } from './meshFactory';
+import {
+  applyVenueFixtureBrandingOverlay,
+  buildBoothShell,
+  buildScaleFigures,
+  buildStandItemMesh,
+} from './meshFactory';
 import { buildCustomModelMesh, isModelCached } from './modelLoader';
 import { buildCustomBuiltAssetMesh } from './customAssetMesh';
+import {
+  getOuterGridMargin,
+  isItemBrandingAllowed,
+  isOuterGridVisible,
+  isVenuePermanentFixture,
+} from '../utils/fixtures';
 import { formatLength } from '../utils/pricing';
 import { checkWallCollision, findNearestAllowedPosition } from '../utils/wallCollision';
 import {
@@ -79,7 +90,7 @@ interface OverlayLabel {
   text: string;
   x: number;
   y: number;
-  kind: 'dim' | 'aisle';
+  kind: 'dim' | 'aisle' | 'grid-tick';
 }
 
 function disposeObject3D(obj: THREE.Object3D) {
@@ -910,8 +921,11 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
               nx = Math.round(nx / step) * step;
               nz = Math.round(nz / step) * step;
             }
-            nx = Math.max(-cfg.width * 0.9, Math.min(cfg.width * 0.9, Number(nx.toFixed(3))));
-            nz = Math.max(-cfg.depth * 0.9, Math.min(cfg.depth * 0.9, Number(nz.toFixed(3))));
+            const outerMargin = getOuterGridMargin(cfg);
+            const maxX = Math.max(cfg.width * 0.9, cfg.width / 2 + outerMargin);
+            const maxZ = Math.max(cfg.depth * 0.9, cfg.depth / 2 + outerMargin);
+            nx = Math.max(-maxX, Math.min(maxX, Number(nx.toFixed(3))));
+            nz = Math.max(-maxZ, Math.min(maxZ, Number(nz.toFixed(3))));
 
             if (nx !== drag.lastX || nz !== drag.lastZ) {
               drag.moved = true;
@@ -986,6 +1000,15 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           if (picked?.kind === 'item' && picked.surfaceId) {
             renderer.domElement.style.cursor = 'crosshair';
             setHoverPaintLabel(`Click to apply artwork to ${picked.surfaceLabel}`);
+          } else if (picked?.kind === 'item') {
+            const hoveredItem = propsRef.current.items.find((i) => i.id === picked.itemId);
+            if (hoveredItem && !isItemBrandingAllowed(hoveredItem)) {
+              renderer.domElement.style.cursor = 'not-allowed';
+              setHoverPaintLabel('Branding not permitted on this permanent venue fixture');
+            } else {
+              renderer.domElement.style.cursor = 'not-allowed';
+              setHoverPaintLabel('Hover over a brandable surface or allowed venue branding zone');
+            }
           } else if (picked?.kind === 'shell') {
             renderer.domElement.style.cursor = 'crosshair';
             setHoverPaintLabel(`Click to apply artwork to ${picked.side.toUpperCase()} Shell Wall`);
@@ -1232,7 +1255,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           const { config: cfg } = propsRef.current;
           const cw = container.clientWidth;
           const ch = container.clientHeight;
-          const points: { id: string; text: string; pos: THREE.Vector3; kind: 'dim' | 'aisle' }[] = [
+          const points: { id: string; text: string; pos: THREE.Vector3; kind: 'dim' | 'aisle' | 'grid-tick' }[] = [
             {
               id: 'dim-w',
               text: formatLength(cfg.width, cfg.unit),
@@ -1252,6 +1275,24 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
               kind: 'aisle',
             },
           ];
+
+          if (isOuterGridVisible(cfg)) {
+            const margin = getOuterGridMargin(cfg);
+            for (let m = 1; m <= margin; m++) {
+              points.push({
+                id: `grid-tick-x-${m}`,
+                text: `+${formatLength(m, cfg.unit)}`,
+                pos: new THREE.Vector3(cfg.width / 2 + m, -0.03, cfg.depth / 2 + 0.22),
+                kind: 'grid-tick',
+              });
+              points.push({
+                id: `grid-tick-z-${m}`,
+                text: `+${formatLength(m, cfg.unit)}`,
+                pos: new THREE.Vector3(-cfg.width / 2 - 0.26, -0.03, cfg.depth / 2 + m),
+                kind: 'grid-tick',
+              });
+            }
+          }
 
           if (cfg.openSides >= 2) {
             points.push({
@@ -1650,6 +1691,13 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
               ? buildCustomBuiltAssetMesh(item)
               : buildStandItemMesh(item, ctx);
 
+        if (
+          (item.catalogId === 'custom-3d-model' || item.catalogId === 'custom-built-asset') &&
+          isVenuePermanentFixture(item)
+        ) {
+          applyVenueFixtureBrandingOverlay(meshGroup, item, ctx);
+        }
+
         // In 2D Plan mode, render overhead rigging/hanging signs as semi-transparent
         // Reflected Ceiling Plan (RCP) outlines so they never obscure floor furniture below
         if (isOverheadRcpItem(item, viewMode)) {
@@ -1735,6 +1783,130 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         }
         const geom = new THREE.BufferGeometry().setFromPoints(points);
         helpersGroup.add(new THREE.LineSegments(geom, gridMat));
+      }
+
+      // Outer 1m architectural meter grid extending outside the planned stand area
+      // for placing permanent venue fixtures (pillars, walls, utility points) in exact relation to the stand
+      if (isOuterGridVisible(config)) {
+        const margin = getOuterGridMargin(config);
+        const halfW = width / 2;
+        const halfD = depth / 2;
+        const outerHalfW = halfW + margin;
+        const outerHalfD = halfD + margin;
+        const gridY = -0.043;
+
+        const outerMajorColor = config.lightingPreset === 'dramatic' ? 0x64748b : 0x64748b;
+        const outerGridMat = new THREE.LineBasicMaterial({
+          color: outerMajorColor,
+          transparent: true,
+          opacity: config.lightingPreset === 'dramatic' ? 0.34 : 0.4,
+        });
+
+        const outerPts: THREE.Vector3[] = [];
+
+        // X-aligned 1m lines stepping outward from -halfW and +halfW, plus 1m lines across width
+        const xTicks = new Set<number>();
+        for (let m = 1; m <= margin; m++) {
+          xTicks.add(Number((-halfW - m).toFixed(3)));
+          xTicks.add(Number((halfW + m).toFixed(3)));
+        }
+        for (let x = -halfW; x <= halfW + 0.001; x += 1) {
+          xTicks.add(Number(Math.min(halfW, x).toFixed(3)));
+        }
+        xTicks.add(Number((-halfW).toFixed(3)));
+        xTicks.add(Number(halfW.toFixed(3)));
+
+        for (const x of xTicks) {
+          const insideX = x > -halfW + 0.001 && x < halfW - 0.001;
+          if (insideX) {
+            outerPts.push(new THREE.Vector3(x, gridY, -outerHalfD));
+            outerPts.push(new THREE.Vector3(x, gridY, -halfD));
+            outerPts.push(new THREE.Vector3(x, gridY, halfD));
+            outerPts.push(new THREE.Vector3(x, gridY, outerHalfD));
+          } else {
+            outerPts.push(new THREE.Vector3(x, gridY, -outerHalfD));
+            outerPts.push(new THREE.Vector3(x, gridY, outerHalfD));
+          }
+        }
+
+        // Z-aligned 1m lines stepping outward from -halfD and +halfD, plus 1m lines across depth
+        const zTicks = new Set<number>();
+        for (let m = 1; m <= margin; m++) {
+          zTicks.add(Number((-halfD - m).toFixed(3)));
+          zTicks.add(Number((halfD + m).toFixed(3)));
+        }
+        for (let z = -halfD; z <= halfD + 0.001; z += 1) {
+          zTicks.add(Number(Math.min(halfD, z).toFixed(3)));
+        }
+        zTicks.add(Number((-halfD).toFixed(3)));
+        zTicks.add(Number(halfD.toFixed(3)));
+
+        for (const z of zTicks) {
+          const insideZ = z > -halfD + 0.001 && z < halfD - 0.001;
+          if (insideZ) {
+            outerPts.push(new THREE.Vector3(-outerHalfW, gridY, z));
+            outerPts.push(new THREE.Vector3(-halfW, gridY, z));
+            outerPts.push(new THREE.Vector3(halfW, gridY, z));
+            outerPts.push(new THREE.Vector3(outerHalfW, gridY, z));
+          } else {
+            outerPts.push(new THREE.Vector3(-outerHalfW, gridY, z));
+            outerPts.push(new THREE.Vector3(outerHalfW, gridY, z));
+          }
+        }
+
+        const outerGeom = new THREE.BufferGeometry().setFromPoints(outerPts);
+        helpersGroup.add(new THREE.LineSegments(outerGeom, outerGridMat));
+
+        // Dashed outer planning boundary frame
+        const outerFramePts = [
+          new THREE.Vector3(-outerHalfW, gridY + 0.001, -outerHalfD),
+          new THREE.Vector3(outerHalfW, gridY + 0.001, -outerHalfD),
+          new THREE.Vector3(outerHalfW, gridY + 0.001, outerHalfD),
+          new THREE.Vector3(-outerHalfW, gridY + 0.001, outerHalfD),
+          new THREE.Vector3(-outerHalfW, gridY + 0.001, -outerHalfD),
+        ];
+        const outerFrame = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(outerFramePts),
+          new THREE.LineDashedMaterial({
+            color: config.lightingPreset === 'dramatic' ? '#94A3B8' : '#475569',
+            dashSize: 0.25,
+            gapSize: 0.15,
+            transparent: true,
+            opacity: 0.55,
+          })
+        );
+        outerFrame.computeLineDistances();
+        helpersGroup.add(outerFrame);
+      }
+
+      // Subtle structural dashed footprint markers for permanent fixtures
+      for (const item of items) {
+        if (item.visible === false || !item.isPermanentFixture || item.id === selectedItemId) continue;
+        const pw = item.dims.w + 0.12;
+        const pd = item.dims.d + 0.12;
+        const fxGroup = new THREE.Group();
+        fxGroup.position.set(item.x, -0.04, item.z);
+        fxGroup.rotation.y = (item.rotationY * Math.PI) / 180;
+        const fxPts = [
+          new THREE.Vector3(-pw / 2, 0, -pd / 2),
+          new THREE.Vector3(pw / 2, 0, -pd / 2),
+          new THREE.Vector3(pw / 2, 0, pd / 2),
+          new THREE.Vector3(-pw / 2, 0, pd / 2),
+          new THREE.Vector3(-pw / 2, 0, -pd / 2),
+        ];
+        const fxOutline = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(fxPts),
+          new THREE.LineDashedMaterial({
+            color: isVenuePermanentFixture(item) ? '#0F766E' : '#1B365D',
+            dashSize: 0.1,
+            gapSize: 0.06,
+            transparent: true,
+            opacity: 0.72,
+          })
+        );
+        fxOutline.computeLineDistances();
+        fxGroup.add(fxOutline);
+        helpersGroup.add(fxGroup);
       }
 
       // Booth perimeter footprint boundary line
@@ -1953,8 +2125,11 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           x = Math.round(x / step) * step;
           z = Math.round(z / step) * step;
         }
-        x = Math.max(-config.width * 0.75, Math.min(config.width * 0.75, Number(x.toFixed(2))));
-        z = Math.max(-config.depth * 0.75, Math.min(config.depth * 0.75, Number(z.toFixed(2))));
+        const outerMargin = getOuterGridMargin(config);
+        const maxX = Math.max(config.width * 0.75, config.width / 2 + outerMargin);
+        const maxZ = Math.max(config.depth * 0.75, config.depth / 2 + outerMargin);
+        x = Math.max(-maxX, Math.min(maxX, Number(x.toFixed(2))));
+        z = Math.max(-maxZ, Math.min(maxZ, Number(z.toFixed(2))));
         return { x, z };
       }
       return { x: 0, z: 0 };
@@ -1965,11 +2140,11 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       e.dataTransfer.dropEffect = 'copy';
       const types = Array.from(e.dataTransfer.types || []);
       if (types.includes('application/x-zuki-catalog')) {
-        setDropHint('Release to place equipment onto stand floor');
+        setDropHint('Release to place equipment onto stand floor or outer grid');
       } else if (types.includes('application/x-zuki-model')) {
-        setDropHint('Release to place 3D model onto stand floor');
+        setDropHint('Release to place 3D model onto stand floor or outer grid');
       } else if (types.includes('application/x-zuki-custom-asset')) {
-        setDropHint('Release to place custom asset onto stand floor');
+        setDropHint('Release to place custom asset onto stand floor or outer grid');
       } else {
         setDropHint('Drop 3D model (.GLB, .GLTF, .STL, .OBJ) to place on stand');
       }
@@ -2017,13 +2192,19 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       >
         <div ref={containerRef} className="viewport-canvas-host" />
 
-        {/* Projected 3D->2D Dimension & Aisle Labels */}
+        {/* Projected 3D->2D Dimension, Outer Grid Tick & Aisle Labels */}
         {config.showDimensions && (
           <div className="viewport-overlay-labels" aria-hidden="true">
             {overlayLabels.map((lbl) => (
               <div
                 key={lbl.id}
-                className={lbl.kind === 'dim' ? 'dim-pill-label' : 'aisle-pill-label'}
+                className={
+                  lbl.kind === 'dim'
+                    ? 'dim-pill-label'
+                    : lbl.kind === 'grid-tick'
+                      ? 'grid-tick-pill-label'
+                      : 'aisle-pill-label'
+                }
                 style={{
                   transform: `translate(-50%, -50%) translate(${lbl.x}px, ${lbl.y}px)`,
                 }}

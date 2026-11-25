@@ -34,6 +34,10 @@ import type {
   StandItem,
   StandTemplate,
 } from '../types/stand';
+import {
+  getOuterGridMargin,
+  isVenuePermanentFixture,
+} from '../utils/fixtures';
 import { formatLength, formatMoney } from '../utils/pricing';
 import { EquipmentThumb } from './EquipmentThumb';
 import './sidebar.css';
@@ -71,6 +75,7 @@ interface LeftSidebarProps {
   paintAssetId: string | null;
   onSetPaintAssetId: (assetId: string | null) => void;
   onApplyTemplate: (template: StandTemplate) => void;
+  onDuplicateStandLocation?: () => void;
   currency: CurrencyCode;
   pricingMode: 'hire' | 'buy';
 }
@@ -137,6 +142,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = React.memo(({
   paintAssetId,
   onSetPaintAssetId,
   onApplyTemplate,
+  onDuplicateStandLocation,
   currency,
   pricingMode,
 }) => {
@@ -532,6 +538,69 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = React.memo(({
                   </div>
                 )}
               </div>
+
+              <div className="control-block">
+                <div className="toggle-row">
+                  <div>
+                    <div className="toggle-title">Outer Meter Grid (1m)</div>
+                    <div className="toggle-sub">
+                      Surrounds the planned stand area for placing permanent venue pillars &amp; fixtures
+                    </div>
+                  </div>
+                  <input
+                    id="space-toggle-outer-grid"
+                    type="checkbox"
+                    className="studio-switch"
+                    checked={config.showOuterGrid !== false}
+                    onChange={(e) =>
+                      onUpdateConfig({
+                        showOuterGrid: e.target.checked,
+                        showGrid: e.target.checked ? true : config.showGrid,
+                      })
+                    }
+                  />
+                </div>
+                {config.showOuterGrid !== false && (
+                  <div className="slider-row" style={{ marginTop: 10 }}>
+                    <div className="slider-header">
+                      <span>Outer Grid Margin</span>
+                      <span className="mono-num">
+                        +{formatLength(getOuterGridMargin(config), config.unit)}
+                      </span>
+                    </div>
+                    <input
+                      id="outer-grid-margin-slider"
+                      type="range"
+                      min={1}
+                      max={6}
+                      step={1}
+                      value={getOuterGridMargin(config)}
+                      onChange={(e) =>
+                        onUpdateConfig({ outerGridMargin: parseInt(e.target.value, 10) })
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+
+              {onDuplicateStandLocation && (
+                <div className="control-block">
+                  <label className="block-label">Stand Location Variations</label>
+                  <button
+                    id="btn-new-layout-keep-fixtures"
+                    type="button"
+                    className="secondary-btn full-width"
+                    onClick={onDuplicateStandLocation}
+                  >
+                    <Copy size={13} />
+                    <span>New Design for This Stand (Keep Fixtures)</span>
+                  </button>
+                  <p className="helper-note" style={{ marginTop: 6 }}>
+                    Duplicates this exact stand footprint, walls, and permanent fixtures so you can
+                    try another layout without re-placing venue pillars.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -971,7 +1040,16 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = React.memo(({
                         aria-current={selected ? 'true' : undefined}
                         onClick={() => onSelectItem(item.id)}
                       >
-                          {item.name}
+                          <span>{item.name}</span>
+                          {item.isPermanentFixture && (
+                            <span
+                              className={`layer-fixture-badge ${
+                                isVenuePermanentFixture(item) ? 'venue' : 'own'
+                              }`}
+                            >
+                              {isVenuePermanentFixture(item) ? 'Venue' : 'Fixed'}
+                            </span>
+                          )}
                         </button>
                         <div className="layer-actions">
                           <button

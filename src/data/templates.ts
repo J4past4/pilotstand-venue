@@ -19,6 +19,8 @@ export const DEFAULT_STAND_CONFIG: StandConfig = {
   showScaleFigures: true,
   showDimensions: true,
   showGrid: true,
+  showOuterGrid: true,
+  outerGridMargin: 3,
   snapToGrid: true,
   gridStep: 0.1,
   unit: 'm',

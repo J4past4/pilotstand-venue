@@ -215,6 +215,44 @@ export const EquipmentThumb: React.FC<Props> = ({ catalogId }) => {
           <line x1="13" y1="38" x2="35" y2="38" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" />
         </svg>
       );
+    case 'venue-pillar-square':
+      return (
+        <svg viewBox="0 0 48 48" className="equip-svg" aria-hidden="true">
+          <rect x="16" y="7" width="16" height="33" rx="1.5" fill="#DCE1E7" stroke={stroke} strokeWidth="2" />
+          <rect x="13" y="37" width="22" height="4" rx="1" fill={stroke} />
+          <line x1="16" y1="16" x2="32" y2="16" stroke={stroke} strokeOpacity="0.35" strokeWidth="1.4" strokeDasharray="3 2" />
+          <line x1="16" y1="30" x2="32" y2="30" stroke={stroke} strokeOpacity="0.35" strokeWidth="1.4" strokeDasharray="3 2" />
+          <rect x="19" y="19" width="10" height="8" rx="1" fill={accent} opacity="0.85" />
+        </svg>
+      );
+    case 'venue-pillar-round':
+      return (
+        <svg viewBox="0 0 48 48" className="equip-svg" aria-hidden="true">
+          <ellipse cx="24" cy="10" rx="9" ry="3.2" fill="#E5E9EF" stroke={stroke} strokeWidth="1.8" />
+          <path d="M15 10 V37 A9 3.2 0 0 0 33 37 V10" fill="#DCE1E7" stroke={stroke} strokeWidth="1.8" />
+          <path d="M15 20 A9 3.2 0 0 0 33 20" fill="none" stroke={accent} strokeWidth="2.4" />
+          <path d="M15 28 A9 3.2 0 0 0 33 28" fill="none" stroke={accent} strokeWidth="2.4" />
+          <ellipse cx="24" cy="39" rx="11" ry="3" fill="none" stroke={stroke} strokeWidth="1.5" opacity="0.5" />
+        </svg>
+      );
+    case 'venue-wall-segment':
+      return (
+        <svg viewBox="0 0 48 48" className="equip-svg" aria-hidden="true">
+          <rect x="6" y="11" width="36" height="27" rx="1.5" fill="#DCE1E7" stroke={stroke} strokeWidth="2" />
+          <line x1="6" y1="34" x2="42" y2="34" stroke={stroke} strokeWidth="2" />
+          <rect x="12" y="16" width="24" height="12" rx="1" fill="none" stroke={accent} strokeWidth="1.8" strokeDasharray="3 2" />
+        </svg>
+      );
+    case 'venue-service-box':
+      return (
+        <svg viewBox="0 0 48 48" className="equip-svg" aria-hidden="true">
+          <rect x="12" y="12" width="24" height="27" rx="2" fill="#DCE1E7" stroke={stroke} strokeWidth="2" />
+          <line x1="24" y1="12" x2="24" y2="39" stroke={stroke} strokeWidth="1.5" />
+          <line x1="16" y1="18" x2="21" y2="18" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" />
+          <line x1="16" y1="22" x2="21" y2="22" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" />
+          <circle cx="27.5" cy="26" r="1.6" fill={accent} />
+        </svg>
+      );
     default:
       return (
         <svg viewBox="0 0 48 48" className="equip-svg" aria-hidden="true">

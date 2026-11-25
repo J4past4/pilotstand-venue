@@ -1,12 +1,19 @@
 import * as THREE from 'three';
 import type {
   BrandAsset,
+  FixtureBrandFace,
   ShellWallSide,
   StandConfig,
   StandItem,
   SurfaceArtwork,
   SurfaceZoneDef,
 } from '../types/stand';
+import {
+  getEffectiveFaceZoneWidth,
+  getFaceLabel,
+  isItemBrandingAllowed,
+  isVenuePermanentFixture,
+} from '../utils/fixtures';
 import { getFloorBumpTexture, getFloorTexture, getSurfaceTexture } from './textureComposer';
 
 export interface BuildContext {
@@ -1736,6 +1743,179 @@ export function buildStandItemMesh(item: StandItem, ctx: BuildContext): THREE.Gr
       break;
     }
 
+    case 'venue-pillar-square': {
+      const concreteColor = item.primaryColor || '#B9BFC7';
+      const concreteMat = new THREE.MeshStandardMaterial({
+        color: concreteColor,
+        roughness: 0.86,
+        metalness: 0.05,
+      });
+      const baseCollarMat = new THREE.MeshStandardMaterial({
+        color: '#4B5563',
+        roughness: 0.55,
+        metalness: 0.35,
+      });
+
+      // Extend pillar base slightly below y=0 (-0.048) so it seats flush on the outer hall floor too
+      const plinthDrop = 0.048;
+      const shaft = new THREE.Mesh(new THREE.BoxGeometry(w, h + plinthDrop, d), concreteMat);
+      shaft.position.y = (h - plinthDrop) / 2;
+      shaft.castShadow = true;
+      shaft.receiveShadow = true;
+      group.add(shaft);
+
+      // Architectural skirting collar at floor level
+      const collar = new THREE.Mesh(
+        new THREE.BoxGeometry(w + 0.04, 0.12, d + 0.04),
+        baseCollarMat
+      );
+      collar.position.y = 0.06 - plinthDrop * 0.5;
+      collar.castShadow = true;
+      collar.receiveShadow = true;
+      group.add(collar);
+
+      // Structural top capital plate
+      const cap = new THREE.Mesh(
+        new THREE.BoxGeometry(w + 0.05, 0.06, d + 0.05),
+        baseCollarMat
+      );
+      cap.position.y = h - 0.03;
+      group.add(cap);
+
+      addVenueFlatBrandingPanels(group, item, ctx);
+      break;
+    }
+
+    case 'venue-pillar-round': {
+      const concreteColor = item.primaryColor || '#B9BFC7';
+      const concreteMat = new THREE.MeshStandardMaterial({
+        color: concreteColor,
+        roughness: 0.84,
+        metalness: 0.06,
+      });
+      const baseCollarMat = new THREE.MeshStandardMaterial({
+        color: '#4B5563',
+        roughness: 0.55,
+        metalness: 0.35,
+      });
+
+      const radius = Math.max(0.12, w / 2);
+      const plinthDrop = 0.048;
+      const shaft = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius, radius, h + plinthDrop, 32),
+        concreteMat
+      );
+      shaft.position.y = (h - plinthDrop) / 2;
+      shaft.castShadow = true;
+      shaft.receiveShadow = true;
+      group.add(shaft);
+
+      const collar = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius + 0.024, radius + 0.028, 0.12, 32),
+        baseCollarMat
+      );
+      collar.position.y = 0.06 - plinthDrop * 0.5;
+      group.add(collar);
+
+      const cap = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius + 0.03, radius + 0.025, 0.06, 32),
+        baseCollarMat
+      );
+      cap.position.y = h - 0.03;
+      group.add(cap);
+
+      // Cylindrical brandable wrap if venue permits branding (or if owned)
+      if (isItemBrandingAllowed(item)) {
+        const vb = item.venueBranding;
+        const circumference = Math.PI * radius * 2;
+        const zoneW = vb ? Math.min(circumference, Math.max(0.15, vb.zoneWidthM)) : circumference;
+        const zoneH = vb ? Math.min(h, Math.max(0.15, vb.zoneHeightM)) : Math.min(h * 0.65, 2.0);
+        const zoneBottom = vb ? Math.max(0, Math.min(h - zoneH, vb.zoneBottomM)) : 0.6;
+        const thetaLen = Math.min(Math.PI * 2, (zoneW / circumference) * Math.PI * 2);
+        const thetaStart = -thetaLen / 2;
+
+        const art = item.artwork.front;
+        const mat = makeGraphicMaterial(art, 'logo', zoneW / Math.max(0.1, zoneH), ctx, art?.emissive);
+        const wrapMesh = new THREE.Mesh(
+          new THREE.CylinderGeometry(
+            radius + 0.008,
+            radius + 0.008,
+            zoneH,
+            32,
+            1,
+            true,
+            thetaStart,
+            thetaLen
+          ),
+          mat
+        );
+        wrapMesh.position.y = zoneBottom + zoneH / 2;
+        tagInteractive(wrapMesh, item.id, 'front', getFaceLabel(item.catalogId, 'front'));
+        group.add(wrapMesh);
+      }
+      break;
+    }
+
+    case 'venue-wall-segment': {
+      const wallHex = item.primaryColor || '#C8CDD3';
+      const wallMat = new THREE.MeshStandardMaterial({
+        color: wallHex,
+        roughness: 0.85,
+        metalness: 0.04,
+      });
+      const trimMat = new THREE.MeshStandardMaterial({
+        color: '#4B5563',
+        roughness: 0.5,
+        metalness: 0.3,
+      });
+      const plinthDrop = 0.048;
+
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h + plinthDrop, d), wallMat);
+      body.position.y = (h - plinthDrop) / 2;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      group.add(body);
+
+      const skirting = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.1, d + 0.02), trimMat);
+      skirting.position.y = 0.05 - plinthDrop * 0.5;
+      group.add(skirting);
+
+      const coping = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.05, d + 0.02), trimMat);
+      coping.position.y = h - 0.025;
+      group.add(coping);
+
+      addVenueFlatBrandingPanels(group, item, ctx);
+      break;
+    }
+
+    case 'venue-service-box': {
+      const boxHex = item.primaryColor || '#9AA4B2';
+      const steelMat = new THREE.MeshStandardMaterial({
+        color: boxHex,
+        roughness: 0.52,
+        metalness: 0.42,
+      });
+      const plinthDrop = 0.048;
+
+      const cabinet = new THREE.Mesh(new THREE.BoxGeometry(w, h + plinthDrop, d), steelMat);
+      cabinet.position.y = (h - plinthDrop) / 2;
+      cabinet.castShadow = true;
+      cabinet.receiveShadow = true;
+      group.add(cabinet);
+
+      // Vertical double-door seam & handle on front
+      const seam = new THREE.Mesh(new THREE.BoxGeometry(0.012, h - 0.16, 0.012), darkMetal);
+      seam.position.set(0, h / 2, d / 2 + 0.004);
+      group.add(seam);
+
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.14, 0.03), darkMetal);
+      handle.position.set(0.06, Math.min(h * 0.52, 1.15), d / 2 + 0.015);
+      group.add(handle);
+
+      addVenueFlatBrandingPanels(group, item, ctx);
+      break;
+    }
+
     default: {
       const fallback = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), whiteMat);
       fallback.position.y = h / 2;
@@ -1743,6 +1923,17 @@ export function buildStandItemMesh(item: StandItem, ctx: BuildContext): THREE.Gr
       fallback.receiveShadow = true;
       group.add(fallback);
     }
+  }
+
+  // Enforce venue branding rules if a regular catalog item was converted to a venue permanent fixture
+  if (
+    isVenuePermanentFixture(item) &&
+    item.catalogId !== 'venue-pillar-square' &&
+    item.catalogId !== 'venue-pillar-round' &&
+    item.catalogId !== 'venue-wall-segment' &&
+    item.catalogId !== 'venue-service-box'
+  ) {
+    applyVenueFixtureBrandingOverlay(group, item, ctx);
   }
 
   // Ensure every descendant knows its itemId for clean raycast picking
@@ -1757,6 +1948,78 @@ export function buildStandItemMesh(item: StandItem, ctx: BuildContext): THREE.Gr
   group.visible = item.visible !== false;
 
   return group;
+}
+
+function addVenueFlatBrandingPanels(group: THREE.Group, item: StandItem, ctx: BuildContext) {
+  if (!isItemBrandingAllowed(item)) return;
+  const vb = item.venueBranding;
+  const { w, h, d } = item.dims;
+  const faces: FixtureBrandFace[] = vb?.allowedFaces?.length ? vb.allowedFaces : ['front'];
+  const zoneH = vb ? Math.min(h, Math.max(0.1, vb.zoneHeightM)) : Math.min(h * 0.65, 2.0);
+  const zoneBottom = vb ? Math.max(0, Math.min(h - zoneH, vb.zoneBottomM)) : 0.6;
+  const centerY = zoneBottom + zoneH / 2;
+  const eps = 0.008;
+
+  for (const face of faces) {
+    const zoneW = getEffectiveFaceZoneWidth(item, face);
+    const art = item.artwork[face];
+    const mat = makeGraphicMaterial(art, 'logo', zoneW / Math.max(0.1, zoneH), ctx, art?.emissive);
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(zoneW, zoneH), mat);
+    panel.receiveShadow = true;
+
+    const frameGeom = new THREE.EdgesGeometry(new THREE.PlaneGeometry(zoneW + 0.01, zoneH + 0.01));
+    const frame = new THREE.LineSegments(
+      frameGeom,
+      new THREE.LineBasicMaterial({
+        color: ctx.config.accentColor || '#D95D39',
+        transparent: true,
+        opacity: 0.72,
+      })
+    );
+
+    const holder = new THREE.Group();
+    holder.add(panel);
+    holder.add(frame);
+
+    if (face === 'front') {
+      holder.position.set(0, centerY, d / 2 + eps);
+    } else if (face === 'back') {
+      holder.position.set(0, centerY, -d / 2 - eps);
+      holder.rotation.y = Math.PI;
+    } else if (face === 'right') {
+      holder.position.set(w / 2 + eps, centerY, 0);
+      holder.rotation.y = Math.PI / 2;
+    } else if (face === 'left') {
+      holder.position.set(-w / 2 - eps, centerY, 0);
+      holder.rotation.y = -Math.PI / 2;
+    }
+
+    tagInteractive(panel, item.id, face, getFaceLabel(item.catalogId, face));
+    group.add(holder);
+  }
+}
+
+/**
+ * Applies venue permanent fixture branding constraints to any 3D mesh group
+ * (including custom 3D models, custom built assets, or converted catalog items).
+ */
+export function applyVenueFixtureBrandingOverlay(
+  group: THREE.Group,
+  item: StandItem,
+  ctx: BuildContext
+) {
+  if (!isVenuePermanentFixture(item)) return;
+  // Clear any existing brandable surface tags first so only permitted venue zones are paintable
+  group.traverse((child) => {
+    if (child.userData.surfaceId) {
+      delete child.userData.surfaceId;
+      delete child.userData.surfaceLabel;
+      delete child.userData.brandable;
+    }
+  });
+  if (item.venueBranding?.allowed) {
+    addVenueFlatBrandingPanels(group, item, ctx);
+  }
 }
 
 export function buildBoothShell(ctx: BuildContext): THREE.Group {

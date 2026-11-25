@@ -80,6 +80,7 @@ interface TopBarProps {
   onToggleAgent: () => void;
   onOpenSetupGuide: () => void;
   onOpenProjects: () => void;
+  onDuplicateStandLocation?: () => void;
   onOpenTemplates: () => void;
   onOpenEstimate: () => void;
   onOpenExport: () => void;
@@ -136,6 +137,7 @@ export const TopBar: React.FC<TopBarProps> = React.memo(({
   onToggleAgent,
   onOpenSetupGuide,
   onOpenProjects,
+  onDuplicateStandLocation,
   onOpenTemplates,
   onOpenEstimate,
   onOpenExport,
@@ -357,6 +359,20 @@ export const TopBar: React.FC<TopBarProps> = React.memo(({
                   >
                     <Plus size={14} />
                     <span>New Project</span>
+                  </button>
+                )}
+                {onDuplicateStandLocation && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="topbar-more-item"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      onDuplicateStandLocation();
+                    }}
+                  >
+                    <CopyPlus size={14} />
+                    <span>New Layout (Keep Fixtures)</span>
                   </button>
                 )}
                 {onOpenLoadModal && (
@@ -792,6 +808,24 @@ export const TopBar: React.FC<TopBarProps> = React.memo(({
                       className="studio-switch"
                       checked={config.snapToGrid}
                       onChange={(e) => onUpdateConfig({ snapToGrid: e.target.checked })}
+                    />
+                  </label>
+                  <label className="view-popover-toggle">
+                    <span className="view-popover-toggle-left">
+                      <Grid2x2 size={13} />
+                      <span>Outer Meter Grid (1m)</span>
+                    </span>
+                    <input
+                      id="toggle-outer-grid"
+                      type="checkbox"
+                      className="studio-switch"
+                      checked={config.showOuterGrid !== false}
+                      onChange={(e) =>
+                        onUpdateConfig({
+                          showOuterGrid: e.target.checked,
+                          showGrid: e.target.checked ? true : config.showGrid,
+                        })
+                      }
                     />
                   </label>
                   <label className="view-popover-toggle">

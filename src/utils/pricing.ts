@@ -6,6 +6,10 @@ import type {
   StandConfig,
   StandItem,
 } from '../types/stand';
+import {
+  computeVenueFixtureBrandableAreaM2,
+  isVenuePermanentFixture,
+} from './fixtures';
 
 const CURRENCY_RATE: Record<CurrencyCode, { symbol: string; rate: number }> = {
   GBP: { symbol: '£', rate: 1 },
@@ -69,26 +73,39 @@ export function evaluateCompliance(config: StandConfig, items: StandItem[]): Com
     if (item.visible === false) continue;
     const def = CATALOG_MAP[item.catalogId];
     const bounds = computeItemFootprintBounds(item);
+    const isPermanent = Boolean(item.isPermanentFixture);
 
-    if (
-      bounds.minX < -halfW - tolerance ||
-      bounds.maxX > halfW + tolerance ||
-      bounds.minZ < -halfD - tolerance ||
-      bounds.maxZ > halfD + tolerance
-    ) {
-      outOfBoundsIds.push(item.id);
-    }
+    // Permanent venue/site fixtures are allowed on the outer meter grid and may extend to hall ceiling
+    if (!isPermanent) {
+      if (
+        bounds.minX < -halfW - tolerance ||
+        bounds.maxX > halfW + tolerance ||
+        bounds.minZ < -halfD - tolerance ||
+        bounds.maxZ > halfD + tolerance
+      ) {
+        outOfBoundsIds.push(item.id);
+      }
 
-    if (bounds.maxY > config.heightLimit + 0.02) {
-      overHeightIds.push(item.id);
+      if (bounds.maxY > config.heightLimit + 0.02) {
+        overHeightIds.push(item.id);
+      }
     }
 
     // Only count floor-standing items toward floor footprint occupancy
     if (item.y < 1.5) {
-      occupiedAreaM2 += item.dims.w * item.dims.d;
+      if (isPermanent) {
+        // Count only the portion of a permanent fixture's footprint that intrudes inside the booked booth
+        const overlapX = Math.max(0, Math.min(bounds.maxX, halfW) - Math.max(bounds.minX, -halfW));
+        const overlapZ = Math.max(0, Math.min(bounds.maxZ, halfD) - Math.max(bounds.minZ, -halfD));
+        occupiedAreaM2 += overlapX * overlapZ;
+      } else {
+        occupiedAreaM2 += item.dims.w * item.dims.d;
+      }
     }
 
-    if (def && def.printAreaM2 > 0) {
+    if (isVenuePermanentFixture(item)) {
+      totalPrintAreaM2 += computeVenueFixtureBrandableAreaM2(item);
+    } else if (def && def.printAreaM2 > 0) {
       const scaleFactor =
         (item.dims.w * item.dims.h) /
         Math.max(0.01, def.defaultDims.w * def.defaultDims.h);
@@ -194,6 +211,25 @@ export function calculateEstimate(
   const grouped = new Map<string, { name: string; category: string; qty: number; unit: number }>();
   for (const item of items) {
     if (item.visible === false) continue;
+    if (isVenuePermanentFixture(item)) {
+      const vb = item.venueBranding;
+      const brandTag = vb?.allowed
+        ? `Branding Allowed: ${computeVenueFixtureBrandableAreaM2(item).toFixed(2)} m²`
+        : 'No Branding';
+      const key = `venue:${item.name}:${brandTag}`;
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.qty += 1;
+      } else {
+        grouped.set(key, {
+          name: `${item.name} (Permanent Venue Fixture — ${brandTag})`,
+          category: 'Venue Fixture',
+          qty: 1,
+          unit: 0,
+        });
+      }
+      continue;
+    }
     if (item.catalogId === 'custom-3d-model' || item.catalogId === 'custom-built-asset') {
       const key = `custom:${item.name}`;
       const existing = grouped.get(key);

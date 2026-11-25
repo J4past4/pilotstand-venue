@@ -22,9 +22,28 @@ export type CurrencyCode = 'GBP' | 'USD' | 'EUR';
 
 export type ArtworkFit = 'cover' | 'contain' | 'stretch';
 
-export type EquipmentCategory = 'walls' | 'branding' | 'counters' | 'seating' | 'lighting';
+export type EquipmentCategory = 'walls' | 'branding' | 'counters' | 'seating' | 'lighting' | 'fixtures';
 
 export type ShellWallSide = 'back' | 'left' | 'right';
+
+export type FixtureOwner = 'venue' | 'own';
+
+export type FixtureBrandFace = 'front' | 'back' | 'left' | 'right';
+
+export interface VenueBrandingConfig {
+  /** Whether branding is permitted on this permanent venue fixture */
+  allowed: boolean;
+  /** Which faces of the fixture are permitted to carry branding */
+  allowedFaces: FixtureBrandFace[];
+  /** Permitted brandable zone width in meters (or wrap arc length for round columns) */
+  zoneWidthM: number;
+  /** Permitted brandable zone height in meters */
+  zoneHeightM: number;
+  /** Bottom elevation of the permitted brandable zone from floor in meters */
+  zoneBottomM: number;
+  /** Optional venue organizer branding rules or notes */
+  notes?: string;
+}
 
 export interface SurfaceArtwork {
   assetId: string | null;
@@ -172,6 +191,12 @@ export interface StandItem {
   zUpFix?: boolean;
   lockAspect?: boolean;
   modelTintColor?: string;
+  /** Marks a permanent fixture tied to this specific stand location (persists across design variations & allowed on outer meter grid) */
+  isPermanentFixture?: boolean;
+  /** 'venue' = exhibition/venue permanent feature (not company's own stand/product); 'own' = company's own fixed asset */
+  fixtureOwner?: FixtureOwner;
+  /** Branding permission & permitted brandable area for permanent venue fixtures */
+  venueBranding?: VenueBrandingConfig;
   /** For 3D models that support branded vs unbranded graphics (true = branded, false = unbranded) */
   modelBranded?: boolean;
   /** Whether the selected 3D model supports toggling branded graphics */
@@ -204,6 +229,10 @@ export interface StandConfig {
   showScaleFigures: boolean;
   showDimensions: boolean;
   showGrid: boolean;
+  /** Show 1m architectural meter grid extending outside the planned stand area */
+  showOuterGrid?: boolean;
+  /** How many meters the outer meter grid extends beyond each edge of the planned stand area (1–6m) */
+  outerGridMargin?: number;
   snapToGrid: boolean;
   gridStep: number; // 0.1 or 0.25
   unit: MeasurementUnit;

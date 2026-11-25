@@ -47,6 +47,7 @@ interface ProjectsDashboardProps {
   onCreateBlankProject: () => void;
   onCreateFromTemplate: (template: StandTemplate) => void;
   onDuplicateProject: (project: SavedProject) => void;
+  onDuplicateStandLocation?: (project: SavedProject) => void;
   onRenameProject: (projectId: string, newName: string) => void;
   onDeleteProject: (projectId: string) => void;
   onExportProjectJson: (project: SavedProject) => void;
@@ -83,9 +84,15 @@ const ProjectFloorplanPreview: React.FC<{ project: SavedProject }> = ({ project 
   const { config, items } = project;
   const w = Math.max(2, config.width || 4);
   const d = Math.max(2, config.depth || 3);
-  const pad = 0.8;
-  const vbW = w + pad * 2;
-  const vbH = d + pad * 2;
+  let maxHalfW = w / 2 + 0.8;
+  let maxHalfD = d / 2 + 0.8;
+  for (const item of items) {
+    if (item.visible === false) continue;
+    maxHalfW = Math.max(maxHalfW, Math.abs(item.x) + (item.dims?.w || 0.6) / 2 + 0.4);
+    maxHalfD = Math.max(maxHalfD, Math.abs(item.z) + (item.dims?.d || 0.6) / 2 + 0.4);
+  }
+  const vbW = maxHalfW * 2;
+  const vbH = maxHalfD * 2;
 
   const floorFill =
     config.floorMaterial === 'oak-timber'
@@ -156,13 +163,16 @@ const ProjectFloorplanPreview: React.FC<{ project: SavedProject }> = ({ project 
         const iw = Math.max(0.22, item.dims?.w || 0.8);
         const id = Math.max(0.18, item.dims?.d || 0.5);
         const isOverhead = item.y > 2.0;
+        const isFixture = Boolean(item.isPermanentFixture);
         const fill = isOverhead
           ? 'none'
-          : item.catalogId === 'led-video-wall' || item.catalogId === 'seg-lightbox'
-            ? config.primaryColor || '#1B365D'
-            : item.catalogId === 'reception-desk' || item.catalogId === 'front-arch'
-              ? config.accentColor || '#D95D39'
-              : '#ffffff';
+          : isFixture
+            ? '#94a3b8'
+            : item.catalogId === 'led-video-wall' || item.catalogId === 'seg-lightbox'
+              ? config.primaryColor || '#1B365D'
+              : item.catalogId === 'reception-desk' || item.catalogId === 'front-arch'
+                ? config.accentColor || '#D95D39'
+                : '#ffffff';
 
         return (
           <g
@@ -180,6 +190,15 @@ const ProjectFloorplanPreview: React.FC<{ project: SavedProject }> = ({ project 
                 strokeDasharray="0.22 0.12"
                 opacity={0.75}
               />
+            ) : item.catalogId === 'venue-pillar-round' ? (
+              <circle
+                cx={0}
+                cy={0}
+                r={iw / 2}
+                fill={fill}
+                stroke="#0f766e"
+                strokeWidth={0.07}
+              />
             ) : (
               <rect
                 x={-iw / 2}
@@ -188,8 +207,8 @@ const ProjectFloorplanPreview: React.FC<{ project: SavedProject }> = ({ project 
                 height={id}
                 rx={0.06}
                 fill={fill}
-                stroke={isOverhead ? '#475569' : '#0f172a'}
-                strokeWidth={0.045}
+                stroke={isFixture ? '#0f766e' : isOverhead ? '#475569' : '#0f172a'}
+                strokeWidth={isFixture ? 0.07 : 0.045}
                 strokeDasharray={isOverhead ? '0.18 0.1' : undefined}
                 opacity={isOverhead ? 0.65 : 0.94}
               />
@@ -219,6 +238,7 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
   onCreateBlankProject,
   onCreateFromTemplate,
   onDuplicateProject,
+  onDuplicateStandLocation,
   onRenameProject,
   onDeleteProject,
   onExportProjectJson,
@@ -587,6 +607,21 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
                         </button>
 
                         <div className="dash-icon-actions">
+                          {onDuplicateStandLocation &&
+                            proj.items.some((it) => it.isPermanentFixture) && (
+                              <button
+                                type="button"
+                                className="dash-icon-btn"
+                                title="New design for this stand location (keep permanent fixtures)"
+                                aria-label={`New layout for ${proj.name} keeping permanent fixtures`}
+                                onClick={() => {
+                                  setConfirmDeleteId(null);
+                                  onDuplicateStandLocation(proj);
+                                }}
+                              >
+                                <Layers size={14} />
+                              </button>
+                            )}
                           <button
                             type="button"
                             className="dash-icon-btn"

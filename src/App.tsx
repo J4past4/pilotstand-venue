@@ -96,6 +96,7 @@ import {
 } from './utils/brandKit';
 import { exportProductionBriefHtml } from './utils/briefExport';
 import { downloadDesignerSpecCsv, exportDesignerBriefHtml } from './utils/designerExport';
+import { createDefaultVenueBranding, isVenueFixtureCatalogId } from './utils/fixtures';
 import { calculateEstimate, evaluateCompliance, formatArea, formatLength } from './utils/pricing';
 import { trackLaunchMetric } from './utils/launchMetrics';
 import { PerformanceAlertPopup } from './components/PerformanceAlertPopup';
@@ -512,15 +513,16 @@ function App({
     (catalogId: string, dropX?: number, dropZ?: number) => {
       const def = CATALOG_MAP[catalogId];
       if (!def) return;
+      const isVenueFixture = isVenueFixtureCatalogId(catalogId);
       const offsetJitter = ((items.length % 5) - 2) * 0.22;
-      const px =
-        dropX !== undefined
-          ? dropX
-          : Math.max(-config.width / 2 + 0.5, Math.min(config.width / 2 - 0.5, offsetJitter));
-      const pz =
-        dropZ !== undefined
-          ? dropZ
-          : Math.max(-config.depth / 2 + 0.5, Math.min(config.depth / 2 - 0.5, offsetJitter * 0.7));
+      const defaultX = isVenueFixture
+        ? Number((config.width / 2 + def.defaultDims.w / 2).toFixed(2))
+        : Math.max(-config.width / 2 + 0.5, Math.min(config.width / 2 - 0.5, offsetJitter));
+      const defaultZ = isVenueFixture
+        ? Number((config.depth / 2 - def.defaultDims.d / 2).toFixed(2))
+        : Math.max(-config.depth / 2 + 0.5, Math.min(config.depth / 2 - 0.5, offsetJitter * 0.7));
+      const px = dropX !== undefined ? dropX : defaultX;
+      const pz = dropZ !== undefined ? dropZ : defaultZ;
       const newItem: StandItem = {
         id: createItemId(catalogId),
         catalogId,
@@ -534,6 +536,13 @@ function App({
         locked: false,
         visible: true,
         artwork: {},
+        ...(isVenueFixture
+          ? {
+              isPermanentFixture: true,
+              fixtureOwner: 'venue' as const,
+              venueBranding: createDefaultVenueBranding(def.defaultDims, catalogId),
+            }
+          : {}),
       };
       const resolved = findNearestAllowedPosition(newItem, px, pz, config, items);
       newItem.x = resolved.x;
@@ -542,10 +551,14 @@ function App({
       setItems(nextItems);
       setRailPanelOpen(false);
       setSelectedItemId(newItem.id);
-      setSelectedSurfaceId(def.surfaces[0]?.id || null);
+      setSelectedSurfaceId(isVenueFixture ? null : def.surfaces[0]?.id || null);
       setSelectedShellWall(null);
       pushHistory(config, nextItems);
-      notify(`Added ${def.shortName}`);
+      notify(
+        isVenueFixture
+          ? `Added permanent ${def.shortName} (configure venue branding in Inspector)`
+          : `Added ${def.shortName}`
+      );
     },
     [items, config, pushHistory, notify]
   );
@@ -1685,12 +1698,66 @@ function App({
         config: JSON.parse(JSON.stringify(proj.config)),
         items: JSON.parse(JSON.stringify(proj.items)),
         customAssets: [...(proj.customAssets || [])],
+        customBuiltAssets: proj.customBuiltAssets
+          ? JSON.parse(JSON.stringify(proj.customBuiltAssets))
+          : undefined,
       };
       setProjects((prev) => [copy, ...prev]);
       notify(`Duplicated "${proj.name}"`);
     },
     [notify]
   );
+
+  const handleDuplicateStandLocation = useCallback(
+    (sourceProj: SavedProject, openImmediately = true) => {
+      const newId = `proj-${Date.now().toString(36)}`;
+      const permanentItems: StandItem[] = JSON.parse(
+        JSON.stringify(sourceProj.items.filter((it) => it.isPermanentFixture))
+      );
+      const copy: SavedProject = {
+        id: newId,
+        name: `${sourceProj.name} — Variation`,
+        updatedAt: Date.now(),
+        config: JSON.parse(JSON.stringify(sourceProj.config)),
+        items: permanentItems,
+        customAssets: [...(sourceProj.customAssets || [])],
+        customBuiltAssets: sourceProj.customBuiltAssets
+          ? JSON.parse(JSON.stringify(sourceProj.customBuiltAssets))
+          : undefined,
+      };
+      setProjects((prev) => [copy, ...prev]);
+      if (openImmediately) {
+        handleOpenProject(copy);
+      }
+      notify(
+        permanentItems.length > 0
+          ? `Created new layout for this stand location (${permanentItems.length} permanent fixture${permanentItems.length === 1 ? '' : 's'} kept)`
+          : `Created new blank layout for this stand location`
+      );
+    },
+    [handleOpenProject, notify]
+  );
+
+  const handleDuplicateCurrentStandLocation = useCallback(() => {
+    const currentSnapshot: SavedProject = {
+      id: activeProjectId,
+      name: projectName,
+      updatedAt: Date.now(),
+      config,
+      items,
+      customAssets,
+      customBuiltAssets,
+    };
+    handleDuplicateStandLocation(currentSnapshot, true);
+  }, [
+    activeProjectId,
+    projectName,
+    config,
+    items,
+    customAssets,
+    customBuiltAssets,
+    handleDuplicateStandLocation,
+  ]);
 
   const handleRenameProject = useCallback(
     (id: string, newName: string) => {
@@ -1892,6 +1959,7 @@ function App({
           onCreateBlankProject={handleCreateBlankProject}
           onCreateFromTemplate={handleCreateProjectFromTemplate}
           onDuplicateProject={handleDuplicateProject}
+          onDuplicateStandLocation={(proj) => handleDuplicateStandLocation(proj, true)}
           onRenameProject={handleRenameProject}
           onDeleteProject={handleDeleteProject}
           onExportProjectJson={handleExportProjectJson}
@@ -1975,6 +2043,7 @@ function App({
           setTourActive(false);
           setShowDashboard(true);
         }}
+        onDuplicateStandLocation={handleDuplicateCurrentStandLocation}
         onOpenTemplates={() => setShowTemplatesModal(true)}
         onOpenEstimate={() => {
           trackLaunchMetric({
@@ -2054,6 +2123,7 @@ function App({
           paintAssetId={paintAssetId}
           onSetPaintAssetId={setPaintAssetId}
           onApplyTemplate={applyTemplate}
+          onDuplicateStandLocation={handleDuplicateCurrentStandLocation}
           currency={currency}
           pricingMode={pricingMode}
         />

@@ -29,6 +29,11 @@ export const CATEGORY_META: Record<
     shortLabel: 'Extras',
     description: 'Truss spotlight rigs, brochure stands & architectural planters',
   },
+  fixtures: {
+    label: 'Venue & Permanent Fixtures',
+    shortLabel: 'Fixtures',
+    description: 'Hall pillars, columns, utility cabinets & permanent venue structures',
+  },
 };
 
 export const EQUIPMENT_CATALOG: CatalogItemDef[] = [
@@ -642,6 +647,88 @@ export const EQUIPMENT_CATALOG: CatalogItemDef[] = [
     printAreaM2: 0,
     badge: 'Lighting',
     surfaces: [],
+  },
+
+  // ================= VENUE & PERMANENT FIXTURES =================
+  {
+    id: 'venue-pillar-square',
+    name: 'Venue Structural Pillar (Square)',
+    shortName: 'Square Pillar',
+    category: 'fixtures',
+    description:
+      'Permanent exhibition hall structural pillar. Place on the stand edge, open wall, or outer meter grid and configure whether venue branding is permitted.',
+    defaultDims: { w: 0.6, h: 3.8, d: 0.6 },
+    minDims: { w: 0.25, h: 2.0, d: 0.25 },
+    maxDims: { w: 2.5, h: 6.0, d: 2.5 },
+    resizable: true,
+    priceHire: 0,
+    priceBuy: 0,
+    printAreaM2: 0,
+    badge: 'Venue Fixture',
+    surfaces: [
+      { id: 'front', label: 'Front Pillar Face', widthMm: 600, heightMm: 2000, defaultRole: 'logo' },
+      { id: 'back', label: 'Back Pillar Face', widthMm: 600, heightMm: 2000, defaultRole: 'logo' },
+      { id: 'left', label: 'Left Pillar Face', widthMm: 600, heightMm: 2000, defaultRole: 'logo' },
+      { id: 'right', label: 'Right Pillar Face', widthMm: 600, heightMm: 2000, defaultRole: 'logo' },
+    ],
+  },
+  {
+    id: 'venue-pillar-round',
+    name: 'Venue Structural Column (Round)',
+    shortName: 'Round Column',
+    category: 'fixtures',
+    description:
+      'Permanent cylindrical hall column. Place inside or outside the stand footprint and set optional permitted column-wrap branding dimensions.',
+    defaultDims: { w: 0.65, h: 3.8, d: 0.65 },
+    minDims: { w: 0.25, h: 2.0, d: 0.25 },
+    maxDims: { w: 2.5, h: 6.0, d: 2.5 },
+    resizable: true,
+    priceHire: 0,
+    priceBuy: 0,
+    printAreaM2: 0,
+    badge: 'Venue Fixture',
+    surfaces: [
+      { id: 'front', label: 'Column Wrap Graphic', widthMm: 1200, heightMm: 2000, defaultRole: 'logo' },
+    ],
+  },
+  {
+    id: 'venue-wall-segment',
+    name: 'Permanent Venue Wall / Bulkhead',
+    shortName: 'Venue Wall',
+    category: 'fixtures',
+    description:
+      'Fixed exhibition hall wall, corridor bulkhead, or neighboring permanent partition outside or along your stand boundary.',
+    defaultDims: { w: 2.4, h: 3.5, d: 0.35 },
+    minDims: { w: 0.6, h: 2.0, d: 0.15 },
+    maxDims: { w: 8.0, h: 6.0, d: 1.5 },
+    resizable: true,
+    priceHire: 0,
+    priceBuy: 0,
+    printAreaM2: 0,
+    badge: 'Venue Fixture',
+    surfaces: [
+      { id: 'front', label: 'Front Wall Zone', widthMm: 2400, heightMm: 2000, defaultRole: 'hero' },
+      { id: 'back', label: 'Rear Wall Zone', widthMm: 2400, heightMm: 2000, defaultRole: 'hero' },
+    ],
+  },
+  {
+    id: 'venue-service-box',
+    name: 'Venue Utility / Fire / Rigging Point',
+    shortName: 'Utility Box',
+    category: 'fixtures',
+    description:
+      'Fixed venue electrical riser, fire hose cabinet, or service bulkhead that must be accounted for in stand design.',
+    defaultDims: { w: 0.8, h: 2.2, d: 0.45 },
+    minDims: { w: 0.3, h: 0.8, d: 0.2 },
+    maxDims: { w: 2.0, h: 3.5, d: 1.2 },
+    resizable: true,
+    priceHire: 0,
+    priceBuy: 0,
+    printAreaM2: 0,
+    badge: 'Venue Fixture',
+    surfaces: [
+      { id: 'front', label: 'Front Cover Panel', widthMm: 800, heightMm: 1600, defaultRole: 'logo' },
+    ],
   },
 ];
 

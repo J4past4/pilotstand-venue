@@ -1,5 +1,11 @@
 import { CATALOG_MAP } from '../data/catalog';
 import type { BrandAsset, CurrencyCode, StandConfig, StandItem } from '../types/stand';
+import {
+  computeVenueFixtureBrandableAreaM2,
+  getEffectiveFaceZoneWidth,
+  getFaceLabel,
+  isVenuePermanentFixture,
+} from './fixtures';
 import { calculateEstimate, evaluateCompliance, formatArea, formatLength, formatMoney } from './pricing';
 
 export function exportProductionBriefHtml(
@@ -50,6 +56,26 @@ export function exportProductionBriefHtml(
 
   items.forEach((item) => {
     if (item.visible === false) return;
+    if (isVenuePermanentFixture(item)) {
+      const vb = item.venueBranding;
+      if (!vb || !vb.allowed) return;
+      const faces = vb.allowedFaces.length > 0 ? vb.allowedFaces : (['front'] as const);
+      faces.forEach((face) => {
+        const art = item.artwork[face];
+        const wMm = Math.round(getEffectiveFaceZoneWidth(item, face) * 1000);
+        const hMm = Math.round(Math.min(item.dims.h, vb.zoneHeightM) * 1000);
+        artworkSpecs.push({
+          itemName: `${item.name} (Venue Fixture)`,
+          surfaceLabel: `${getFaceLabel(item.catalogId, face)} @ +${Math.round(vb.zoneBottomM * 1000)}mm`,
+          dimensionsMm: `${wMm} × ${hMm} mm`,
+          assignedAsset: art?.assetId
+            ? assetsMap.get(art.assetId)?.name || 'Uploaded Artwork'
+            : `Auto-Branded (${config.brandName})`,
+          fit: art?.fit || 'cover',
+        });
+      });
+      return;
+    }
     const def = CATALOG_MAP[item.catalogId];
     if (!def || def.surfaces.length === 0) return;
     def.surfaces.forEach((surface) => {
@@ -69,6 +95,8 @@ export function exportProductionBriefHtml(
       });
     });
   });
+
+  const permanentFixtures = items.filter((item) => item.visible !== false && item.isPermanentFixture);
 
   const html = `<!doctype html>
 <html lang="en">
@@ -199,6 +227,43 @@ export function exportProductionBriefHtml(
     <div class="swatch"><span class="swatch-dot" style="background:${config.wallColor}"></span>Walls: <code>${config.wallColor}</code></div>
     <div class="swatch"><span class="swatch-dot" style="background:${config.floorColor}"></span>Flooring: <strong>${config.floorMaterial}</strong></div>
   </div>
+
+  ${
+    permanentFixtures.length > 0
+      ? `<h2>Permanent Site Fixtures &amp; Venue Branding Rules</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Fixture</th>
+        <th>Ownership</th>
+        <th>Size (W × D × H)</th>
+        <th>Position (X, Z)</th>
+        <th>Branding Permission &amp; Area</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${permanentFixtures
+        .map((f) => {
+          const isVenue = isVenuePermanentFixture(f);
+          const ownerLabel = isVenue ? 'Exhibition / Venue' : 'Own Fixed Asset';
+          const brandSummary = !isVenue
+            ? 'Own asset (full branding)'
+            : f.venueBranding?.allowed
+              ? `Allowed — ${computeVenueFixtureBrandableAreaM2(f).toFixed(2)} m² (${f.venueBranding.allowedFaces.join(', ')}; ${f.venueBranding.zoneWidthM}×${f.venueBranding.zoneHeightM}m @ +${f.venueBranding.zoneBottomM}m)${f.venueBranding.notes ? ` · ${f.venueBranding.notes}` : ''}`
+              : 'Not permitted by venue';
+          return `<tr>
+          <td><strong>${escapeHtml(f.name)}</strong></td>
+          <td>${escapeHtml(ownerLabel)}</td>
+          <td class="num">${f.dims.w} × ${f.dims.d} × ${f.dims.h} m</td>
+          <td class="num">${f.x.toFixed(2)}m, ${f.z.toFixed(2)}m</td>
+          <td>${escapeHtml(brandSummary)}</td>
+        </tr>`;
+        })
+        .join('')}
+    </tbody>
+  </table>`
+      : ''
+  }
 
   <h2>Print &amp; Artwork Production Schedule</h2>
   <table>
