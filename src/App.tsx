@@ -88,6 +88,7 @@ import {
   ensureGoogleFontPairingLoaded,
 } from './utils/brandKit';
 import { exportProductionBriefHtml } from './utils/briefExport';
+import { downloadDesignerSpecCsv, exportDesignerBriefHtml } from './utils/designerExport';
 import { calculateEstimate, evaluateCompliance, formatArea, formatLength } from './utils/pricing';
 import { trackLaunchMetric } from './utils/launchMetrics';
 import { PerformanceAlertPopup } from './components/PerformanceAlertPopup';
@@ -1045,6 +1046,40 @@ function App({
       }
     );
   }, [requirePublicAccountOrRun, projectName, config, items, assetsMap, currency, pricingMode, notify]);
+
+  const handleExportDesignerPack = useCallback(() => {
+    requirePublicAccountOrRun(
+      'Create a free account to export the Graphic Designer Artwork Specification Pack.',
+      () => {
+        const snap = viewportRef.current?.captureSnapshot(1400, 840) || null;
+        const est = calculateEstimate(config, items, pricingMode);
+        const pack = exportDesignerBriefHtml(projectName, config, items, assetsMap, snap);
+        trackLaunchMetric({
+          event: 'brief_exported',
+          estimatedTotalGbp: Math.round(est.grandTotalGbp),
+          standAreaM2: Math.round(config.width * config.depth),
+          categories: Array.from(
+            new Set(items.map((it) => CATALOG_MAP[it.catalogId]?.category).filter(Boolean) as string[])
+          ),
+        });
+        notify(
+          `Opened Designer Artwork Pack (${pack.standSummary.totalBrandedSurfaces} branded surface${pack.standSummary.totalBrandedSurfaces === 1 ? '' : 's'})`
+        );
+      }
+    );
+  }, [requirePublicAccountOrRun, projectName, config, items, assetsMap, pricingMode, notify]);
+
+  const handleDownloadDesignerCsv = useCallback(() => {
+    requirePublicAccountOrRun(
+      'Create a free account to download the Graphic Designer CSV measurements schedule.',
+      () => {
+        const pack = downloadDesignerSpecCsv(projectName, config, items, assetsMap);
+        notify(
+          `Downloaded Designer CSV schedule (${pack.standSummary.totalBrandedSurfaces} branded surface${pack.standSummary.totalBrandedSurfaces === 1 ? '' : 's'})`
+        );
+      }
+    );
+  }, [requirePublicAccountOrRun, projectName, config, items, assetsMap, notify]);
 
   const handleDownloadJson = useCallback(() => {
     requirePublicAccountOrRun(
@@ -2270,6 +2305,8 @@ function App({
         onClose={() => setShowExportModal(false)}
         onDownloadPng={handleDownloadPng}
         onExportBrief={handleExportBrief}
+        onExportDesignerPack={handleExportDesignerPack}
+        onDownloadDesignerCsv={handleDownloadDesignerCsv}
         onDownloadJson={handleDownloadJson}
       />
     </div>

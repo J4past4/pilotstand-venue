@@ -3,8 +3,10 @@ import {
   Camera,
   Check,
   FileJson,
+  FileSpreadsheet,
   FileText,
   FolderPlus,
+  Palette,
   Trash2,
   Upload,
   X,
@@ -405,6 +407,8 @@ interface ExportModalProps {
   onClose: () => void;
   onDownloadPng: () => void;
   onExportBrief: () => void;
+  onExportDesignerPack: () => void;
+  onDownloadDesignerCsv: () => void;
   onDownloadJson: () => void;
 }
 
@@ -413,6 +417,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   onClose,
   onDownloadPng,
   onExportBrief,
+  onExportDesignerPack,
+  onDownloadDesignerCsv,
   onDownloadJson,
 }) => {
   useEscapeKey(open, onClose);
@@ -432,6 +438,41 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         </div>
 
         <div className="export-options-stack">
+          <div className="export-option-group">
+            <button
+              id="export-designer-pack-btn"
+              className="export-option-card export-option-designer"
+              onClick={() => {
+                onExportDesignerPack();
+                onClose();
+              }}
+            >
+              <div className="export-icon designer">
+                <Palette size={20} />
+              </div>
+              <div>
+                <div className="export-title">
+                  Export for Graphic Designer <span className="export-badge">Artwork Pack</span>
+                </div>
+                <div className="export-desc">
+                  Specialised artwork handoff listing every branded surface with exact mm trim,
+                  bleed &amp; safe-zone diagrams, CMYK/HEX palette, DPI checks, and file naming.
+                </div>
+              </div>
+            </button>
+            <button
+              id="export-designer-csv-btn"
+              className="export-sub-action-btn"
+              onClick={() => {
+                onDownloadDesignerCsv();
+                onClose();
+              }}
+            >
+              <FileSpreadsheet size={14} />
+              <span>Download Branded Measurements Schedule (.CSV)</span>
+            </button>
+          </div>
+
           <button
             id="export-brief-btn"
             className="export-option-card"
