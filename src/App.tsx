@@ -89,6 +89,16 @@ import {
 import { exportProductionBriefHtml } from './utils/briefExport';
 import { calculateEstimate, evaluateCompliance, formatArea, formatLength } from './utils/pricing';
 import { trackLaunchMetric } from './utils/launchMetrics';
+import { PerformanceAlertPopup } from './components/PerformanceAlertPopup';
+import {
+  detectInitialPerformanceMode,
+  loadSavedPerformanceMode,
+  PERFORMANCE_PROFILES,
+  savePerformanceMode,
+  type PerformanceMode,
+  type SlowPerformanceAlert,
+  type ViewportPerformanceMetrics,
+} from './utils/performanceMode';
 
 const STORAGE_KEY = 'zuki_exhibition_planner_projects_v2';
 const ASSET_LIBRARY_STORAGE_KEY = 'zuki_custom_asset_library_v1';
@@ -297,6 +307,41 @@ function App({
     setToast(msg);
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(null), 2600);
+  }, []);
+
+  // Device graphics & performance mode (persisted per device in localStorage)
+  const [performanceMode, setPerformanceMode] = useState<PerformanceMode>(
+    () => loadSavedPerformanceMode() ?? detectInitialPerformanceMode()
+  );
+  const [performanceMetrics, setPerformanceMetrics] = useState<ViewportPerformanceMetrics | null>(
+    null
+  );
+  const [slowPerfAlert, setSlowPerfAlert] = useState<SlowPerformanceAlert | null>(null);
+  const dismissedSlowModesRef = useRef<Set<PerformanceMode>>(new Set());
+
+  const handleChangePerformanceMode = useCallback(
+    (nextMode: PerformanceMode) => {
+      setPerformanceMode(nextMode);
+      savePerformanceMode(nextMode);
+      setSlowPerfAlert(null);
+      // Allow future alerts if user switches to a higher mode that later runs slow
+      dismissedSlowModesRef.current.delete(nextMode);
+      const profile = PERFORMANCE_PROFILES[nextMode];
+      notify(`Performance: ${profile.label} — ${profile.tagline}`);
+    },
+    [notify]
+  );
+
+  const handleSlowPerformanceDetected = useCallback((alert: SlowPerformanceAlert) => {
+    if (dismissedSlowModesRef.current.has(alert.currentMode)) return;
+    setSlowPerfAlert(alert);
+  }, []);
+
+  const handleDismissSlowAlert = useCallback(() => {
+    setSlowPerfAlert((prev) => {
+      if (prev) dismissedSlowModesRef.current.add(prev.currentMode);
+      return null;
+    });
   }, []);
 
   const allAssets = useMemo(
@@ -1739,6 +1784,9 @@ function App({
         }}
         config={config}
         onUpdateConfig={updateConfig}
+        performanceMode={performanceMode}
+        onChangePerformanceMode={handleChangePerformanceMode}
+        performanceMetrics={performanceMetrics}
         canUndo={canUndo}
         canRedo={canRedo}
         onUndo={handleUndo}
@@ -1851,8 +1899,11 @@ function App({
             selectedShellWall={selectedShellWall}
             viewMode={viewMode}
             navMode={viewportNavMode}
+            performanceMode={performanceMode}
             compliance={compliance}
             paintAssetId={paintAssetId}
+            onPerformanceMetrics={setPerformanceMetrics}
+            onSlowPerformanceDetected={handleSlowPerformanceDetected}
             onSelectItem={(itemId, surfaceId) => {
               setRailPanelOpen(false);
               setStandDetailsOpen(false);
@@ -2041,6 +2092,12 @@ function App({
               notify('Undid AI stand changes');
             }}
             onClearChat={() => setAgentMessages([])}
+          />
+
+          <PerformanceAlertPopup
+            alert={slowPerfAlert}
+            onApplyMode={handleChangePerformanceMode}
+            onDismiss={handleDismissSlowAlert}
           />
 
           {toast && <div role="status" className="studio-toast">{toast}</div>}

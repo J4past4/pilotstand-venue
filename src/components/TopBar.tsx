@@ -11,10 +11,12 @@ import {
   CopyPlus,
   Eye,
   FolderOpen,
+  Gauge,
   Grid2x2,
   LayoutTemplate,
   LogOut,
   Magnet,
+  Monitor,
   Moon,
   MoreHorizontal,
   Palette,
@@ -32,10 +34,17 @@ import {
   Upload,
   UserPlus,
   Users,
+  Zap,
 } from 'lucide-react';
 import type { CurrencyCode, LightingPreset, SavedProject, StandConfig, ViewMode } from '../types/stand';
 import type { BetaUser } from './BetaAuthGate';
 import { formatMoney } from '../utils/pricing';
+import {
+  PERFORMANCE_MODE_ORDER,
+  PERFORMANCE_PROFILES,
+  type PerformanceMode,
+  type ViewportPerformanceMetrics,
+} from '../utils/performanceMode';
 import './header.css';
 
 interface TopBarProps {
@@ -51,6 +60,9 @@ interface TopBarProps {
   onChangeViewMode: (mode: ViewMode) => void;
   config: StandConfig;
   onUpdateConfig: (patch: Partial<StandConfig>) => void;
+  performanceMode: PerformanceMode;
+  onChangePerformanceMode: (mode: PerformanceMode) => void;
+  performanceMetrics?: ViewportPerformanceMetrics | null;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -84,6 +96,12 @@ const LIGHTING_OPTIONS: { id: LightingPreset; label: string; icon: React.ReactNo
   { id: 'dramatic', label: 'Keynote', icon: <Moon size={13} /> },
 ];
 
+function getPerformanceIcon(mode: PerformanceMode, size = 13): React.ReactNode {
+  if (mode === 'eco') return <Zap size={size} />;
+  if (mode === 'balanced') return <Gauge size={size} />;
+  return <Monitor size={size} />;
+}
+
 export const TopBar: React.FC<TopBarProps> = ({
   projectName,
   onChangeProjectName,
@@ -97,6 +115,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   onChangeViewMode,
   config,
   onUpdateConfig,
+  performanceMode,
+  onChangePerformanceMode,
+  performanceMetrics,
   canUndo,
   canRedo,
   onUndo,
@@ -124,22 +145,28 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenAdminInsights,
 }) => {
   const estimateTotal = formatMoney(estimatedTotalGbp, currency);
+  const activePerfProfile = PERFORMANCE_PROFILES[performanceMode];
   const [editingName, setEditingName] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const [perfMenuOpen, setPerfMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const viewMenuRef = useRef<HTMLDivElement | null>(null);
+  const perfMenuRef = useRef<HTMLDivElement | null>(null);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!viewMenuOpen && !moreMenuOpen && !projectMenuOpen) return;
+    if (!viewMenuOpen && !perfMenuOpen && !moreMenuOpen && !projectMenuOpen) return;
     const handleOutside = (e: MouseEvent) => {
       if (projectMenuOpen && projectMenuRef.current && !projectMenuRef.current.contains(e.target as Node)) {
         setProjectMenuOpen(false);
       }
       if (viewMenuOpen && viewMenuRef.current && !viewMenuRef.current.contains(e.target as Node)) {
         setViewMenuOpen(false);
+      }
+      if (perfMenuOpen && perfMenuRef.current && !perfMenuRef.current.contains(e.target as Node)) {
+        setPerfMenuOpen(false);
       }
       if (moreMenuOpen && moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
         setMoreMenuOpen(false);
@@ -149,6 +176,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       if (e.key === 'Escape') {
         setProjectMenuOpen(false);
         setViewMenuOpen(false);
+        setPerfMenuOpen(false);
         setMoreMenuOpen(false);
       }
     };
@@ -158,7 +186,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       window.removeEventListener('mousedown', handleOutside);
       window.removeEventListener('keydown', handleEsc);
     };
-  }, [viewMenuOpen, moreMenuOpen, projectMenuOpen]);
+  }, [viewMenuOpen, perfMenuOpen, moreMenuOpen, projectMenuOpen]);
 
   const handleLogoClick = onGoToDashboard || onOpenProjects;
   const recentProjects = [...projects].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
@@ -782,6 +810,87 @@ export const TopBar: React.FC<TopBarProps> = ({
                       </button>
                     ))}
                   </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="topbar-view-menu-wrap" ref={perfMenuRef}>
+            <button
+              id="btn-performance-mode"
+              type="button"
+              className={`tool-chip perf-mode-chip perf-mode-${performanceMode} ${perfMenuOpen ? 'active' : ''}`}
+              onClick={() => {
+                setViewMenuOpen(false);
+                setPerfMenuOpen((v) => !v);
+              }}
+              aria-expanded={perfMenuOpen}
+              aria-haspopup="menu"
+              title={`Graphics & Performance: ${activePerfProfile.label} (${activePerfProfile.deviceHint})`}
+              aria-label={`Performance mode: ${activePerfProfile.label}`}
+            >
+              {getPerformanceIcon(performanceMode, 13)}
+              <span>{activePerfProfile.shortLabel}</span>
+              <ChevronDown size={12} />
+            </button>
+
+            {perfMenuOpen && (
+              <div
+                className="view-options-popover perf-mode-popover"
+                role="menu"
+                id="performance-mode-popover"
+                aria-label="Device performance modes"
+              >
+                <div className="perf-popover-head">
+                  <span className="view-popover-label">Device Performance</span>
+                  {performanceMetrics && (
+                    <span className="perf-metrics-pill">
+                      {performanceMetrics.isSoftwareWebGL
+                        ? 'CPU WebGL'
+                        : performanceMetrics.isIdle
+                          ? 'Idle · GPU sleeping'
+                          : performanceMetrics.avgFps !== null
+                            ? `${performanceMetrics.avgFps} FPS`
+                            : 'Measuring…'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="perf-mode-list">
+                  {PERFORMANCE_MODE_ORDER.map((modeId) => {
+                    const profile = PERFORMANCE_PROFILES[modeId];
+                    const isSelected = performanceMode === modeId;
+                    return (
+                      <button
+                        key={modeId}
+                        id={`perf-mode-opt-${modeId}`}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={isSelected}
+                        className={`perf-mode-option ${isSelected ? 'active' : ''}`}
+                        onClick={() => {
+                          onChangePerformanceMode(modeId);
+                          setPerfMenuOpen(false);
+                        }}
+                      >
+                        <div className="perf-mode-opt-icon" aria-hidden="true">
+                          {getPerformanceIcon(modeId, 15)}
+                        </div>
+                        <div className="perf-mode-opt-text">
+                          <div className="perf-mode-opt-title">
+                            <span>{profile.label}</span>
+                            {isSelected && <Check size={13} aria-hidden="true" />}
+                          </div>
+                          <span className="perf-mode-opt-tagline">{profile.tagline}</span>
+                          <span className="perf-mode-opt-hint">{profile.deviceHint}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="perf-popover-foot">
+                  Saved for this device · PNG exports always render crisp
                 </div>
               </div>
             )}

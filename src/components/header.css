@@ -517,11 +517,13 @@
     gap: 4px;
   }
 
-  #studio-topbar #btn-view-options span {
+  #studio-topbar #btn-view-options span,
+  #studio-topbar #btn-performance-mode span {
     display: none;
   }
 
-  #studio-topbar #btn-view-options {
+  #studio-topbar #btn-view-options,
+  #studio-topbar #btn-performance-mode {
     padding-inline: 7px;
   }
 }

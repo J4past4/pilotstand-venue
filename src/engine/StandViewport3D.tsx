@@ -24,6 +24,13 @@ import { buildCustomModelMesh } from './modelLoader';
 import { buildCustomBuiltAssetMesh } from './customAssetMesh';
 import { formatLength } from '../utils/pricing';
 import { checkWallCollision, findNearestAllowedPosition } from '../utils/wallCollision';
+import {
+  PERFORMANCE_PROFILES,
+  PerformanceMonitor,
+  type PerformanceMode,
+  type SlowPerformanceAlert,
+  type ViewportPerformanceMetrics,
+} from '../utils/performanceMode';
 
 export interface StandViewportHandle {
   setCameraPreset: (preset: CameraPreset, instant?: boolean) => void;
@@ -45,10 +52,13 @@ interface StandViewportProps {
   selectedShellWall: ShellWallSide | null;
   viewMode: ViewMode;
   navMode?: ViewportNavMode;
+  performanceMode?: PerformanceMode;
   compliance: ComplianceReport;
   paintAssetId: string | null;
   tourActive?: boolean;
   onUserInterruptTour?: () => void;
+  onPerformanceMetrics?: (metrics: ViewportPerformanceMetrics) => void;
+  onSlowPerformanceDetected?: (alert: SlowPerformanceAlert) => void;
   onSelectItem: (itemId: string | null, surfaceId?: string | null) => void;
   onSelectShellWall: (side: ShellWallSide | null) => void;
   onMoveItem: (itemId: string, x: number, z: number, commitHistory: boolean) => void;
@@ -168,10 +178,13 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       selectedShellWall,
       viewMode,
       navMode = 'select',
+      performanceMode = 'high',
       compliance,
       paintAssetId,
       tourActive,
       onUserInterruptTour,
+      onPerformanceMetrics,
+      onSlowPerformanceDetected,
       onSelectItem,
       onSelectShellWall,
       onMoveItem,
@@ -190,6 +203,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
     const orthoCamRef = useRef<THREE.OrthographicCamera | null>(null);
     const activeCamRef = useRef<THREE.Camera | null>(null);
     const controlsRef = useRef<OrbitControls | null>(null);
+    const envRTRef = useRef<THREE.WebGLRenderTarget | null>(null);
 
     const shellGroupRef = useRef<THREE.Group | null>(null);
     const itemsGroupRef = useRef<THREE.Group | null>(null);
@@ -206,7 +220,15 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
     const [spacePanning, setSpacePanning] = useState(false);
     const lastLabelsKeyRef = useRef<string>('');
     const isSoftwareWebGLRef = useRef<boolean>(false);
+    const dirtyRef = useRef<boolean>(true);
+    const lastActivityTsRef = useRef<number>(performance.now());
+    const perfMonitorRef = useRef<PerformanceMonitor>(new PerformanceMonitor(performanceMode));
     const effectiveNavMode: ViewportNavMode = spacePanning ? 'pan' : navMode;
+
+    const markSceneDirty = useCallback(() => {
+      dirtyRef.current = true;
+      lastActivityTsRef.current = performance.now();
+    }, []);
 
     // Keep latest props accessible inside pointer/animation closures
     const propsRef = useRef({
@@ -215,9 +237,12 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       selectedItemId,
       viewMode,
       navMode: effectiveNavMode,
+      performanceMode,
       paintAssetId,
       tourActive,
       onUserInterruptTour,
+      onPerformanceMetrics,
+      onSlowPerformanceDetected,
       onSelectItem,
       onSelectShellWall,
       onMoveItem,
@@ -229,9 +254,12 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       selectedItemId,
       viewMode,
       navMode: effectiveNavMode,
+      performanceMode,
       paintAssetId,
       tourActive,
       onUserInterruptTour,
+      onPerformanceMetrics,
+      onSlowPerformanceDetected,
       onSelectItem,
       onSelectShellWall,
       onMoveItem,
@@ -314,6 +342,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         const ortho = orthoCamRef.current;
         const controls = controlsRef.current;
         if (!persp || !ortho || !controls) return;
+        markSceneDirty();
 
         if (preset === 'top') {
           const container = containerRef.current;
@@ -380,7 +409,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           };
         }
       },
-      [syncControlsInteraction]
+      [syncControlsInteraction, markSceneDirty]
     );
 
     const zoomBy = useCallback((factor: number) => {
@@ -388,6 +417,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       const controls = controlsRef.current;
       if (!cam || !controls) return;
       cameraAnimRef.current.active = false;
+      markSceneDirty();
 
       if (cam instanceof THREE.OrthographicCamera) {
         cam.zoom = Math.max(0.35, Math.min(6, cam.zoom / factor));
@@ -406,7 +436,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           controls.update();
         }
       }
-    }, []);
+    }, [markSceneDirty]);
 
     const frameTargetItemOrStand = useCallback(
       (explicitItemId?: string | null) => {
@@ -422,6 +452,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         const persp = perspCamRef.current;
         const ortho = orthoCamRef.current;
         if (!controls || !persp || !ortho) return;
+        markSceneDirty();
 
         if (activeCamRef.current === ortho) {
           ortho.position.set(item.x, 14, item.z + 0.001);
@@ -447,7 +478,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
           targetLook: look,
         };
       },
-      [applyCameraPreset]
+      [applyCameraPreset, markSceneDirty]
     );
 
     useImperativeHandle(
@@ -527,6 +558,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       scene.fog = new THREE.Fog('#EDE9E2', 18, 48);
       sceneRef.current = scene;
 
+      const initialProfile = PERFORMANCE_PROFILES[propsRef.current.performanceMode];
       const renderer = new THREE.WebGLRenderer({
         antialias: true,
         preserveDrawingBuffer: true,
@@ -541,11 +573,17 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         gpuRendererStr
       );
       isSoftwareWebGLRef.current = isSoftwareRenderer;
-      renderer.setPixelRatio(isSoftwareRenderer ? 1 : Math.min(window.devicePixelRatio, 2));
+      perfMonitorRef.current.setSoftwareWebGL(isSoftwareRenderer);
+      renderer.setPixelRatio(
+        isSoftwareRenderer
+          ? Math.min(1, initialProfile.maxPixelRatio)
+          : Math.min(window.devicePixelRatio || 1, initialProfile.maxPixelRatio)
+      );
       renderer.setSize(width, height);
-      renderer.shadowMap.enabled = !isSoftwareRenderer;
+      renderer.shadowMap.enabled = !isSoftwareRenderer && initialProfile.shadowsEnabled;
       renderer.shadowMap.type = THREE.PCFShadowMap;
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMapping =
+        initialProfile.toneMapping === 'aces' ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
       renderer.toneMappingExposure = 1.06;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       container.innerHTML = '';
@@ -558,8 +596,11 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         const pmrem = new THREE.PMREMGenerator(renderer);
         const roomEnv = new RoomEnvironment();
         envRT = pmrem.fromScene(roomEnv, 0.04);
-        scene.environment = envRT.texture;
-        scene.environmentIntensity = 0.55;
+        envRTRef.current = envRT;
+        if (initialProfile.useEnvironmentIBL) {
+          scene.environment = envRT.texture;
+          scene.environmentIntensity = 0.55;
+        }
         roomEnv.dispose();
         pmrem.dispose();
       }
@@ -580,7 +621,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       // OrbitControls
       const controls = new OrbitControls(persp, renderer.domElement);
       controls.enableDamping = true;
-      controls.dampingFactor = 0.08;
+      controls.dampingFactor = initialProfile.dampingFactor;
       controls.enablePan = true;
       controls.screenSpacePanning = true;
       controls.zoomToCursor = true;
@@ -594,12 +635,16 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       controls.update();
       controlsRef.current = controls;
 
-      // Stop camera animation if user manually interacts
+      // Stop camera animation if user manually interacts & wake idle render loop
       controls.addEventListener('start', () => {
+        markSceneDirty();
         cameraAnimRef.current.active = false;
         if (propsRef.current.tourActive && propsRef.current.onUserInterruptTour) {
           propsRef.current.onUserInterruptTour();
         }
+      });
+      controls.addEventListener('change', () => {
+        markSceneDirty();
       });
 
       // Surrounding Exhibition Hall Floor
@@ -771,6 +816,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         }
       };
 
+      let lastHoverRaycastTs = 0;
+
       const onPointerMove = (ev: PointerEvent) => {
         updatePointerNDC(ev);
         const drag = dragStateRef.current;
@@ -825,11 +872,18 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
                 }
               }
 
+              markSceneDirty();
               moveItem(drag.itemId, nx, nz, false);
             }
           }
           return;
         }
+
+        // Throttle hover raycasting according to active performance profile
+        const hoverInterval = PERFORMANCE_PROFILES[propsRef.current.performanceMode].hoverRaycastIntervalMs;
+        const nowTs = performance.now();
+        if (nowTs - lastHoverRaycastTs < hoverInterval) return;
+        lastHoverRaycastTs = nowTs;
 
         // Hover feedback in Paint Mode, Navigation Mode, or default cursor
         if (propsRef.current.paintAssetId) {
@@ -946,13 +1000,17 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         ortho.left = -halfH * a;
         ortho.right = halfH * a;
         ortho.updateProjectionMatrix();
+        markSceneDirty();
       });
       ro.observe(container);
 
-      // Render Loop + Dimension Label Projection
+      // Render Loop + Dimension Label Projection + Performance Monitoring
       let animId = 0;
       let frameCount = 0;
       let nextSoftwareRenderTs = 0;
+      let lastRenderedTs = 0;
+      let lastMetricsReportTs = 0;
+      let wasIdle = false;
       const projVec = new THREE.Vector3();
 
       const animate = (now: number = performance.now()) => {
@@ -961,9 +1019,48 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         if (isSoftwareWebGLRef.current && frameCount > 0 && now < nextSoftwareRenderTs) {
           return;
         }
+
+        const profile = PERFORMANCE_PROFILES[propsRef.current.performanceMode];
+
+        // On-demand idle sleep in Balanced / Eco modes: skip GPU work when camera & scene are still
+        const isAnimatingCam = cameraAnimRef.current.active && activeCamRef.current === persp;
+        const isDragging = dragStateRef.current.active;
+        const isWithinActivityWindow = now - lastActivityTsRef.current < 450;
+        const shouldRender =
+          frameCount === 0 ||
+          !profile.renderOnDemandWhenIdle ||
+          dirtyRef.current ||
+          isAnimatingCam ||
+          isDragging ||
+          isWithinActivityWindow;
+
+        if (!shouldRender) {
+          if (!wasIdle || now - lastMetricsReportTs > 1500) {
+            wasIdle = true;
+            lastMetricsReportTs = now;
+            propsRef.current.onPerformanceMetrics?.({
+              avgFps: perfMonitorRef.current.getAverageFps(),
+              isIdle: true,
+              isSoftwareWebGL: isSoftwareWebGLRef.current,
+            });
+          }
+          return;
+        }
+
+        // Frame-rate pacing when targetFps is capped (e.g. 30 FPS Balanced, 24 FPS Eco)
+        if (profile.targetFps > 0 && frameCount > 0 && !dirtyRef.current) {
+          const minIntervalMs = 1000 / profile.targetFps;
+          if (now - lastRenderedTs < minIntervalMs - 1) {
+            return;
+          }
+        }
+
+        wasIdle = false;
+        dirtyRef.current = false;
+        lastRenderedTs = now;
         frameCount += 1;
 
-        if (cameraAnimRef.current.active && activeCamRef.current === persp) {
+        if (isAnimatingCam) {
           persp.position.lerp(cameraAnimRef.current.targetPos, 0.12);
           controls.target.lerp(cameraAnimRef.current.targetLook, 0.12);
           if (
@@ -981,13 +1078,29 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         const cam = activeCamRef.current || persp;
         const renderStart = performance.now();
         renderer.render(scene, cam);
+        const renderMs = performance.now() - renderStart;
+
         if (isSoftwareWebGLRef.current) {
-          const renderMs = performance.now() - renderStart;
           nextSoftwareRenderTs = performance.now() + Math.max(200, renderMs * 2);
         }
 
-        // Update 2D projected dimension & aisle badges immediately on frame 1 and every 4 frames
-        if ((frameCount === 1 || frameCount % 4 === 0) && propsRef.current.config.showDimensions) {
+        // Record active frame for slow-device detection & live FPS readout
+        const slowAlert = perfMonitorRef.current.recordActiveFrame(now, renderMs);
+        if (slowAlert) {
+          propsRef.current.onSlowPerformanceDetected?.(slowAlert);
+        }
+        if (now - lastMetricsReportTs >= 1000) {
+          lastMetricsReportTs = now;
+          propsRef.current.onPerformanceMetrics?.({
+            avgFps: perfMonitorRef.current.getAverageFps(),
+            isIdle: false,
+            isSoftwareWebGL: isSoftwareWebGLRef.current,
+          });
+        }
+
+        // Update 2D projected dimension & aisle badges according to profile interval
+        const labelInterval = profile.labelUpdateIntervalFrames;
+        if ((frameCount === 1 || frameCount % labelInterval === 0) && propsRef.current.config.showDimensions) {
           const { config: cfg } = propsRef.current;
           const cw = container.clientWidth;
           const ch = container.clientHeight;
@@ -1070,9 +1183,10 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         window.removeEventListener('pointercancel', onPointerCancel);
         controls.dispose();
         envRT?.dispose();
+        envRTRef.current = null;
         renderer.dispose();
       };
-    }, [frameTargetItemOrStand]);
+    }, [frameTargetItemOrStand, markSceneDirty]);
 
     // Sync OrbitControls mouse bindings whenever navMode or viewMode changes
     useEffect(() => {
@@ -1118,6 +1232,51 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       }
     }, [viewMode, applyCameraPreset]);
 
+    // Dynamically apply Performance Mode changes without recreating WebGL context
+    useEffect(() => {
+      const renderer = rendererRef.current;
+      const scene = sceneRef.current;
+      const controls = controlsRef.current;
+      const container = containerRef.current;
+      const profile = PERFORMANCE_PROFILES[performanceMode];
+
+      perfMonitorRef.current.setMode(performanceMode);
+
+      if (renderer && container) {
+        const nextPR = isSoftwareWebGLRef.current
+          ? Math.min(1, profile.maxPixelRatio)
+          : Math.min(window.devicePixelRatio || 1, profile.maxPixelRatio);
+        renderer.setPixelRatio(nextPR);
+        renderer.setSize(container.clientWidth || 1, container.clientHeight || 1);
+        renderer.shadowMap.enabled = !isSoftwareWebGLRef.current && profile.shadowsEnabled;
+        renderer.shadowMap.needsUpdate = true;
+        renderer.toneMapping =
+          profile.toneMapping === 'aces' ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+      }
+
+      if (scene) {
+        scene.environment =
+          profile.useEnvironmentIBL && !isSoftwareWebGLRef.current
+            ? envRTRef.current?.texture ?? null
+            : null;
+        // Recompile materials cleanly when shadows / environment IBL toggle
+        scene.traverse((obj) => {
+          if (obj instanceof THREE.Mesh && obj.material) {
+            const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+            for (const m of mats) {
+              m.needsUpdate = true;
+            }
+          }
+        });
+      }
+
+      if (controls) {
+        controls.dampingFactor = profile.dampingFactor;
+      }
+
+      markSceneDirty();
+    }, [performanceMode, markSceneDirty]);
+
     // Update Lighting Preset & Hall Backdrop
     useEffect(() => {
       const scene = sceneRef.current;
@@ -1132,6 +1291,11 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         disposeLight(child);
       }
 
+      const profile = PERFORMANCE_PROFILES[performanceMode];
+      const useShadows = !isSoftwareWebGLRef.current && profile.shadowsEnabled;
+      const shadowSize = profile.shadowMapSize;
+      const iblBoost = profile.useEnvironmentIBL ? 1 : 1.24;
+
       const preset = config.lightingPreset;
       const frustumHalf = Math.max(config.width, config.depth, 4) * 0.95;
       if (preset === 'dramatic') {
@@ -1142,20 +1306,24 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         if (hallFloor) {
           (hallFloor.material as THREE.MeshStandardMaterial).color.set('#303642');
         }
-        const hemi = new THREE.HemisphereLight('#9DB4D4', '#1E232D', 0.45);
+        const hemi = new THREE.HemisphereLight('#9DB4D4', '#1E232D', 0.45 * iblBoost);
         lightsGroup.add(hemi);
 
         const spot1 = new THREE.SpotLight('#FFF4DC', 46, 20, Math.PI / 4, 0.55, 1.3);
         spot1.position.set(2.8, 6.2, 3.6);
-        spot1.castShadow = true;
-        spot1.shadow.mapSize.set(2048, 2048);
-        spot1.shadow.bias = -0.00015;
-        spot1.shadow.normalBias = 0.025;
+        spot1.castShadow = useShadows;
+        if (useShadows) {
+          spot1.shadow.mapSize.set(shadowSize, shadowSize);
+          spot1.shadow.bias = -0.00015;
+          spot1.shadow.normalBias = 0.025;
+        }
         lightsGroup.add(spot1);
 
-        const spot2 = new THREE.SpotLight('#E2EEFF', 30, 18, Math.PI / 3.5, 0.6, 1.4);
-        spot2.position.set(-3.2, 5.5, 2.2);
-        lightsGroup.add(spot2);
+        if (!profile.simplifiedLighting) {
+          const spot2 = new THREE.SpotLight('#E2EEFF', 30, 18, Math.PI / 3.5, 0.6, 1.4);
+          spot2.position.set(-3.2, 5.5, 2.2);
+          lightsGroup.add(spot2);
+        }
       } else if (preset === 'daylight') {
         scene.background = new THREE.Color('#F2F4F7');
         scene.fog = new THREE.Fog('#F2F4F7', 22, 55);
@@ -1164,24 +1332,28 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         if (hallFloor) {
           (hallFloor.material as THREE.MeshStandardMaterial).color.set('#FFFFFF');
         }
-        const hemi = new THREE.HemisphereLight('#FFFFFF', '#D5D8DC', 0.95);
+        const hemi = new THREE.HemisphereLight('#FFFFFF', '#D5D8DC', 0.95 * iblBoost);
         lightsGroup.add(hemi);
 
         const sun = new THREE.DirectionalLight('#FFFDF8', 1.45);
         sun.position.set(6, 10, 7);
-        sun.castShadow = true;
-        sun.shadow.mapSize.set(2048, 2048);
-        sun.shadow.camera.left = -frustumHalf;
-        sun.shadow.camera.right = frustumHalf;
-        sun.shadow.camera.top = frustumHalf;
-        sun.shadow.camera.bottom = -frustumHalf;
-        sun.shadow.bias = -0.00015;
-        sun.shadow.normalBias = 0.028;
+        sun.castShadow = useShadows;
+        if (useShadows) {
+          sun.shadow.mapSize.set(shadowSize, shadowSize);
+          sun.shadow.camera.left = -frustumHalf;
+          sun.shadow.camera.right = frustumHalf;
+          sun.shadow.camera.top = frustumHalf;
+          sun.shadow.camera.bottom = -frustumHalf;
+          sun.shadow.bias = -0.00015;
+          sun.shadow.normalBias = 0.028;
+        }
         lightsGroup.add(sun);
 
-        const fill = new THREE.DirectionalLight('#DCE8F7', 0.45);
-        fill.position.set(-5, 4, -4);
-        lightsGroup.add(fill);
+        if (!profile.simplifiedLighting) {
+          const fill = new THREE.DirectionalLight('#DCE8F7', 0.45);
+          fill.position.set(-5, 4, -4);
+          lightsGroup.add(fill);
+        }
       } else {
         // Default: Crisp Bright Exhibition Hall
         scene.background = new THREE.Color('#EDE9E2');
@@ -1191,31 +1363,36 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         if (hallFloor) {
           (hallFloor.material as THREE.MeshStandardMaterial).color.set('#FAF8F4');
         }
-        const hemi = new THREE.HemisphereLight('#F8FAFF', '#C5C9D1', 0.78);
+        const hemi = new THREE.HemisphereLight('#F8FAFF', '#C5C9D1', 0.78 * iblBoost);
         lightsGroup.add(hemi);
 
         const mainLight = new THREE.DirectionalLight('#FFFBF4', 1.25);
         mainLight.position.set(5.5, 9.2, 6.2);
-        mainLight.castShadow = true;
-        mainLight.shadow.mapSize.set(2048, 2048);
-        mainLight.shadow.camera.left = -frustumHalf;
-        mainLight.shadow.camera.right = frustumHalf;
-        mainLight.shadow.camera.top = frustumHalf;
-        mainLight.shadow.camera.bottom = -frustumHalf;
-        mainLight.shadow.bias = -0.00015;
-        mainLight.shadow.normalBias = 0.028;
+        mainLight.castShadow = useShadows;
+        if (useShadows) {
+          mainLight.shadow.mapSize.set(shadowSize, shadowSize);
+          mainLight.shadow.camera.left = -frustumHalf;
+          mainLight.shadow.camera.right = frustumHalf;
+          mainLight.shadow.camera.top = frustumHalf;
+          mainLight.shadow.camera.bottom = -frustumHalf;
+          mainLight.shadow.bias = -0.00015;
+          mainLight.shadow.normalBias = 0.028;
+        }
         lightsGroup.add(mainLight);
 
-        const rimLight = new THREE.DirectionalLight('#D9E7F8', 0.48);
-        rimLight.position.set(-6, 5.5, -5);
-        lightsGroup.add(rimLight);
+        if (!profile.simplifiedLighting) {
+          const rimLight = new THREE.DirectionalLight('#D9E7F8', 0.48);
+          rimLight.position.set(-6, 5.5, -5);
+          lightsGroup.add(rimLight);
 
-        // Warm overhead exhibition bay fill
-        const bayLight = new THREE.PointLight('#FFF5E6', 6, 14, 1.8);
-        bayLight.position.set(0, 4.4, 0.5);
-        lightsGroup.add(bayLight);
+          // Warm overhead exhibition bay fill
+          const bayLight = new THREE.PointLight('#FFF5E6', 6, 14, 1.8);
+          bayLight.position.set(0, 4.4, 0.5);
+          lightsGroup.add(bayLight);
+        }
       }
-    }, [config.lightingPreset, config.width, config.depth]);
+      markSceneDirty();
+    }, [config.lightingPreset, config.width, config.depth, performanceMode, markSceneDirty]);
 
     // Rebuild Booth Shell + Scale Figures
     useEffect(() => {
@@ -1262,7 +1439,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         }
         shellGroup.add(edge);
       }
-    }, [config, assetsMap, selectedShellWall, textureTick, viewMode]);
+      markSceneDirty();
+    }, [config, assetsMap, selectedShellWall, textureTick, viewMode, markSceneDirty]);
 
     // Rebuild Equipment Items
     const collidingItemId = wallCollision?.itemId ?? null;
@@ -1338,7 +1516,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
 
         itemsGroup.add(meshGroup);
       }
-    }, [items, config, assetsMap, textureTick, viewMode, collidingItemId]);
+      markSceneDirty();
+    }, [items, config, assetsMap, textureTick, viewMode, collidingItemId, markSceneDirty]);
 
     // Rebuild Helpers (Floor Grid, Selection Ring, Boundary Alerts, Venue Height Limit Frame)
     useEffect(() => {
@@ -1562,7 +1741,8 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
         ceilPlane.position.y = heightLimit;
         helpersGroup.add(ceilPlane);
       }
-    }, [config, items, selectedItemId, compliance, wallCollision]);
+      markSceneDirty();
+    }, [config, items, selectedItemId, compliance, wallCollision, markSceneDirty]);
 
     const projectClientToFloor = (clientX: number, clientY: number): { x: number; z: number } => {
       const renderer = rendererRef.current;
