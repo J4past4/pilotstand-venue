@@ -2,15 +2,22 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import type { ExclusiveModelPreset } from '../data/userModels';
 import type { CustomModelAsset, CustomModelFormat, Dimensions3D, StandItem } from '../types/stand';
 
 interface LoadedModelEntry {
   prototype: THREE.Group;
   rawSize: THREE.Vector3;
   hasNativeMaterials: boolean;
+  brandingNodeNames?: string[];
 }
 
 const modelCache = new Map<string, LoadedModelEntry>();
+const inFlightHostedLoads = new Map<string, Promise<CustomModelAsset>>();
+
+export function isModelCached(id: string): boolean {
+  return modelCache.has(id);
+}
 
 export function detectModelFormat(filename: string): CustomModelFormat | null {
   const ext = filename.split('.').pop()?.toLowerCase();
@@ -317,6 +324,83 @@ export function registerSampleShowcaseMachine(): CustomModelAsset {
   };
 }
 
+export async function loadAndRegisterHosted3DModel(
+  preset: ExclusiveModelPreset
+): Promise<CustomModelAsset> {
+  const cached = modelCache.get(preset.id);
+  if (cached) {
+    return {
+      id: preset.id,
+      name: preset.name,
+      format: preset.format,
+      fileSizeBytes: preset.fileSizeBytes,
+      originalDims: {
+        w: Math.max(0.15, Number(cached.rawSize.x.toFixed(2))),
+        h: Math.max(0.15, Number(cached.rawSize.y.toFixed(2))),
+        d: Math.max(0.15, Number(cached.rawSize.z.toFixed(2))),
+      },
+      blobUrl: preset.url,
+      category: preset.category,
+      zUpFix: false,
+      supportsBrandingToggle: preset.supportsBrandingToggle,
+      defaultBranded: preset.defaultBranded,
+      brandingNodeNames: [...preset.brandingNodeNames],
+      isExclusive: true,
+    };
+  }
+
+  const existingPromise = inFlightHostedLoads.get(preset.id);
+  if (existingPromise) return existingPromise;
+
+  const loadPromise = (async (): Promise<CustomModelAsset> => {
+    const resp = await fetch(preset.url);
+    if (!resp.ok) {
+      throw new Error(`Failed to load hosted 3D model "${preset.name}" (${resp.status})`);
+    }
+    const buffer = await resp.arrayBuffer();
+    const loader = new GLTFLoader();
+    const gltf = await new Promise<{ scene: THREE.Group }>((resolve, reject) => {
+      loader.parse(buffer, '', resolve, reject);
+    });
+
+    const { group, dims, rawSize } = normalizePrototype(gltf.scene, true);
+    modelCache.set(preset.id, {
+      prototype: group,
+      rawSize,
+      hasNativeMaterials: true,
+      brandingNodeNames: [...preset.brandingNodeNames],
+    });
+
+    return {
+      id: preset.id,
+      name: preset.name,
+      format: preset.format,
+      fileSizeBytes: buffer.byteLength || preset.fileSizeBytes,
+      originalDims: dims,
+      blobUrl: preset.url,
+      category: preset.category,
+      zUpFix: false,
+      supportsBrandingToggle: preset.supportsBrandingToggle,
+      defaultBranded: preset.defaultBranded,
+      brandingNodeNames: [...preset.brandingNodeNames],
+      isExclusive: true,
+    };
+  })();
+
+  inFlightHostedLoads.set(preset.id, loadPromise);
+  try {
+    return await loadPromise;
+  } finally {
+    inFlightHostedLoads.delete(preset.id);
+  }
+}
+
+function isBrandingNode(name: string, brandingNames: Set<string>): boolean {
+  if (!name) return false;
+  if (brandingNames.has(name)) return true;
+  return name.toLowerCase().startsWith('mast_branding');
+}
+
 export function buildCustomModelMesh(item: StandItem): THREE.Group {
   const outer = new THREE.Group();
   outer.name = `item:${item.id}`;
@@ -339,6 +423,8 @@ export function buildCustomModelMesh(item: StandItem): THREE.Group {
     outer.add(fallback);
   } else {
     const clone = entry.prototype.clone(true);
+    const hideBranding = item.modelBranded === false;
+    const brandingNames = new Set(entry.brandingNodeNames || []);
 
     // Clone materials so per-instance tinting / disposal never mutates cached prototype
     clone.traverse((child) => {
@@ -373,7 +459,7 @@ export function buildCustomModelMesh(item: StandItem): THREE.Group {
       clone.position.y -= rotBox.min.y;
     }
 
-    // Measure current normalized size and scale cleanly to requested item.dims
+    // Measure current normalized size before toggling optional branding decals so dimensions stay locked
     innerPivot.updateMatrixWorld(true);
     const curBox = new THREE.Box3().setFromObject(innerPivot);
     const curSize = new THREE.Vector3();
@@ -383,6 +469,15 @@ export function buildCustomModelMesh(item: StandItem): THREE.Group {
     const sy = item.dims.h / Math.max(0.001, curSize.y);
     const sz = item.dims.d / Math.max(0.001, curSize.z);
     innerPivot.scale.set(sx, sy, sz);
+
+    // Toggle branded decal/graphic meshes on or off
+    if (hideBranding) {
+      clone.traverse((child) => {
+        if (isBrandingNode(child.name, brandingNames)) {
+          child.visible = false;
+        }
+      });
+    }
 
     outer.add(innerPivot);
   }

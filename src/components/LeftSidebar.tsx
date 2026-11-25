@@ -21,6 +21,7 @@ import {
 import { CATEGORY_META, EQUIPMENT_CATALOG } from '../data/catalog';
 import { COLOR_PALETTES } from '../data/palettes';
 import { STAND_TEMPLATES } from '../data/templates';
+import type { ExclusiveModelPreset } from '../data/userModels';
 import type {
   BrandAsset,
   CurrencyCode,
@@ -57,8 +58,10 @@ interface LeftSidebarProps {
   onUploadAssets: (files: FileList) => void;
   onDeleteAsset: (assetId: string) => void;
   customModels: CustomModelAsset[];
+  exclusiveModels?: ExclusiveModelPreset[];
   onUpload3DModels: (files: FileList) => void;
   onPlaceCustomModel: (modelAssetId: string) => void;
+  onPlaceExclusiveModel?: (presetId: string, branded: boolean) => void;
   onLoadSampleMachine: () => void;
   customBuiltAssets: CustomBuiltAsset[];
   onOpenAssetBuilder: (mode: 'shapes' | 'schematic') => void;
@@ -121,8 +124,10 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = React.memo(({
   onUploadAssets,
   onDeleteAsset,
   customModels,
+  exclusiveModels = [],
   onUpload3DModels,
   onPlaceCustomModel,
+  onPlaceExclusiveModel,
   onLoadSampleMachine,
   customBuiltAssets,
   onOpenAssetBuilder,
@@ -140,6 +145,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = React.memo(({
   const activeRail = activeTab === 'branding' || activeTab === 'assets' ? activeTab : 'build';
   const [selectedCat, setSelectedCat] = useState<EquipmentCategory | 'all'>('all');
   const [dragActive, setDragActive] = useState(false);
+  const [exclusiveBranded, setExclusiveBranded] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -624,6 +630,64 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = React.memo(({
 
           {activeTab === 'assets' && (
             <div className="panel-section-stack">
+              {exclusiveModels.length > 0 && onPlaceExclusiveModel && (
+                <div className="custom-3d-box" id="exclusive-models-section">
+                  <div className="custom-3d-head">
+                    <span className="custom-3d-title">
+                      <Box size={13} /> Exclusive 3D Models
+                    </span>
+                    <span className="mono-num custom-3d-formats">GLB</span>
+                  </div>
+                  <p className="custom-builder-desc">
+                    Choose branded or unbranded mast graphics, then click or drag onto the stand floor. You can also toggle branding anytime in the Inspector.
+                  </p>
+                  <div className="fit-btn-row" style={{ marginBottom: 8 }}>
+                    <button
+                      id="btn-exclusive-branded"
+                      type="button"
+                      className={`fit-btn ${exclusiveBranded ? 'active' : ''}`}
+                      onClick={() => setExclusiveBranded(true)}
+                    >
+                      Branded
+                    </button>
+                    <button
+                      id="btn-exclusive-unbranded"
+                      type="button"
+                      className={`fit-btn ${!exclusiveBranded ? 'active' : ''}`}
+                      onClick={() => setExclusiveBranded(false)}
+                    >
+                      Unbranded
+                    </button>
+                  </div>
+                  <div className="uploaded-models-list">
+                    {exclusiveModels.map((preset) => (
+                      <button
+                        key={preset.id}
+                        id={`btn-place-exclusive-${preset.id}`}
+                        type="button"
+                        className="uploaded-model-chip"
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData(
+                            'application/x-zuki-model',
+                            `${preset.id}|${exclusiveBranded ? 'branded' : 'unbranded'}`
+                          );
+                          e.dataTransfer.effectAllowed = 'copy';
+                        }}
+                        onClick={() => onPlaceExclusiveModel(preset.id, exclusiveBranded)}
+                        title={preset.description}
+                      >
+                        <span className="uploaded-model-name">{preset.name}</span>
+                        <span className="mono-num uploaded-model-meta">
+                          {preset.defaultDims.w}×{preset.defaultDims.d}m ·{' '}
+                          {exclusiveBranded ? 'Branded' : 'Unbranded'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Custom Asset Builder (Simple Shapes + 2D Schematic Auto/Trace) */}
               <div className="custom-3d-box">
                 <div className="custom-3d-head">
@@ -736,26 +800,28 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = React.memo(({
                     }}
                   />
                 </div>
-                {customModels.length > 0 && (
+                {customModels.some((m) => !m.isExclusive) && (
                   <div className="uploaded-models-list">
-                    {customModels.map((m) => (
-                      <button
-                        key={m.id}
-                        className="uploaded-model-chip"
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('application/x-zuki-model', m.id);
-                          e.dataTransfer.effectAllowed = 'copy';
-                        }}
-                        onClick={() => onPlaceCustomModel(m.id)}
-                        title="Click or drag onto stand floor"
-                      >
-                        <span className="uploaded-model-name">{m.name}</span>
-                        <span className="mono-num uploaded-model-meta">
-                          {m.originalDims.w}×{m.originalDims.d}m · {m.format.toUpperCase()}
-                        </span>
-                      </button>
-                    ))}
+                    {customModels
+                      .filter((m) => !m.isExclusive)
+                      .map((m) => (
+                        <button
+                          key={m.id}
+                          className="uploaded-model-chip"
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('application/x-zuki-model', m.id);
+                            e.dataTransfer.effectAllowed = 'copy';
+                          }}
+                          onClick={() => onPlaceCustomModel(m.id)}
+                          title="Click or drag onto stand floor"
+                        >
+                          <span className="uploaded-model-name">{m.name}</span>
+                          <span className="mono-num uploaded-model-meta">
+                            {m.originalDims.w}×{m.originalDims.d}m · {m.format.toUpperCase()}
+                          </span>
+                        </button>
+                      ))}
                   </div>
                 )}
               </div>

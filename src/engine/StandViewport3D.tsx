@@ -20,7 +20,7 @@ import type {
   ViewportNavMode,
 } from '../types/stand';
 import { buildBoothShell, buildScaleFigures, buildStandItemMesh } from './meshFactory';
-import { buildCustomModelMesh } from './modelLoader';
+import { buildCustomModelMesh, isModelCached } from './modelLoader';
 import { buildCustomBuiltAssetMesh } from './customAssetMesh';
 import { formatLength } from '../utils/pricing';
 import { checkWallCollision, findNearestAllowedPosition } from '../utils/wallCollision';
@@ -48,6 +48,7 @@ interface StandViewportProps {
   config: StandConfig;
   items: StandItem[];
   assetsMap: Map<string, BrandAsset>;
+  modelsVersion?: number;
   selectedItemId: string | null;
   selectedShellWall: ShellWallSide | null;
   viewMode: ViewMode;
@@ -201,9 +202,15 @@ function computeItemVisualSignature(
   void _r;
   void _v;
   void _l;
+  const modelReady =
+    item.catalogId === 'custom-3d-model' && item.customModelId
+      ? isModelCached(item.customModelId)
+        ? 'ready'
+        : 'pending'
+      : 'na';
   return `${globalSig}|${isOverheadRcpItem(item, viewMode) ? 'rcp' : 'std'}|${
     isColliding ? 'col' : 'ok'
-  }|${JSON.stringify(visualProps)}`;
+  }|${modelReady}|${JSON.stringify(visualProps)}`;
 }
 
 export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProps>(
@@ -212,6 +219,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       config,
       items,
       assetsMap,
+      modelsVersion = 0,
       selectedItemId,
       selectedShellWall,
       viewMode,
@@ -1692,7 +1700,7 @@ export const StandViewport3D = forwardRef<StandViewportHandle, StandViewportProp
       }
       markShadowsDirty();
       markSceneDirty();
-    }, [items, config, assetsMap, textureTick, viewMode, collidingItemId, markSceneDirty, markShadowsDirty]);
+    }, [items, config, assetsMap, textureTick, modelsVersion, viewMode, collidingItemId, markSceneDirty, markShadowsDirty]);
 
     // Rebuild Helpers (Floor Grid, Selection Ring, Boundary Alerts, Venue Height Limit Frame)
     useEffect(() => {

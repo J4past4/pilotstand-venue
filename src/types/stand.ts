@@ -93,6 +93,14 @@ export interface CustomModelAsset {
   category?: CustomAssetCategory;
   zUpFix?: boolean;
   defaultTintColor?: string;
+  /** Whether this model supports toggling branded decals/graphics on or off */
+  supportsBrandingToggle?: boolean;
+  /** Default branding state when placed (defaults to true) */
+  defaultBranded?: boolean;
+  /** Node/mesh names in the 3D hierarchy toggled by modelBranded */
+  brandingNodeNames?: string[];
+  /** True for user-scoped preloaded exclusive models */
+  isExclusive?: boolean;
 }
 
 export type AssetPrimitiveKind =
@@ -164,6 +172,10 @@ export interface StandItem {
   zUpFix?: boolean;
   lockAspect?: boolean;
   modelTintColor?: string;
+  /** For 3D models that support branded vs unbranded graphics (true = branded, false = unbranded) */
+  modelBranded?: boolean;
+  /** Whether the selected 3D model supports toggling branded graphics */
+  supportsBrandingToggle?: boolean;
 }
 
 export interface StandConfig {

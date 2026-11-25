@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { CATALOG_MAP } from '../data/catalog';
+import { getExclusiveModelById } from '../data/userModels';
 import type {
   ArtworkFit,
   BrandAsset,
@@ -502,6 +503,36 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                     }}
                   />
                 </div>
+
+                {selectedItem.catalogId === 'custom-3d-model' &&
+                  (selectedItem.supportsBrandingToggle ||
+                    getExclusiveModelById(selectedItem.customModelId)?.supportsBrandingToggle) && (
+                    <div className="control-block" style={{ marginTop: 10, marginBottom: 4 }}>
+                      <label className="block-label">Machine Branding</label>
+                      <div className="fit-btn-row">
+                        <button
+                          id="btn-model-branded"
+                          type="button"
+                          className={`fit-btn ${selectedItem.modelBranded !== false ? 'active' : ''}`}
+                          onClick={() =>
+                            onUpdateItem(selectedItem.id, { modelBranded: true }, true)
+                          }
+                        >
+                          Branded
+                        </button>
+                        <button
+                          id="btn-model-unbranded"
+                          type="button"
+                          className={`fit-btn ${selectedItem.modelBranded === false ? 'active' : ''}`}
+                          onClick={() =>
+                            onUpdateItem(selectedItem.id, { modelBranded: false }, true)
+                          }
+                        >
+                          Unbranded
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                 {selectedItem.catalogId === 'custom-3d-model' && (
                   <div className="toggle-row compact" style={{ marginTop: 10 }}>

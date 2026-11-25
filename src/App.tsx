@@ -18,6 +18,11 @@ import {
 import { CATALOG_MAP } from './data/catalog';
 import { BUILTIN_BRAND_ASSETS } from './data/palettes';
 import {
+  getExclusiveModelById,
+  getExclusiveModelsForUser,
+  presetToCustomModelAsset,
+} from './data/userModels';
+import {
   createItemId,
   DEFAULT_STAND_CONFIG,
   instantiateTemplate,
@@ -25,7 +30,9 @@ import {
 } from './data/templates';
 import { StandViewport3D, type StandViewportHandle } from './engine/StandViewport3D';
 import {
+  isModelCached,
   isSupportedModelFile,
+  loadAndRegisterHosted3DModel,
   parseAndRegister3DModel,
   registerSampleShowcaseMachine,
 } from './engine/modelLoader';
@@ -449,6 +456,57 @@ function App({
   );
 
   const [customModels, setCustomModels] = useState<CustomModelAsset[]>([]);
+  const [modelsVersion, setModelsVersion] = useState(0);
+
+  const exclusiveModels = useMemo(() => getExclusiveModelsForUser(betaUser), [betaUser]);
+
+  const allCustomModels = useMemo(() => {
+    if (exclusiveModels.length === 0) return customModels;
+    const byId = new Map<string, CustomModelAsset>();
+    for (const preset of exclusiveModels) {
+      byId.set(preset.id, presetToCustomModelAsset(preset));
+    }
+    for (const m of customModels) {
+      byId.set(m.id, m);
+    }
+    return Array.from(byId.values());
+  }, [exclusiveModels, customModels]);
+
+  // Preload user-exclusive GLB models for Jae & Dario and hydrate any saved stand items referencing them
+  useEffect(() => {
+    const presetsToHydrate = new Map(exclusiveModels.map((p) => [p.id, p]));
+    for (const item of items) {
+      if (item.catalogId === 'custom-3d-model' && item.customModelId) {
+        const preset = getExclusiveModelById(item.customModelId);
+        if (preset) presetsToHydrate.set(preset.id, preset);
+      }
+    }
+
+    let cancelled = false;
+    for (const preset of presetsToHydrate.values()) {
+      if (isModelCached(preset.id)) continue;
+      void loadAndRegisterHosted3DModel(preset)
+        .then((loaded) => {
+          if (cancelled) return;
+          setCustomModels((prev) => {
+            const idx = prev.findIndex((m) => m.id === loaded.id);
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = { ...next[idx], ...loaded };
+              return next;
+            }
+            return exclusiveModels.some((p) => p.id === loaded.id) ? [loaded, ...prev] : prev;
+          });
+          setModelsVersion((v) => v + 1);
+        })
+        .catch((err) => {
+          console.error(`Failed to preload hosted 3D model "${preset.id}"`, err);
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [exclusiveModels, items]);
 
   const addCatalogItem = useCallback(
     (catalogId: string, dropX?: number, dropZ?: number) => {
@@ -493,9 +551,17 @@ function App({
   );
 
   const placeCustomModelAsset = useCallback(
-    (asset: CustomModelAsset, dropX?: number, dropZ?: number) => {
+    (
+      asset: CustomModelAsset,
+      dropX?: number,
+      dropZ?: number,
+      options?: { branded?: boolean }
+    ) => {
       const px = dropX !== undefined ? dropX : 0;
       const pz = dropZ !== undefined ? dropZ : 0.15;
+      const supportsBranding = Boolean(asset.supportsBrandingToggle);
+      const isBranded =
+        options?.branded !== undefined ? options.branded : asset.defaultBranded !== false;
       const newItem: StandItem = {
         id: createItemId('model3d'),
         catalogId: 'custom-3d-model',
@@ -509,6 +575,9 @@ function App({
         lockAspect: true,
         zUpFix: Boolean(asset.zUpFix),
         modelTintColor: asset.defaultTintColor,
+        ...(supportsBranding
+          ? { supportsBrandingToggle: true, modelBranded: isBranded }
+          : {}),
         locked: false,
         visible: true,
         artwork: {},
@@ -523,9 +592,37 @@ function App({
       setSelectedSurfaceId(null);
       setSelectedShellWall(null);
       pushHistory(config, nextItems);
-      notify(`Placed 3D model "${asset.name}" (${asset.originalDims.w}×${asset.originalDims.d}m)`);
+      const brandLabel = supportsBranding ? (isBranded ? ' · Branded' : ' · Unbranded') : '';
+      notify(
+        `Placed 3D model "${asset.name}" (${asset.originalDims.w}×${asset.originalDims.d}m${brandLabel})`
+      );
     },
     [items, config, pushHistory, notify]
+  );
+
+  const handlePlaceExclusiveModel = useCallback(
+    async (presetId: string, branded: boolean, dropX?: number, dropZ?: number) => {
+      const preset = exclusiveModels.find((p) => p.id === presetId);
+      if (!preset) return;
+      try {
+        const asset = await loadAndRegisterHosted3DModel(preset);
+        setCustomModels((prev) => {
+          const idx = prev.findIndex((m) => m.id === asset.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...asset };
+            return next;
+          }
+          return [asset, ...prev];
+        });
+        setModelsVersion((v) => v + 1);
+        placeCustomModelAsset(asset, dropX, dropZ, { branded });
+      } catch (err) {
+        console.error(err);
+        notify(`Could not load 3D model "${preset.name}"`);
+      }
+    },
+    [exclusiveModels, placeCustomModelAsset, notify]
   );
 
   const handleUpload3DModels = useCallback(
@@ -1670,14 +1767,14 @@ function App({
   }
 
   const totalCustomAssetCount =
-    customBuiltAssets.length + customModels.length + customAssets.length;
+    customBuiltAssets.length + allCustomModels.length + customAssets.length;
 
   const assetModals = (
     <>
       {showAssetLibrary && (
         <AssetLibraryModal
           customBuiltAssets={customBuiltAssets}
-          customModels={customModels}
+          customModels={allCustomModels}
           uploadedGraphics={customAssets}
           onClose={() => setShowAssetLibrary(false)}
           onOpenAssetBuilder={(mode) => {
@@ -1735,6 +1832,10 @@ function App({
           }}
           onPlaceCustomModel={(asset) => {
             if (showDashboard) setShowDashboard(false);
+            if (asset.isExclusive) {
+              void handlePlaceExclusiveModel(asset.id, asset.defaultBranded !== false);
+              return;
+            }
             placeCustomModelAsset(asset);
           }}
           onAddGraphicAsset={(asset) => {
@@ -1930,10 +2031,14 @@ function App({
             if (paintAssetId === id) setPaintAssetId(null);
           }}
           customModels={customModels}
+          exclusiveModels={exclusiveModels}
           onUpload3DModels={(files) => handleUpload3DModels(files)}
           onPlaceCustomModel={(modelId) => {
             const m = customModels.find((x) => x.id === modelId);
             if (m) placeCustomModelAsset(m);
+          }}
+          onPlaceExclusiveModel={(presetId, branded) => {
+            void handlePlaceExclusiveModel(presetId, branded);
           }}
           onLoadSampleMachine={handleLoadSampleMachine}
           customBuiltAssets={customBuiltAssets}
@@ -1959,6 +2064,7 @@ function App({
             config={config}
             items={items}
             assetsMap={assetsMap}
+            modelsVersion={modelsVersion}
             selectedItemId={selectedItemId}
             selectedShellWall={selectedShellWall}
             viewMode={viewMode}
@@ -1978,7 +2084,18 @@ function App({
             onMoveItem={moveItem}
             onPaintSurface={handlePaintSurface}
             onDropCatalogItem={(catalogId, x, z) => addCatalogItem(catalogId, x, z)}
-            onDropCustomModelAsset={(modelId, x, z) => {
+            onDropCustomModelAsset={(rawModelPayload, x, z) => {
+              const [modelId, brandFlag] = rawModelPayload.split('|');
+              const exclusive = exclusiveModels.find((p) => p.id === modelId);
+              if (exclusive) {
+                void handlePlaceExclusiveModel(
+                  exclusive.id,
+                  brandFlag ? brandFlag !== 'unbranded' : exclusive.defaultBranded,
+                  x,
+                  z
+                );
+                return;
+              }
               const m = customModels.find((cm) => cm.id === modelId);
               if (m) placeCustomModelAsset(m, x, z);
             }}
