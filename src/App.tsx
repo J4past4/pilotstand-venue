@@ -50,6 +50,7 @@ import { AssetLibraryModal } from './components/AssetLibraryModal';
 import type { BetaUser, PublicAuthPromptOptions } from './components/BetaAuthGate';
 import { QuoteRequestModal } from './components/QuoteRequestModal';
 import { LaunchAdminModal } from './components/LaunchAdminModal';
+import { MascotTips } from './components/MascotTips';
 import { applyAgentActions } from './agent/actionExecutor';
 import { sendStandAgentPrompt } from './agent/agentClient';
 import { findNearestAllowedPosition } from './utils/wallCollision';
@@ -1767,6 +1768,7 @@ function App({
           open={showAdminInsightsModal}
           onClose={() => setShowAdminInsightsModal(false)}
         />
+        <MascotTips context="dashboard" />
         {toast && <div role="status" className="studio-toast">{toast}</div>}
       </>
     );
@@ -2241,6 +2243,8 @@ function App({
         onExportBrief={handleExportBrief}
         onDownloadJson={handleDownloadJson}
       />
+
+      <MascotTips context="editor" />
     </div>
   );
 }
